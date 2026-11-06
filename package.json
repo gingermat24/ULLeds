@@ -1,20 +1,74 @@
 {
-  "name": "dx-light",
-  "productName": "DX Light",
-  "version": "3.7.21",
-  "description": "Recovered source for the DX Light / Robobloq QuikLight desktop LED controller",
-  "main": "build/.webpack/main/index.js",
+  "name": "ulleds",
+  "productName": "ULLeds",
+  "version": "1.0.12",
+  "description": "A desktop controller for USB monitor-backlight LED strips",
+  "author": "gingermat",
+  "license": "UNLICENSED",
   "private": true,
+  "main": "ull/main.js",
   "scripts": {
-    "build": "node tools/build.js",
-    "start": "npm run build && electron .",
-    "dev": "npm run start",
-    "restore": "powershell -ExecutionPolicy Bypass -File tools/restore-node-modules.ps1"
+    "start": "electron .",
+    "dev": "npm start",
+    "test": "node --test ull/tests/device-profile.test.js ull/tests/hid-output.test.js ull/tests/led-selection.test.js ull/tests/local-update-server.test.js ull/tests/protocol.test.js ull/tests/screen-sync.test.js ull/tests/strip-layout.test.js ull/tests/ui.test.js ull/tests/update-feed.test.js",
+    "dist:win": "electron-builder --win nsis && node scripts/write-update-manifest.js"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11",
+    "node-hid": "3.4.0"
   },
   "devDependencies": {
-    "electron": "22.3.27"
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
   },
   "allowScripts": {
-    "electron@22.3.27": true
+    "electron@45.2.3": true,
+    "node-hid@3.4.0": true,
+    "electron-winstaller@5.4.0": true
+  },
+  "build": {
+    "appId": "com.gingermat.ulleds",
+    "productName": "ULLeds",
+    "asar": true,
+    "electronLanguages": [
+      "en-US"
+    ],
+    "asarUnpack": [
+      "node_modules/node-hid/**"
+    ],
+    "files": [
+      "package.json",
+      "ull/**",
+      "!ull/tests/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "http://127.0.0.1/"
+      }
+    ],
+    "artifactName": "ULLeds-Setup-${version}-${arch}.${ext}",
+    "win": {
+      "icon": "ull/assets/app.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ULLeds",
+      "perMachine": false
+    }
   }
 }
