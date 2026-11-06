@@ -121,9 +121,10 @@ if (Test-Path $unpacked) {
 Write-Step "Verifying key packages"
 $required = @(
   "@warren-robobloq/quiklight",
+  "@warren-robobloq/usb",
   "node-hid",
+  "serialport",
   "usb",
-  "electron-store",
   "electron"
 )
 
