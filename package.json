@@ -1,0 +1,20 @@
+{
+  "name": "dx-light",
+  "productName": "DX Light",
+  "version": "3.7.21",
+  "description": "Recovered source for the DX Light / Robobloq QuikLight desktop LED controller",
+  "main": "build/.webpack/main/index.js",
+  "private": true,
+  "scripts": {
+    "build": "node tools/build.js",
+    "start": "npm run build && electron .",
+    "dev": "npm run start",
+    "restore": "powershell -ExecutionPolicy Bypass -File tools/restore-node-modules.ps1"
+  },
+  "devDependencies": {
+    "electron": "22.3.27"
+  },
+  "allowScripts": {
+    "electron@22.3.27": true
+  }
+}

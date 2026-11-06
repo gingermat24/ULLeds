@@ -1,0 +1,41 @@
+module.exports = (e, t, r) => {
+  "use strict";
+  Object.defineProperty(t, "__esModule", { value: !0 });
+  const n = r(79896),
+    i = r(39023),
+    o = r(34611),
+    s = r(13801),
+    a = r(70174),
+    c = {
+      chmodAttempt: o.attemptifyAsync(i.promisify(n.chmod), s.default.onChangeError),
+      chownAttempt: o.attemptifyAsync(i.promisify(n.chown), s.default.onChangeError),
+      closeAttempt: o.attemptifyAsync(i.promisify(n.close)),
+      fsyncAttempt: o.attemptifyAsync(i.promisify(n.fsync)),
+      mkdirAttempt: o.attemptifyAsync(i.promisify(n.mkdir)),
+      realpathAttempt: o.attemptifyAsync(i.promisify(n.realpath)),
+      statAttempt: o.attemptifyAsync(i.promisify(n.stat)),
+      unlinkAttempt: o.attemptifyAsync(i.promisify(n.unlink)),
+      closeRetry: a.retryifyAsync(i.promisify(n.close), s.default.isRetriableError),
+      fsyncRetry: a.retryifyAsync(i.promisify(n.fsync), s.default.isRetriableError),
+      openRetry: a.retryifyAsync(i.promisify(n.open), s.default.isRetriableError),
+      readFileRetry: a.retryifyAsync(i.promisify(n.readFile), s.default.isRetriableError),
+      renameRetry: a.retryifyAsync(i.promisify(n.rename), s.default.isRetriableError),
+      statRetry: a.retryifyAsync(i.promisify(n.stat), s.default.isRetriableError),
+      writeRetry: a.retryifyAsync(i.promisify(n.write), s.default.isRetriableError),
+      chmodSyncAttempt: o.attemptifySync(n.chmodSync, s.default.onChangeError),
+      chownSyncAttempt: o.attemptifySync(n.chownSync, s.default.onChangeError),
+      closeSyncAttempt: o.attemptifySync(n.closeSync),
+      mkdirSyncAttempt: o.attemptifySync(n.mkdirSync),
+      realpathSyncAttempt: o.attemptifySync(n.realpathSync),
+      statSyncAttempt: o.attemptifySync(n.statSync),
+      unlinkSyncAttempt: o.attemptifySync(n.unlinkSync),
+      closeSyncRetry: a.retryifySync(n.closeSync, s.default.isRetriableError),
+      fsyncSyncRetry: a.retryifySync(n.fsyncSync, s.default.isRetriableError),
+      openSyncRetry: a.retryifySync(n.openSync, s.default.isRetriableError),
+      readFileSyncRetry: a.retryifySync(n.readFileSync, s.default.isRetriableError),
+      renameSyncRetry: a.retryifySync(n.renameSync, s.default.isRetriableError),
+      statSyncRetry: a.retryifySync(n.statSync, s.default.isRetriableError),
+      writeSyncRetry: a.retryifySync(n.writeSync, s.default.isRetriableError),
+    };
+  t.default = c;
+};

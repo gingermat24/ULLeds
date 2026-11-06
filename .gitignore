@@ -1,0 +1,29 @@
+# Dependencies and generated output
+node_modules/
+build/
+out/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+electron-log*.log
+
+# Environment / local overrides
+.env
+.env.*
+*.local
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Runtime artefacts
+*.asar
+*.asar.unpacked/
+crash*.dmp
