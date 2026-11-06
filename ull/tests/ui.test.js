@@ -51,3 +51,16 @@ test("Scenes is archived behind a disabled feature flag", () => {
   assert.match(app, /if \(name === "scenes" && !SCENES_ENABLED\) return/);
   assert.match(app, /if \(SCENES_ENABLED\) \{\s*\$\("#save-scene"\)/);
 });
+
+test("update installation releases the controller before launching the installer", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const prepare = main.indexOf("async function prepareForUpdate()");
+  const install = main.indexOf('ipcMain.handle("updates:install"');
+  const updaterLaunch = main.indexOf("autoUpdater.quitAndInstall(true, true)", install);
+
+  assert.notEqual(prepare, -1);
+  assert.notEqual(install, -1);
+  assert.notEqual(updaterLaunch, -1);
+  assert.match(main.slice(prepare, install), /await disconnectDevice\(\)/);
+  assert.match(main.slice(install, updaterLaunch), /await prepareForUpdate\(\)/);
+});

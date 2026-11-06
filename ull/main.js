@@ -446,6 +446,19 @@ function disconnectDevice(error = "") {
   return closePromise;
 }
 
+async function prepareForUpdate() {
+  if (watcherTimer) clearInterval(watcherTimer);
+  watcherTimer = null;
+  if (animationTimer) clearInterval(animationTimer);
+  animationTimer = null;
+  screenSyncActive = false;
+
+  await disconnectDevice();
+
+  tray?.destroy();
+  tray = null;
+}
+
 async function connectDevice(targetPath) {
   if (connectionPromise) return connectionPromise;
   const pending = connectDeviceNow(targetPath).catch((error) => {
@@ -724,12 +737,19 @@ ipcMain.handle("updates:check", async () => {
     updateCheckPromise = null;
   }
 });
-ipcMain.handle("updates:install", () => {
+ipcMain.handle("updates:install", async () => {
   if (!downloadedUpdateVersion) {
     return { installing: false, error: "The update has not finished downloading yet." };
   }
   const version = downloadedUpdateVersion;
   isQuitting = true;
+  try {
+    await prepareForUpdate();
+  } catch (error) {
+    isQuitting = false;
+    console.error("Could not prepare ULLeds for update:", error);
+    return { installing: false, error: `Could not prepare ULLeds for update: ${error.message}` };
+  }
   autoUpdater.quitAndInstall(true, true);
   return { installing: true, version };
 });
