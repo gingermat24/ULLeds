@@ -1,7 +1,7 @@
 {
   "name": "ulleds",
   "productName": "ULLeds",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "A desktop controller for USB monitor-backlight LED strips",
   "author": "gingermat",
   "license": "UNLICENSED",

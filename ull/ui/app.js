@@ -532,7 +532,9 @@ function showUpdateMessage(message, error = false, readyToInstall = false) {
   const progress = $("#update-progress");
   const fill = $("#update-progress-fill");
   const detail = $("#update-progress-detail");
-  const isActive = updateState.phase === "checking" || updateState.phase === "downloading";
+  const isActive = updateState.phase === "checking" ||
+    updateState.phase === "downloading" ||
+    updateState.phase === "installing";
   progress.classList.toggle("hidden", !isActive);
   detail.classList.toggle("hidden", !isActive);
   progress.classList.toggle("indeterminate", isActive && updateState.percent === null);
@@ -546,6 +548,8 @@ function showUpdateMessage(message, error = false, readyToInstall = false) {
   }
   detail.textContent = updateState.phase === "checking"
     ? "Connecting to the selected update folder…"
+    : updateState.phase === "installing"
+      ? "ULLeds will reopen automatically. Please wait; do not launch it manually."
     : isActive
       ? formatUpdateProgress(updateState)
       : "";
@@ -627,7 +631,10 @@ async function checkUpdates() {
 
 async function installUpdate() {
   updateState = { phase: "installing", percent: null, transferred: 0, total: 0 };
-  showUpdateMessage("Restarting to install the update…");
+  showUpdateMessage("Installing the update and restarting ULLeds…");
+  const button = $("#update-actions").querySelector("button");
+  if (button) button.disabled = true;
+  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   try {
     const result = await window.ull.installUpdate();
     if (result.installing) showUpdateMessage(`Restarting to update ULLeds to ${result.version}…`);
