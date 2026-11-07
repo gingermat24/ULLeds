@@ -37,7 +37,7 @@ test("update feedback includes an accessible progress bar and reports download s
   assert.match(app, /updateCheckInProgress/);
 });
 
-test("Liquid Glass can be adjusted or disabled and respects reduced-transparency preferences", () => {
+test("frosted glass is clean, adjustable, and respects reduced-transparency preferences", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
@@ -51,7 +51,10 @@ test("Liquid Glass can be adjusted or disabled and respects reduced-transparency
   assert.match(app, /--glass-alpha/);
   assert.match(app, /--glass-blur/);
   assert.match(css, /html\[data-glass="on"\].*backdrop-filter/s);
-  assert.match(css, /html\[data-glass="on"\].*box-shadow/s);
+  assert.doesNotMatch(css, /box-shadow|text-shadow|drop-shadow|radial-gradient/i);
+  assert.doesNotMatch(css, /ambient-led|glow/i);
+  assert.match(html, /<html lang="en" data-glass="on">/);
+  assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), /ULLeds|brand|logo/i);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
@@ -66,11 +69,11 @@ test("topbar tabs stay centered independently of connection status changes", () 
   assert.match(css, /@media \(max-width: 980px\) \{\s+\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\) auto;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.25", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.26", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 25; version += 1) {
+  for (let version = 0; version <= 26; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
@@ -189,7 +192,7 @@ test("the icon build consumes the user PNG and responsive motion preferences are
   const iconScript = fs.readFileSync(path.join(__dirname, "..", "..", "scripts", "create-icon.ps1"), "utf8");
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "package.json"), "utf8"));
 
-  assert.match(html, /src="\.\.\/assets\/app\.png"/);
+  assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), /app\.png/);
   assert.match(iconScript, /app\.png/);
   assert.match(iconScript, /\$sizes = \[int\[\]\]@\(16, 20, 24, 32, 40, 48, 64, 128, 256\)/);
   assert.doesNotMatch(iconScript, /bitmap\.Save\(\$pngPath/);

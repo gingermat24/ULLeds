@@ -2,16 +2,8 @@
    ULLeds — styles.css
    Palette (from the app icon):  #008100  #0A0D11  #151A22  #1F2732
 
-   LIQUID GLASS
-   ------------
-   Everything in section 2 only applies when <html data-glass="on">.
-   Switch it globally with the constant at the top of app.js:
-       const LIQUID_GLASS = "ON";   // or "OFF"
-   Section 1 is a complete flat theme, so OFF never breaks anything.
-
-   Following iOS 27: glass is reserved for the *control layer* (navigation,
-   floating controls, dialogs, toasts). Content cards stay solid so text is
-   always readable. A transparency slider (Device → Appearance) tunes it.
+   Frosted controls use translucent neutral surfaces and backdrop blur.
+   Surfaces stay restrained, with clear borders instead of shadows.
    ========================================================================== */
 
 :root {
@@ -46,9 +38,6 @@
   --glass-alpha: 0.52;
   --glass-blur: 24px;
 
-  /* Live glow from the current LED color (--led-color / --led-opacity set by app.js) */
-  --ambient-led: color-mix(in srgb, var(--led-color, #008100) calc(var(--led-opacity, 0.5) * 26%), transparent);
-
   font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -64,6 +53,10 @@ html {
   background: var(--bg);
   /* Reserve the scrollbar space permanently so nothing ever shifts sideways */
   scrollbar-gutter: stable;
+}
+html[data-glass="on"] body {
+  background: linear-gradient(145deg, #151b24 0%, #0b0f14 52%, #131a23 100%);
+  background-attachment: fixed;
 }
 
 body {
@@ -115,6 +108,7 @@ main { padding: 4px var(--pad-x) 40px; }
 .brand-sub { font-size: 11px; color: var(--muted); }
 
 .tabs {
+  grid-column: 2;
   position: relative;
   display: flex;
   gap: 2px;
@@ -154,6 +148,7 @@ main { padding: 4px var(--pad-x) 40px; }
 }
 
 .device-status {
+  grid-column: 3;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -169,8 +164,8 @@ main { padding: 4px var(--pad-x) 40px; }
 }
 #device-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #A16207; flex: 0 0 8px; }
-.device-status.connected .status-dot { background: var(--green-hi); box-shadow: 0 0 0 3px rgb(0 129 0 / 0.22); }
-.device-status.has-error .status-dot { background: var(--danger); box-shadow: none; }
+.device-status.connected .status-dot { background: var(--green-hi); }
+.device-status.has-error .status-dot { background: var(--danger); }
 
 .icon-btn {
   display: grid;
@@ -226,9 +221,9 @@ h3 { line-height: 1.25; }
   color: var(--text);
   font-size: 13px;
   font-weight: 600;
-  transition: color 0.2s, background-color 0.2s, border-color 0.2s, box-shadow 0.3s, transform 0.3s var(--ease-spring);
+  transition: color 0.2s, background-color 0.2s, border-color 0.2s, transform 0.3s var(--ease-spring);
 }
-.power-btn[aria-pressed="true"] { border-color: rgb(0 129 0 / 0.7); color: var(--green-hi); }
+.power-btn[aria-pressed="true"] { border-color: var(--border-hover); color: var(--text); }
 .power-btn[aria-pressed="false"] { color: var(--muted); }
 .power-btn:active { transform: scale(0.95); }
 .power-icon { font-size: 15px; line-height: 1; }
@@ -242,7 +237,6 @@ h3 { line-height: 1.25; }
   background: linear-gradient(160deg, #0D1117, var(--bg) 70%);
   border: 1px solid var(--border);
   border-radius: 8px;
-  box-shadow: 0 0 110px -30px color-mix(in srgb, var(--led-color, #008100) calc(var(--led-opacity, 0.5) * 55%), transparent);
 }
 
 .led-edge { position: absolute; display: grid; gap: 3px; cursor: pointer; border-radius: 4px; }
@@ -343,7 +337,7 @@ input[type="range"]::-webkit-slider-thumb {
   border-radius: 999px;
   background: #F4F7FA;
   border: 0;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(0 0 0 / 0.3);
+  border: 1px solid rgb(0 0 0 / 0.35);
   transition: transform 0.25s var(--ease-spring);
 }
 input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
@@ -396,7 +390,7 @@ select:disabled { opacity: 0.55; cursor: default; }
   font-weight: 600;
   white-space: nowrap;
   border: 1px solid transparent;
-  transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.3s, transform 0.3s var(--ease-spring);
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, transform 0.3s var(--ease-spring);
 }
 .primary-btn:active, .secondary-btn:active, .danger-btn:active { transform: scale(0.96); }
 .primary-btn:disabled, .secondary-btn:disabled, .danger-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
@@ -502,7 +496,7 @@ select:disabled { opacity: 0.55; cursor: default; }
   height: 24px;
   border-radius: 50%;
   background: #F4F7FA;
-  box-shadow: 0 2px 5px rgb(0 0 0 / 0.45);
+  border: 1px solid rgb(0 0 0 / 0.3);
   transition: transform 0.35s var(--ease-spring), width 0.2s ease;
 }
 .preference-row input[type="checkbox"]:checked { background: var(--green); border-color: var(--green); }
@@ -562,7 +556,6 @@ select:disabled { opacity: 0.55; cursor: default; }
   border-radius: 28px;
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 30px 80px rgb(0 0 0 / 0.55);
 }
 .wizard[open] { animation: dialog-in 0.35s var(--ease-out); }
 .wizard::backdrop { background: rgb(10 13 17 / 0.72); }
@@ -601,7 +594,6 @@ select:disabled { opacity: 0.55; cursor: default; }
   color: var(--text);
   font-size: 13px;
   line-height: 1.45;
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
   opacity: 0;
   transform: translateY(10px) scale(0.98);
   transition: opacity 0.25s ease, transform 0.4s var(--ease-spring);
@@ -615,138 +607,58 @@ select:disabled { opacity: 0.55; cursor: default; }
 .view { animation: fade-in 0.3s var(--ease-out); }
 @keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-/* ==========================================================================
-   2. LIQUID GLASS (only when <html data-glass="on">)
-   Layers of a glass surface, back to front:
-     • backdrop blur + saturation   – diffuses what's behind
-     • tint (--glass-alpha)         – the transparency slider
-     • diagonal sheen               – light catching the curved edge
-     • top specular rim + soft inner edge – the "lens" thickness
-     • drop shadow                  – lifts it above content
-   ========================================================================== */
-
-/* Ambient scene the glass refracts: palette green + the live LED color */
-html[data-glass="on"] body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(55vmax 45vmax at 10% -8%, rgb(0 129 0 / 0.20), transparent 62%),
-    radial-gradient(60vmax 50vmax at 96% 108%, var(--ambient-led), transparent 62%),
-    radial-gradient(70vmax 55vmax at 82% -10%, rgb(31 39 50 / 0.85), transparent 66%);
-}
-
-/* Scroll-edge effect (iOS 26/27): content softly fades under the floating controls */
+/* ========================================================================
+   2. FROSTED SURFACES
+   Translucent neutral layers blur content as it scrolls beneath them.
+   ======================================================================== */
 html[data-glass="on"] .topbar {
-  background: linear-gradient(to bottom, var(--bg) 0, rgb(10 13 17 / 0.92) 58%, rgb(10 13 17 / 0) 100%);
-  border-bottom: 0;
-  padding-bottom: 26px;
-  margin-bottom: 0;
+  background: rgb(17 21 28 / 0.66);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(145%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(145%);
+  border-bottom-color: rgb(255 255 255 / 0.1);
 }
 
 html[data-glass="on"] :is(.tabs, .device-status, .power-btn, .icon-btn, .secondary-btn, .wizard, .toast) {
-  background:
-    linear-gradient(135deg, rgb(255 255 255 / 0.14) 0%, rgb(255 255 255 / 0) 38%, rgb(255 255 255 / 0) 66%, rgb(255 255 255 / 0.06) 100%),
-    rgb(31 39 50 / var(--glass-alpha));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(175%) brightness(1.06);
-  backdrop-filter: blur(var(--glass-blur)) saturate(175%) brightness(1.06);
-  border-color: rgb(255 255 255 / 0.11);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.26),
-    inset 0 -1px 0 rgb(255 255 255 / 0.04),
-    inset 0 0 0 0.5px rgb(255 255 255 / 0.07),
-    0 8px 28px rgb(0 0 0 / 0.32),
-    0 1px 2px rgb(0 0 0 / 0.4);
+  background-color: rgb(255 255 255 / var(--glass-alpha));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(145%);
+  backdrop-filter: blur(var(--glass-blur)) saturate(145%);
+  border-color: rgb(255 255 255 / 0.16);
 }
 
-/* Selected tab: a brighter, green-tinted glass lens that slides between tabs */
 html[data-glass="on"] .tab-indicator {
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0.04) 60%),
-    rgb(0 129 0 / 0.26);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.4),
-    inset 0 0 0 1px rgb(255 255 255 / 0.12),
-    0 4px 14px rgb(0 0 0 / 0.35),
-    0 0 18px -4px rgb(0 129 0 / 0.55);
+  background-color: rgb(255 255 255 / 0.14);
 }
 
-/* Interactive glass brightens when hovered */
-html[data-glass="on"] :is(.power-btn, .icon-btn, .secondary-btn):hover:not(:disabled) {
-  background:
-    linear-gradient(135deg, rgb(255 255 255 / 0.22) 0%, rgb(255 255 255 / 0.02) 40%, rgb(255 255 255 / 0) 66%, rgb(255 255 255 / 0.09) 100%),
-    rgb(31 39 50 / calc(var(--glass-alpha) + 0.06));
+html[data-glass="on"] :is(.power-btn[aria-pressed="true"], .sync-block .secondary-btn.syncing) {
+  background-color: rgb(0 129 0 / 0.22);
   border-color: rgb(255 255 255 / 0.2);
 }
 
-/* Active power / sync state: tinted glass */
-html[data-glass="on"] .power-btn[aria-pressed="true"],
-html[data-glass="on"] .sync-block .secondary-btn.syncing {
-  background:
-    linear-gradient(135deg, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0) 45%),
-    rgb(0 129 0 / 0.30);
-  border-color: rgb(120 200 120 / 0.38);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.32),
-    inset 0 0 0 0.5px rgb(255 255 255 / 0.1),
-    0 6px 22px -6px rgb(0 129 0 / 0.65),
-    0 1px 2px rgb(0 0 0 / 0.4);
-}
-
-/* Primary button: green glass */
 html[data-glass="on"] .primary-btn {
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.26), rgb(255 255 255 / 0) 58%),
-    rgb(0 129 0 / 0.88);
-  -webkit-backdrop-filter: blur(12px) saturate(170%);
-  backdrop-filter: blur(12px) saturate(170%);
-  border-color: rgb(255 255 255 / 0.22);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.38),
-    inset 0 -1px 0 rgb(0 0 0 / 0.18),
-    0 8px 22px -8px rgb(0 129 0 / 0.8),
-    0 1px 2px rgb(0 0 0 / 0.4);
+  background-color: rgb(0 129 0 / 0.84);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  backdrop-filter: blur(14px) saturate(145%);
+  border-color: rgb(255 255 255 / 0.18);
 }
-html[data-glass="on"] .primary-btn:hover:not(:disabled) { background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.34), rgb(255 255 255 / 0.02) 58%),
-    rgb(0 129 0 / 0.96); }
+html[data-glass="on"] .primary-btn:hover:not(:disabled) {
+  background-color: rgb(0 129 0 / 0.96);
+}
 
-/* Dialogs & toasts read more text, so they get extra tint and diffusion */
-html[data-glass="on"] :is(.wizard, .toast) {
-  background:
-    linear-gradient(135deg, rgb(255 255 255 / 0.12) 0%, rgb(255 255 255 / 0) 36%, rgb(255 255 255 / 0) 70%, rgb(255 255 255 / 0.05) 100%),
-    rgb(21 26 34 / calc(var(--glass-alpha) + 0.24));
-  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 12px)) saturate(170%);
-  backdrop-filter: blur(calc(var(--glass-blur) + 12px)) saturate(170%);
+html[data-glass="on"] .wizard {
+  background-color: rgb(21 26 34 / calc(var(--glass-alpha) + 0.18));
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(145%);
+  backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(145%);
 }
-html[data-glass="on"] .wizard { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 36px 90px rgb(0 0 0 / 0.6); }
 html[data-glass="on"] .wizard::backdrop {
-  background: rgb(10 13 17 / 0.5);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  background: rgb(10 13 17 / 0.48);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
 
-/* The wizard's inner fields sit on glass, so give them a solid, legible base */
-html[data-glass="on"] .wizard :is(select, .wizard-count, .wizard-device) { background-color: rgb(31 39 50 / 0.85); }
-html[data-glass="on"] .wizard select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238F9AA8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
-
-/* Slider thumb becomes a small glass pill */
-html[data-glass="on"] input[type="range"]::-webkit-slider-thumb {
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.98), rgb(226 233 241 / 0.92));
-  box-shadow: inset 0 1px 0 #fff, 0 2px 8px rgb(0 0 0 / 0.5), 0 0 0 0.5px rgb(0 0 0 / 0.25);
-}
-
-/* Content cards: stay solid, gain only a faint top light so they sit with the glass */
 html[data-glass="on"] .card {
-  background: linear-gradient(180deg, rgb(255 255 255 / 0.028), rgb(255 255 255 / 0) 120px), var(--surface);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
-}
-
-/* Fallbacks */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  html[data-glass="on"] { --glass-alpha: 0.92; }
+  background-color: rgb(21 26 34 / 0.66);
+  -webkit-backdrop-filter: blur(20px) saturate(130%);
+  backdrop-filter: blur(20px) saturate(130%);
 }
 
 /* ==========================================================================
