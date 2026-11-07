@@ -59,6 +59,33 @@ function sampleStripColors(pixels, width, height, layout) {
   return colors;
 }
 
-const screenSync = Object.freeze({ sampleStripColors });
+function createLatestFrameSender({ send, isActive, getColors, onError }) {
+  if ([send, isActive, getColors, onError].some((value) => typeof value !== "function")) {
+    throw new TypeError("Screen Sync frame sender callbacks are required.");
+  }
+  let sending = false;
+  let lastSentSignature = "";
+
+  return async function sendLatestFrame() {
+    if (sending) return;
+    sending = true;
+    try {
+      while (isActive()) {
+        const colors = getColors();
+        if (!colors) break;
+        const signature = colors.join("");
+        if (signature === lastSentSignature) break;
+        await send(colors);
+        lastSentSignature = signature;
+      }
+    } catch (error) {
+      onError(error);
+    } finally {
+      sending = false;
+    }
+  };
+}
+
+const screenSync = Object.freeze({ createLatestFrameSender, sampleStripColors });
 if (typeof module !== "undefined" && module.exports) module.exports = screenSync;
 else globalThis.ullScreenSync = screenSync;

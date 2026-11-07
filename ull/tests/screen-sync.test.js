@@ -2,8 +2,34 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { sampleStripColors } = require("../screen-sync");
+const { createLatestFrameSender, sampleStripColors } = require("../screen-sync");
 const { allocateEdgeIndices } = require("../strip-layout");
+
+test("screen sync sends the newest sampled frame as soon as the active write finishes", async () => {
+  let colors = ["#111111"];
+  let finishFirstSend;
+  const firstSend = new Promise((resolve) => { finishFirstSend = resolve; });
+  const sent = [];
+  const sender = createLatestFrameSender({
+    send: async (frame) => {
+      sent.push(frame[0]);
+      if (sent.length === 1) await firstSend;
+    },
+    isActive: () => true,
+    getColors: () => colors,
+    onError: (error) => { throw error; }
+  });
+
+  const activeSend = sender();
+  await Promise.resolve();
+  colors = ["#222222"];
+  await sender();
+  finishFirstSend();
+  await activeSend;
+  await sender();
+
+  assert.deepEqual(sent, ["#111111", "#222222"]);
+});
 
 test("screen sync does not invent a color from a one-pixel highlight", () => {
   const width = 5;

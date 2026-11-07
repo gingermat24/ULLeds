@@ -378,7 +378,6 @@ function updatePreview() {
       screenSyncSession.layout = layout;
       screenSyncSession.layoutSignature = signature;
       screenSyncSession.colors = null;
-      screenSyncSession.lastSentSignature = "";
     }
     screenSyncSession.pixelElements = [...document.querySelectorAll(".led-pixel")];
   }
@@ -504,6 +503,9 @@ function stopScreenSync(message = "", clearResumePreference = false) {
     screenSyncError = "";
     if (session) {
       cancelAnimationFrame(session.frame);
+      if (session.videoFrame && typeof session.video.cancelVideoFrameCallback === "function") {
+        session.video.cancelVideoFrameCallback(session.videoFrame);
+      }
       session.stream.getTracks().forEach((track) => {
         track.onended = null;
         track.stop();
@@ -625,40 +627,32 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       video,
       context,
       frame: 0,
+      videoFrame: 0,
       lastSample: 0,
-      lastHardwareSend: 0,
-      lastSentSignature: "",
       colors: null,
       layout,
-      layoutSignature: stripLayoutSignature(layout),
-      sending: false
+      layoutSignature: stripLayoutSignature(layout)
     };
     screenSyncSession = session;
     screenSyncError = "";
+    const sendLatestFrame = window.ullScreenSync.createLatestFrameSender({
+      send: (colors) => window.ull.sendScreenSyncColors(colors),
+      isActive: () => screenSyncSession === session,
+      getColors: () => session.colors,
+      onError: (error) => stopScreenSync(`Screen sync stopped: ${error.message}`)
+    });
 
     stream.getVideoTracks()[0].onended = () => {
       if (screenSyncSession === session) stopScreenSync("Screen sharing ended.");
     };
 
-    const sendLatestFrame = async () => {
-      if (screenSyncSession !== session || session.sending || !session.colors) return;
-      session.sending = true;
-      const colors = session.colors;
-      const signature = colors.join("");
-      try {
-        if (signature === session.lastSentSignature) return;
-        await window.ull.sendScreenSyncColors(colors);
-        session.lastSentSignature = signature;
-      } catch (error) {
-        stopScreenSync(`Screen sync stopped: ${error.message}`);
-      } finally {
-        session.sending = false;
-      }
-    };
-
     const sampleFrame = (now) => {
       if (screenSyncSession !== session) return;
-      session.frame = requestAnimationFrame(sampleFrame);
+      if (typeof video.requestVideoFrameCallback === "function") {
+        session.videoFrame = video.requestVideoFrameCallback(sampleFrame);
+      } else {
+        session.frame = requestAnimationFrame(sampleFrame);
+      }
       const sampleInterval = 1000 / clamp(Number(state.settings.syncFps) || 30, 5, 60);
       if (now - session.lastSample < sampleInterval || video.readyState < 2) return;
       session.lastSample = now;
@@ -681,10 +675,7 @@ async function runScreenSyncStart({ automatic = false } = {}) {
           }
         });
 
-        if (!session.sending && now - session.lastHardwareSend >= sampleInterval) {
-          session.lastHardwareSend = now;
-          void sendLatestFrame();
-        }
+        void sendLatestFrame();
       } catch (error) {
         stopScreenSync(`Screen sync stopped: ${error.message}`);
       }

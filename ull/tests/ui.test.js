@@ -139,16 +139,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.39", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.40", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 39; version += 1) {
+  for (let version = 0; version <= 40; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.39<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.40<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -204,6 +204,9 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
   assert.match(html, /id="start-with-windows"/);
   assert.match(html, /id="resume-screen-sync"/);
   assert.match(app, /window\.ull\.screenSyncSource\(\)\.then/);
+  assert.match(app, /video\.requestVideoFrameCallback\(sampleFrame\)/);
+  assert.match(app, /session\.video\.cancelVideoFrameCallback\(session\.videoFrame\)/);
+  assert.match(app, /createLatestFrameSender\(\{/);
   assert.match(app, /audio: false/);
   assert.match(app, /stream\.getAudioTracks\(\)\.length/);
   assert.match(app, /audio input is not supported/);
@@ -255,6 +258,8 @@ test("Screen Sync FPS is persisted and controls capture, sampling, and HID caden
   assert.match(main, /Screen Sync FPS must be an integer from 5 to 60/);
   assert.match(app, /maxFrameRate: state\.settings\.syncFps/);
   assert.match(app, /1000 \/ clamp\(Number\(state\.settings\.syncFps\)/);
+  assert.match(app, /video\.requestVideoFrameCallback\(sampleFrame\)/);
+  assert.match(app, /createLatestFrameSender\(\{/);
   assert.match(app, /maxFrameRate: state\.settings\.syncFps/);
 });
 
@@ -399,7 +404,7 @@ test("screen sync uses an updated strip layout immediately after profile edits",
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
   assert.match(app, /function stripLayoutSignature\(layout\) \{\s+return JSON\.stringify\(\[layout\.ledCount, layout\.indices\]\);/);
-  assert.match(app, /screenSyncSession\.layoutSignature !== signature\) \{\s+screenSyncSession\.layout = layout;\s+screenSyncSession\.layoutSignature = signature;\s+screenSyncSession\.colors = null;\s+screenSyncSession\.lastSentSignature = "";/);
+  assert.match(app, /screenSyncSession\.layoutSignature !== signature\) \{\s+screenSyncSession\.layout = layout;\s+screenSyncSession\.layoutSignature = signature;\s+screenSyncSession\.colors = null;/);
   assert.match(app, /Bottom left → over top → bottom right/);
   assert.match(app, /Bottom right → over top → bottom left/);
 });
