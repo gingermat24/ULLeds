@@ -1,7 +1,7 @@
 {
   "name": "ulleds",
   "productName": "ULLeds",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "A desktop controller for USB monitor-backlight LED strips",
   "author": "gingermat",
   "license": "UNLICENSED",
@@ -11,7 +11,7 @@
     "start": "electron .",
     "dev": "npm start",
     "test": "node --test ull/tests/device-profile.test.js ull/tests/hid-output.test.js ull/tests/led-selection.test.js ull/tests/local-update-server.test.js ull/tests/protocol.test.js ull/tests/screen-sync.test.js ull/tests/strip-layout.test.js ull/tests/ui.test.js ull/tests/update-feed.test.js",
-    "dist:win": "electron-builder --win nsis && node scripts/write-update-manifest.js"
+    "dist:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-icon.ps1 && electron-builder --win nsis && node scripts/write-update-manifest.js"
   },
   "dependencies": {
     "electron-updater": "^6.8.11",

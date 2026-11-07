@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
-const { loadSavedProfiles, profileForDevice } = require("../device-profile");
+const { loadSavedProfiles, profileForDevice, resolveDeviceLedCount } = require("../device-profile");
 
 test("a connected controller reuses its saved name, LED count, RGB order, and monitor layout", async (t) => {
   const appData = await fs.mkdtemp(path.join(os.tmpdir(), "ulleds-profile-"));
@@ -64,4 +64,17 @@ test("multiple matching controllers do not inherit an unrelated saved strip layo
   }]);
   assert.equal(profile.ledCount, null);
   assert.equal(profile.matchedBy, "");
+});
+
+test("controller LED count wins, with a matching saved count as the timeout fallback", () => {
+  const savedProfile = { ledCount: 75 };
+  assert.deepEqual(resolveDeviceLedCount(76, savedProfile), {
+    ledCount: 76,
+    countSource: "controller"
+  });
+  assert.deepEqual(resolveDeviceLedCount(undefined, savedProfile), {
+    ledCount: 75,
+    countSource: "saved profile"
+  });
+  assert.equal(resolveDeviceLedCount(undefined, null), null);
 });

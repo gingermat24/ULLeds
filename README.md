@@ -21,13 +21,17 @@ npm start
 At startup, ULLeds scans for the supported USB controller and looks for a
 matching saved strip profile in the existing ULLeds and QuikLight settings.
 The controller reports its LED count directly; the count is read-only in the
-app. The wizard lets you adjust the saved physical layout and color order.
+app. If a matching saved profile exists and a startup count reply times out,
+ULLeds connects using that saved LED count and labels it as the saved setup.
+The wizard lets you adjust the saved physical layout and color order.
 ULLeds saves settings under `%APPDATA%\ULLeds`.
 In the Device settings, **Start ULLeds with Windows** restores the saved
 lighting after sign-in. **Resume Screen Sync at startup** captures the primary
 display automatically; it is enabled when you start Screen Sync and disabled
 when you stop it. The startup sync option uses the primary display, while a
 manual start can still choose a display.
+The **Screen Sync speed** control accepts 5–60 FPS and defaults to 30 FPS.
+It sets both the capture target and the sampling/HID update cadence.
 
 ## Build the installer
 
@@ -48,7 +52,7 @@ Updates are intentionally local until a ULLeds GitHub Releases feed exists:
 2. Share the generated installer, `latest.yml`, and `.blockmap` file together
    in an update folder. Keep the previous installer and its `.blockmap` there
    as well to allow differential downloads.
-3. In ULLeds, open **Settings → Updates → Choose folder**, then choose
+3. In ULLeds, open **Updates**, select **Local folder**, then choose
    that folder. Use **Check for updates** to download the update, then choose
    **Restart and update** when it is ready.
 
@@ -57,8 +61,8 @@ request only changed installer blocks. If a matching old blockmap is missing,
 the updater may need to download the full installer. NSIS updates preserve
 user settings stored in `%APPDATA%\ULLeds`. A first upgrade from the older
 manual-installer flow may require one full installer; later updates can be
-differential. When GitHub Releases are ready, the update feed can be hosted
-without changing the lighting controls.
+differential. GitHub Releases is shown as the default update source but remains marked
+Coming Soon until releases are published.
 
 ## LED control
 
@@ -80,7 +84,8 @@ updates the preview. It samples only those edge positions, not individual
 windows. Screen-sync smoothing favors responsiveness while averaging nearby
 pixels to reduce noise. Use **LED color tuning** if your strip's red, green, or
 blue output needs calibration; hardware LEDs may not match the monitor exactly.
-Sampling and HID writes run at up to 30 FPS. HID writes are
+Sampling and HID writes follow the selected 5–60 FPS target (30 FPS by default).
+HID writes are
 asynchronous and stale queued frames are replaced by the newest colors, so
 slow controller writes do not block the app or build a delayed frame backlog.
 Closing the window hides ULLeds in the system tray; capture and sync continue
@@ -90,6 +95,12 @@ Quitting ULLeds leaves the controller's last color output on; it no longer
 sends an all-black frame. Colors and settings are saved in the existing
 per-user settings file and restored on the next launch. Windows startup is
 enabled by default in installed builds; startup launches minimized to the tray.
+
+## App icon
+
+Replace `ull/assets/app.png` with your square PNG artwork. The Windows build
+script converts it to `ull/assets/app.ico` before packaging, and the same PNG
+is used in the app header. A transparent 1024×1024 PNG is recommended.
 
 ## Repository note
 

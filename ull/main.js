@@ -26,7 +26,7 @@ const {
   parseDeviceLedCount
 } = require("./protocol");
 const { createLocalUpdateServer } = require("./local-update-server");
-const { loadSavedProfiles, profileForDevice } = require("./device-profile");
+const { loadSavedProfiles, profileForDevice, resolveDeviceLedCount } = require("./device-profile");
 const { createHidOutputQueue } = require("./hid-output");
 
 const APP_ID = "com.gingermat.ulleds";
@@ -43,6 +43,8 @@ const DEFAULTS = Object.freeze({
   power: true,
   onboarded: false,
   updateFolder: "",
+  updateSource: "github",
+  syncFps: 30,
   startWithWindows: true,
   resumeScreenSync: false
 });
@@ -198,6 +200,13 @@ function validateSettings(input) {
     if (!Number.isFinite(value)) throw new TypeError("Effect speed must be a number.");
     next.speed = Math.round(Math.max(1, Math.min(100, value)));
   }
+  if ("syncFps" in input) {
+    const value = Number(input.syncFps);
+    if (!Number.isInteger(value) || value < 5 || value > 60) {
+      throw new RangeError("Screen Sync FPS must be an integer from 5 to 60.");
+    }
+    next.syncFps = value;
+  }
   if ("palette" in input) {
     if (!Array.isArray(input.palette) || input.palette.length < 2 || input.palette.length > 8 ||
         !input.palette.every(validColor)) {
@@ -278,6 +287,12 @@ function validateSettings(input) {
       throw new TypeError("Update folder path is invalid.");
     }
     next.updateFolder = input.updateFolder;
+  }
+  if ("updateSource" in input) {
+    if (!["github", "local"].includes(input.updateSource)) {
+      throw new TypeError("Choose a supported update source.");
+    }
+    next.updateSource = input.updateSource;
   }
   for (const key of ["startWithWindows", "resumeScreenSync"]) {
     if (key in input) {
@@ -503,7 +518,8 @@ async function connectDevice(targetPath) {
 }
 
 async function connectDeviceNow(targetPath) {
-  const selected = getDeviceList().find((device) => device.path === targetPath);
+  const devices = getDeviceList();
+  const selected = devices.find((device) => device.path === targetPath);
   if (!selected) throw new Error("That LED controller is no longer available. Scan again.");
   await disconnectDevice();
   try {
@@ -511,10 +527,27 @@ async function connectDeviceNow(targetPath) {
     hidDevice.on("error", (error) => disconnectDevice(error.message));
     const savedProfile = selected.profile?.ledCount
       ? selected.profile
-      : settings.deviceProfile?.ledCount
+      : devices.length === 1 && settings.deviceProfile?.ledCount
         ? settings.deviceProfile
         : null;
-    const ledCount = await readControllerLedCount(hidDevice);
+    let reportedLedCount;
+    let ledCountError;
+    try {
+      reportedLedCount = await readControllerLedCount(hidDevice);
+    } catch (error) {
+      ledCountError = error;
+    }
+    const ledCountResult = resolveDeviceLedCount(reportedLedCount, savedProfile);
+    if (!ledCountResult) {
+      throw ledCountError || new Error("The controller returned an invalid LED count.");
+    }
+    if (ledCountResult.countSource === "saved profile") {
+      console.warn(
+        `The controller did not report its LED count (${ledCountError?.message || "invalid response"}); ` +
+        `using the matching saved count of ${ledCountResult.ledCount}.`
+      );
+    }
+    const { ledCount, countSource } = ledCountResult;
     const profile = {
       name: savedProfile?.name || selected.name || "PC SYNC Backlight",
       ledCount,
@@ -524,7 +557,7 @@ async function connectDeviceNow(targetPath) {
       position: savedProfile?.position || "monitor-back",
       matchedBy: savedProfile?.matchedBy || "manual",
       color: savedProfile?.color || null,
-      countSource: "controller"
+      countSource
     };
     connectedInfo = { ...selected, profile };
     settings.ledCount = ledCount;
@@ -734,10 +767,13 @@ ipcMain.handle("updates:choose-folder", async () => {
     updateServer = null;
     updateServerFolder = "";
   }
-  setSettings({ updateFolder: result.filePaths[0] });
+  setSettings({ updateFolder: result.filePaths[0], updateSource: "local" });
   return { canceled: false, folder: settings.updateFolder };
 });
 ipcMain.handle("updates:check", async () => {
+  if (settings.updateSource !== "local") {
+    return { available: false, error: "GitHub Releases updates are coming soon. Select a local folder for now." };
+  }
   if (!app.isPackaged) {
     return { available: false, error: "Differential updates are available in the installed app." };
   }

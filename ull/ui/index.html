@@ -12,7 +12,7 @@
       <!-- Top bar -->
       <header class="topbar">
         <div class="brand">
-          <div class="logo"></div>
+          <img class="logo" src="../assets/app.png" alt="">
           <div>
             <div class="brand-name">ULLeds</div>
             <div class="brand-sub">by gingermat</div>
@@ -23,6 +23,7 @@
           <button class="tab active" data-view="light">Lighting</button>
           <button class="tab" data-view="scenes" data-feature="scenes">Scenes</button>
           <button class="tab" data-view="settings">Device</button>
+          <button class="tab" data-view="updates">Updates</button>
         </nav>
 
         <div class="device-status" id="device-status">
@@ -185,6 +186,22 @@
             </div>
           </div>
 
+          <div class="card sync-fps-card">
+            <div class="sync-fps-heading">
+              <div>
+                <h3>Screen Sync speed</h3>
+                <p>Choose how often ULLeds captures and updates your LEDs.</p>
+              </div>
+              <output id="sync-fps-value" for="sync-fps-range sync-fps-number">30 FPS</output>
+            </div>
+            <div class="fps-control-row">
+              <input id="sync-fps-range" type="range" min="5" max="60" step="1" value="30" aria-label="Screen Sync frames per second">
+              <label class="fps-number-label" for="sync-fps-number">FPS</label>
+              <input id="sync-fps-number" class="fps-number" type="number" min="5" max="60" step="1" value="30">
+            </div>
+            <small>Higher rates update more often and may use more CPU. Default: 30 FPS.</small>
+          </div>
+
           <div class="card startup-card">
             <label class="preference-row" for="start-with-windows">
               <span>
@@ -202,14 +219,45 @@
             </label>
           </div>
 
-          <div class="card update-card">
-            <div class="card-label">UPDATES</div>
-            <p>Choose the folder containing the update package. ULLeds only downloads changed parts.</p>
-            <div class="btn-row">
-              <button id="choose-update-folder" class="secondary-btn">Choose folder</button>
-              <button id="check-updates" class="primary-btn">Check for updates</button>
+        </section>
+
+        <!-- UPDATES VIEW -->
+        <section class="view hidden" id="view-updates">
+          <div class="section-header">
+            <div>
+              <div class="card-label">UPDATES</div>
+              <h2>Update ULLeds</h2>
             </div>
-            <p class="folder-path" id="update-folder-label">No folder selected</p>
+            <span class="version-label">Version <strong id="app-version">—</strong></span>
+          </div>
+
+          <div class="card update-card">
+            <h3>Update source</h3>
+            <p>GitHub Releases is the planned default. Until it is available, choose a local update folder.</p>
+            <div class="update-sources" role="radiogroup" aria-label="Update source">
+              <label class="update-source-option" for="update-source-github">
+                <input id="update-source-github" type="radio" name="update-source" value="github">
+                <span>
+                  <strong>GitHub Releases</strong>
+                  <small>Coming soon · selected by default</small>
+                </span>
+              </label>
+              <label class="update-source-option" for="update-source-local">
+                <input id="update-source-local" type="radio" name="update-source" value="local">
+                <span>
+                  <strong>Local folder</strong>
+                  <small>Use an update package from this PC</small>
+                </span>
+              </label>
+            </div>
+            <p id="github-update-note" class="source-note">GitHub updates are not active yet. No account or network source is contacted.</p>
+            <div id="local-update-controls" class="local-update-controls hidden">
+              <div class="btn-row">
+                <button id="choose-update-folder" class="secondary-btn">Choose folder</button>
+                <button id="check-updates" class="primary-btn" disabled>Check for updates</button>
+              </div>
+              <p class="folder-path" id="update-folder-label">No folder selected</p>
+            </div>
             <div class="update-message hidden" id="update-message" role="status" aria-live="polite">
               <div id="update-status-text"></div>
               <div
@@ -226,6 +274,41 @@
               <div id="update-actions"></div>
             </div>
           </div>
+
+          <section class="release-log" aria-labelledby="release-log-title">
+            <div class="section-header release-log-heading">
+              <div>
+                <div class="card-label">RELEASE NOTES</div>
+                <h2 id="release-log-title">What changed</h2>
+              </div>
+            </div>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.18</h3><span>Current</span></header>
+              <div class="release-category"><strong>New</strong><ul><li>Adjustable Screen Sync speed from 5 to 60 FPS, defaulting to 30.</li><li>A dedicated Updates page with local-folder updates and GitHub Releases marked Coming Soon.</li></ul></div>
+              <div class="release-category"><strong>Changed</strong><ul><li>Uses the matching saved LED count when the controller misses its count reply.</li><li>Screen capture and LED updates follow the selected FPS.</li></ul></div>
+              <div class="release-category"><strong>Removed</strong><ul><li>No features removed.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Device and update layouts adapt to narrower windows.</li><li>Your provided app icon can now be used in the window, tray, and installer.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Matching controllers can connect using their saved strip profile if the startup count handshake times out.</li><li>Reduced-motion preferences apply at every window size.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.17</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Screen Sync samples screen edges more responsively and calibrates RGB channels.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.16</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Restored Screen Sync state cleanly when reopening the app.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.15</h3></header>
+              <div class="release-category"><strong>New</strong><ul><li>Windows sign-in startup and optional automatic Screen Sync resume.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Restores saved lighting and shortens the update restart flow.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.12–1.0.14</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Added update progress feedback and made the installer restart flow faster.</li></ul></div>
+              <div class="release-category"><strong>Removed</strong><ul><li>Archived Scenes from the active interface.</li></ul></div>
+            </article>
+          </section>
         </section>
       </main>
     </div>

@@ -113,3 +113,48 @@ test("LED channel calibration is exposed, saved, and applied to the preview", ()
   assert.match(main, /channelGains: \[100, 100, 100\]/);
   assert.match(main, /settings\.channelGains/);
 });
+
+test("Screen Sync FPS is persisted and controls capture, sampling, and HID cadence", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(html, /id="sync-fps-range"[^>]*min="5" max="60"[^>]*value="30"/);
+  assert.match(html, /id="sync-fps-number"[^>]*min="5" max="60"[^>]*value="30"/);
+  assert.match(main, /syncFps: 30/);
+  assert.match(main, /Screen Sync FPS must be an integer from 5 to 60/);
+  assert.match(app, /maxFrameRate: state\.settings\.syncFps/);
+  assert.match(app, /frameRate: state\.settings\.syncFps/);
+  assert.match(app, /1000 \/ clamp\(Number\(state\.settings\.syncFps\)/);
+});
+
+test("Updates has GitHub Releases selected by default and guarded local updates", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(html, /data-view="updates"/);
+  assert.match(html, /id="update-source-github"[^>]*value="github"/);
+  assert.match(html, /id="update-source-local"[^>]*value="local"/);
+  assert.match(html, /GitHub Releases is the planned default/);
+  assert.match(html, /What changed/);
+  assert.match(app, /updateSource: "github"/);
+  assert.match(app, /GitHub Releases updates are coming soon/);
+  assert.match(main, /updateSource: "github"/);
+  assert.match(main, /settings\.updateSource !== "local"/);
+});
+
+test("the icon build consumes the user PNG and responsive motion preferences are global", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const iconScript = fs.readFileSync(path.join(__dirname, "..", "..", "scripts", "create-icon.ps1"), "utf8");
+  const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "package.json"), "utf8"));
+
+  assert.match(html, /src="\.\.\/assets\/app\.png"/);
+  assert.match(iconScript, /app\.png/);
+  assert.doesNotMatch(iconScript, /bitmap\.Save\(\$pngPath/);
+  assert.match(packageJson.scripts["dist:win"], /create-icon\.ps1/);
+  assert.match(css, /@media \(max-width: 980px\)/);
+  assert.match(css, /@media \(max-width: 640px\)/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+});

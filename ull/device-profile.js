@@ -102,4 +102,14 @@ function profileForDevice(device, devices, profiles) {
   };
 }
 
-module.exports = { loadSavedProfiles, normalizeProfile, profileForDevice };
+function resolveDeviceLedCount(reportedCount, savedProfile) {
+  if (Number.isInteger(reportedCount) && reportedCount >= 1 && reportedCount <= 253) {
+    return { ledCount: reportedCount, countSource: "controller" };
+  }
+  if (Number.isInteger(savedProfile?.ledCount) && savedProfile.ledCount >= 1 && savedProfile.ledCount <= 253) {
+    return { ledCount: savedProfile.ledCount, countSource: "saved profile" };
+  }
+  return null;
+}
+
+module.exports = { loadSavedProfiles, normalizeProfile, profileForDevice, resolveDeviceLedCount };

@@ -12,6 +12,7 @@ let state = {
   settings: {
     color: "#e879a8",
     brightness: 72,
+    channelGains: [100, 100, 100],
     ledCount: null,
     effect: "steady",
     speed: 48,
@@ -21,7 +22,11 @@ let state = {
     deviceProfile: null,
     power: true,
     onboarded: false,
-    updateFolder: ""
+    updateFolder: "",
+    updateSource: "github",
+    syncFps: 30,
+    startWithWindows: true,
+    resumeScreenSync: false
   },
   device: { connected: false, name: "", serialNumber: "" }
 };
@@ -104,8 +109,13 @@ function renderConnection() {
 
 function renderProfile(profile) {
   const position = profile?.position || "monitor-back";
+  const countSource = profile?.countSource === "saved profile"
+    ? "saved setup"
+    : state.device.connected
+      ? "detected"
+      : "last saved";
   $("#settings-count").textContent = profile?.ledCount
-    ? `${profile.ledCount} LEDs · ${state.device.connected ? "detected" : "last saved"}`
+    ? `${profile.ledCount} LEDs · ${countSource}`
     : "Not detected";
   $("#settings-order").textContent = profile?.colorOrder || "Not configured";
   $("#settings-layout").textContent = profile?.edgeCount
@@ -215,7 +225,9 @@ function updatePreview() {
   document.documentElement.style.setProperty("--led-color", settings.color);
   document.documentElement.style.setProperty("--led-opacity", settings.power ? String(settings.brightness / 100) : "0.12");
   $("#preview-led-count").textContent = count
-    ? `${count} LEDs ${state.device.connected ? "detected" : "saved"}`
+    ? `${count} LEDs ${profile?.countSource === "saved profile"
+      ? "from saved setup"
+      : state.device.connected ? "detected" : "saved"}`
     : "Waiting for controller";
 
   if (selectedLedIndices === null) {
@@ -238,6 +250,10 @@ function updatePreview() {
   $("#speed").value = settings.speed;
   $("#speed-value").textContent = `${settings.speed}%`;
   $("#effect").value = settings.effect;
+  const syncFps = clamp(Number(settings.syncFps) || 30, 5, 60);
+  $("#sync-fps-range").value = syncFps;
+  $("#sync-fps-number").value = syncFps;
+  $("#sync-fps-value").textContent = `${syncFps} FPS`;
   $("#speed-control").classList.toggle("hidden", settings.effect === "steady");
   $("#power-toggle").setAttribute("aria-pressed", String(settings.power));
   $("#power-label").textContent = settings.power ? "On" : "Off";
@@ -332,7 +348,8 @@ function renderPalette() {
 }
 
 function render() {
-  $("#update-folder-label").textContent = state.settings.updateFolder || "No folder selected";
+  $("#app-version").textContent = state.version || "—";
+  renderUpdates();
   $("#start-with-windows").checked = state.settings.startWithWindows;
   $("#resume-screen-sync").checked = state.settings.resumeScreenSync;
   renderConnection();
@@ -421,11 +438,11 @@ async function startScreenSync({ automatic = false } = {}) {
           mandatory: {
             chromeMediaSource: "desktop",
             chromeMediaSourceId: id,
-            maxFrameRate: 30
+            maxFrameRate: state.settings.syncFps
           }
         }
       }))
-      : navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+      : navigator.mediaDevices.getDisplayMedia({ video: { frameRate: state.settings.syncFps }, audio: false });
     if (!state.settings.power) {
       const result = await window.ull.updateSettings({ power: true });
       state.settings = result.settings;
@@ -496,7 +513,8 @@ async function startScreenSync({ automatic = false } = {}) {
     const sampleFrame = (now) => {
       if (screenSyncSession !== session) return;
       session.frame = requestAnimationFrame(sampleFrame);
-      if (now - session.lastSample < 33 || video.readyState < 2) return;
+      const sampleInterval = 1000 / clamp(Number(state.settings.syncFps) || 30, 5, 60);
+      if (now - session.lastSample < sampleInterval || video.readyState < 2) return;
       session.lastSample = now;
       try {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
@@ -519,7 +537,7 @@ async function startScreenSync({ automatic = false } = {}) {
           }
         });
 
-        if (!session.sending && now - session.lastHardwareSend >= 33) {
+        if (!session.sending && now - session.lastHardwareSend >= sampleInterval) {
           session.lastHardwareSend = now;
           void sendLatestFrame();
         }
@@ -592,6 +610,31 @@ function switchView(name) {
   });
 }
 
+function renderUpdates() {
+  const source = state.settings.updateSource === "local" ? "local" : "github";
+  const localSelected = source === "local";
+  document.querySelectorAll('input[name="update-source"]').forEach((input) => {
+    input.checked = input.value === source;
+  });
+  $("#update-folder-label").textContent = state.settings.updateFolder || "No folder selected";
+  $("#local-update-controls").classList.toggle("hidden", !localSelected);
+  $("#github-update-note").classList.toggle("hidden", localSelected);
+  $("#check-updates").disabled = !localSelected || !state.settings.updateFolder || updateCheckInProgress;
+}
+
+function selectUpdateSource(source) {
+  if (!["github", "local"].includes(source)) throw new TypeError("Unsupported update source.");
+  queueSettings({ updateSource: source }, true);
+  renderUpdates();
+  if (source === "github") {
+    showUpdateMessage("GitHub Releases updates are coming soon. Choose a local folder to update now.");
+  } else if (state.settings.updateFolder) {
+    showUpdateMessage(`Local update folder: ${state.settings.updateFolder}`);
+  } else {
+    showUpdateMessage("Choose the folder containing the ULLeds update package.");
+  }
+}
+
 function showUpdateMessage(message, error = false, readyToInstall = false) {
   const root = $("#update-message");
   root.classList.remove("hidden", "error");
@@ -654,6 +697,7 @@ async function chooseUpdateFolder() {
     const result = await window.ull.chooseUpdateFolder();
     if (result.canceled) return;
     state.settings.updateFolder = result.folder;
+    state.settings.updateSource = "local";
     render();
     showUpdateMessage(`Update source set to ${result.folder}`);
   } catch (error) {
@@ -662,13 +706,21 @@ async function chooseUpdateFolder() {
 }
 
 async function checkUpdates() {
+  if (state.settings.updateSource !== "local") {
+    showUpdateMessage("GitHub Releases updates are coming soon. Choose a local folder to update now.");
+    return;
+  }
+  if (!state.settings.updateFolder) {
+    showUpdateMessage("Choose the folder containing the ULLeds update package.");
+    return;
+  }
   if (updateCheckInProgress) return;
   updateCheckInProgress = true;
   const checkButton = $("#check-updates");
   checkButton.disabled = true;
   checkButton.textContent = "Checking…";
   updateState = { phase: "checking", percent: null, transferred: 0, total: 0 };
-  showUpdateMessage("Checking the selected update folder…");
+  showUpdateMessage("Checking the local update folder…");
   try {
     const result = await window.ull.checkUpdates();
     if (result.available) {
@@ -695,6 +747,7 @@ async function checkUpdates() {
     updateCheckInProgress = false;
     checkButton.disabled = false;
     checkButton.textContent = "Check for updates";
+    renderUpdates();
   }
 }
 
@@ -925,6 +978,23 @@ function bindEvents() {
     queueSettings({ speed: Number(event.target.value) });
   });
 
+  $("#sync-fps-range").addEventListener("input", (event) => {
+    queueSettings({ syncFps: Number(event.target.value) });
+  });
+  $("#sync-fps-number").addEventListener("input", (event) => {
+    const value = Number(event.target.value);
+    if (Number.isInteger(value) && value >= 5 && value <= 60) {
+      queueSettings({ syncFps: value });
+    }
+  });
+  $("#sync-fps-number").addEventListener("change", (event) => {
+    const value = Number(event.target.value);
+    if (!Number.isInteger(value) || value < 5 || value > 60) {
+      event.target.value = state.settings.syncFps;
+      toast("Screen Sync FPS must be from 5 to 60.");
+    }
+  });
+
   $("#screen-sync-toggle").addEventListener("click", () => {
     if (screenSyncSession) stopScreenSync("", true);
     else startScreenSync();
@@ -954,6 +1024,9 @@ function bindEvents() {
     });
   }
 
+  document.querySelectorAll('input[name="update-source"]').forEach((input) => {
+    input.addEventListener("change", () => selectUpdateSource(input.value));
+  });
   $("#choose-update-folder").addEventListener("click", chooseUpdateFolder);
   $("#check-updates").addEventListener("click", checkUpdates);
 
@@ -1024,11 +1097,12 @@ function bindEvents() {
   window.ull.onDeviceScanRequest(scanDevices);
   window.ull.onSetupRequest(openSetup);
   window.ull.onUpdateFolderRequest(() => {
-    switchView("settings");
+    switchView("updates");
+    selectUpdateSource("local");
     chooseUpdateFolder();
   });
   window.ull.onUpdateCheckRequest(() => {
-    switchView("settings");
+    switchView("updates");
     checkUpdates();
   });
 
