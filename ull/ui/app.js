@@ -34,6 +34,7 @@ let wizardStep = 0;
 let detectedDevices = [];
 let selectedLedIndices = null;
 let screenSyncSession = null;
+let screenSyncStarting = false;
 let autoSyncAttempted = false;
 let screenSyncError = "";
 let updateCheckInProgress = false;
@@ -224,10 +225,16 @@ function updatePreview() {
   $("#speed-control").classList.toggle("hidden", settings.effect === "steady");
   $("#power-toggle").setAttribute("aria-pressed", String(settings.power));
   $("#power-label").textContent = settings.power ? "On" : "Off";
-  $("#screen-sync-toggle").textContent = screenSyncSession ? "Stop" : "Start";
-  $("#screen-sync-toggle").classList.toggle("syncing", Boolean(screenSyncSession));
+  const syncPending = screenSyncStarting || (
+    settings.resumeScreenSync && autoSyncAttempted && !screenSyncSession && !screenSyncError
+  );
+  $("#screen-sync-toggle").textContent = screenSyncSession ? "Stop" : syncPending ? "Starting…" : "Start";
+  $("#screen-sync-toggle").disabled = screenSyncStarting;
+  $("#screen-sync-toggle").classList.toggle("syncing", Boolean(screenSyncSession || syncPending));
   $("#screen-sync-description").textContent = screenSyncSession
     ? "Matching the primary display"
+    : syncPending
+      ? "Resuming display capture…"
     : screenSyncError || (settings.resumeScreenSync
       ? "Will resume automatically when ULLeds starts"
       : "Match LEDs to your display");
@@ -349,6 +356,7 @@ function selectPreviewPosition(event) {
 function stopScreenSync(message = "", clearResumePreference = false) {
   const session = screenSyncSession;
   screenSyncSession = null;
+  screenSyncStarting = false;
   screenSyncError = "";
   if (session) {
     cancelAnimationFrame(session.frame);
@@ -385,7 +393,9 @@ async function startScreenSync({ automatic = false } = {}) {
   const button = $("#screen-sync-toggle");
   let stream;
   let hardwareSyncStarted = false;
+  screenSyncStarting = true;
   button.disabled = true;
+  updatePreview();
 
   try {
     const capture = automatic
@@ -444,6 +454,7 @@ async function startScreenSync({ automatic = false } = {}) {
       sending: false
     };
     screenSyncSession = session;
+    screenSyncStarting = false;
     screenSyncError = "";
 
     stream.getVideoTracks()[0].onended = () => {
@@ -522,7 +533,8 @@ async function startScreenSync({ automatic = false } = {}) {
     updatePreview();
     toast(message);
   } finally {
-    button.disabled = false;
+    screenSyncStarting = false;
+    updatePreview();
   }
 }
 
@@ -1025,6 +1037,7 @@ async function start() {
 function maybeResumeScreenSync() {
   if (autoSyncAttempted || !state.settings.resumeScreenSync || !state.device.connected) return;
   autoSyncAttempted = true;
+  updatePreview();
   void startScreenSync({ automatic: true });
 }
 

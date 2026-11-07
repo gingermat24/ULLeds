@@ -88,3 +88,14 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
   assert.match(app, /maybeResumeScreenSync\(\)/);
   assert.match(app, /Will resume automatically when ULLeds starts/);
 });
+
+test("reopening during saved screen sync keeps hardware output and shows a starting state", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+
+  assert.match(main, /if \(screenSyncActive \|\| settings\.resumeScreenSync\) return/);
+  assert.match(app, /screenSyncStarting \|\| \(/);
+  assert.match(app, /syncPending \? "Starting…"/);
+  assert.match(app, /syncPending\s*\?\s*"Resuming display capture…"/);
+  assert.match(app, /autoSyncAttempted = true;\s*updatePreview\(\);\s*void startScreenSync\(\{ automatic: true \}\)/);
+});

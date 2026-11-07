@@ -393,7 +393,7 @@ function updateAnimation() {
     clearInterval(animationTimer);
     animationTimer = null;
   }
-  if (screenSyncActive) return;
+  if (screenSyncActive || settings.resumeScreenSync) return;
   if (!hidDevice || !settings.power || settings.effect === "steady") {
     if (hidDevice) {
       const device = hidDevice;
