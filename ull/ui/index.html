@@ -287,7 +287,12 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.34</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.35</h3><span>Current</span></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Screen Sync uses representative sampled pixels directly, avoiding invented colors from patch averages and transition blending.</li><li>Repeated Stop clicks now share one stop request, and Stop remains available while Screen Sync is starting.</li></ul></div>
+              <div class="release-category"><strong>Changed</strong><ul><li>Screen Sync explicitly rejects audio tracks; it only samples display video.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.34</h3></header>
               <div class="release-category"><strong>Fixed</strong><ul><li>Screen Sync keeps using the selected strip direction when you edit a profile while sync is running.</li><li>Screen-facing left and right colors are explicitly mapped to their matching LED sides in either strip direction.</li></ul></div>
               <div class="release-category"><strong>Changed</strong><ul><li>Rebuilt the Windows, tray, and taskbar icons from the new 1024 × 1024 app artwork.</li><li>Power and preference switches now share the same track and thumb proportions.</li><li>Strip direction choices spell out the full route from the monitor's front view.</li></ul></div>
             </article>
@@ -485,6 +490,7 @@
     <script src="../strip-layout.js"></script>
     <script src="../led-selection.js"></script>
     <script src="../screen-sync.js"></script>
+    <script src="../screen-sync-lifecycle.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

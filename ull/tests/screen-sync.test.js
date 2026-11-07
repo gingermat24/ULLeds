@@ -2,20 +2,23 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { averageColor, blendColorArrays, blendColors, sampleStripColors } = require("../screen-sync");
+const { sampleStripColors } = require("../screen-sync");
 const { allocateEdgeIndices } = require("../strip-layout");
 
-test("screen sync averages visible RGB channels and ignores transparent pixels", () => {
-  assert.equal(averageColor(new Uint8ClampedArray([
-    255, 0, 0, 255,
-    0, 0, 255, 255,
-    0, 255, 0, 0
-  ])), "#800080");
-});
+test("screen sync does not invent a color from a one-pixel highlight", () => {
+  const width = 5;
+  const height = 5;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    pixels.set([0, 0, 0, 255], offset);
+  }
+  pixels.set([255, 0, 0, 255], (1 * width + 1) * 4);
+  const colors = sampleStripColors(pixels, width, height, {
+    ledCount: 1,
+    indices: { top: [0] }
+  });
 
-test("screen sync eases color changes instead of jumping between frames", () => {
-  assert.equal(blendColors("#000000", "#ffffff", 0.5), "#808080");
-  assert.throws(() => blendColors("black", "#ffffff", 0.5), /Colors/);
+  assert.equal(["#000000", "#ff0000"].includes(colors[0]), true);
 });
 
 test("screen sync samples one color for each physical LED position", () => {
@@ -73,12 +76,4 @@ test("screen sync maps front-view left and right screen colors to matching strip
     assert.equal(colors[layout.indices.top[0]], "#ff0000");
     assert.equal(colors[layout.indices.top.at(-1)], "#0000ff");
   }
-});
-
-test("screen sync blends each LED independently", () => {
-  assert.deepEqual(
-    blendColorArrays(["#000000", "#ff0000"], ["#ffffff", "#0000ff"], 0.5),
-    ["#808080", "#800080"]
-  );
-  assert.throws(() => blendColorArrays(["#000000"], [], 0.5), /matching lengths/);
 });

@@ -42,7 +42,7 @@ let deviceConnecting = false;
 let connectingDevicePath = "";
 let selectedLedIndices = null;
 let screenSyncSession = null;
-let screenSyncStarting = false;
+const screenSyncLifecycle = window.ullScreenSyncLifecycle.createScreenSyncLifecycle();
 let screenSyncGeneration = 0;
 let autoSyncAttempted = false;
 let screenSyncError = "";
@@ -354,11 +354,15 @@ function updatePreview() {
   $("#power-toggle").setAttribute("aria-checked", String(settings.power));
   $("#power-toggle").setAttribute("aria-label", `LED power: ${settings.power ? "on" : "off"}`);
   $("#power-state").textContent = settings.power ? "On" : "Off";
-  const syncPending = screenSyncStarting || (
+  const syncPending = screenSyncLifecycle.isStarting || (
     settings.resumeScreenSync && autoSyncAttempted && !screenSyncSession && !screenSyncError
   );
-  $("#screen-sync-toggle").textContent = screenSyncSession ? "Stop" : syncPending ? "Starting…" : "Start";
-  $("#screen-sync-toggle").disabled = screenSyncStarting;
+  $("#screen-sync-toggle").textContent = screenSyncLifecycle.isStopping
+    ? "Stopping…"
+    : screenSyncSession || screenSyncLifecycle.isStarting
+      ? "Stop"
+      : syncPending ? "Starting…" : "Start";
+  $("#screen-sync-toggle").disabled = screenSyncLifecycle.isStopping;
   $("#screen-sync-toggle").classList.toggle("syncing", Boolean(screenSyncSession || syncPending));
   $("#screen-sync-description").textContent = screenSyncSession
     ? "Matching the primary display"
@@ -493,27 +497,47 @@ function selectPreviewPosition(event) {
 }
 
 function stopScreenSync(message = "", clearResumePreference = false) {
-  screenSyncGeneration += 1;
-  const session = screenSyncSession;
-  screenSyncSession = null;
-  screenSyncStarting = false;
-  screenSyncError = "";
-  if (session) {
-    cancelAnimationFrame(session.frame);
-    session.stream.getTracks().forEach((track) => {
-      track.onended = null;
-      track.stop();
-    });
-  }
-  window.ull.stopScreenSync().catch((error) => toast(`Could not stop screen sync: ${error.message}`));
-  if (clearResumePreference && state.settings.resumeScreenSync) {
-    queueSettings({ resumeScreenSync: false }, true);
-  }
+  const pending = screenSyncLifecycle.stop(() => {
+    screenSyncGeneration += 1;
+    const session = screenSyncSession;
+    screenSyncSession = null;
+    screenSyncError = "";
+    if (session) {
+      cancelAnimationFrame(session.frame);
+      session.stream.getTracks().forEach((track) => {
+        track.onended = null;
+        track.stop();
+      });
+    }
+  }, async () => {
+    try {
+      await window.ull.stopScreenSync();
+    } catch (error) {
+      toast(`Could not stop screen sync: ${error.message}`);
+    }
+  });
   updatePreview();
   if (message) toast(message);
+  return pending.then(() => {
+    if (clearResumePreference && state.settings.resumeScreenSync) {
+      queueSettings({ resumeScreenSync: false }, true);
+    }
+    updatePreview();
+  }, (error) => {
+    updatePreview();
+    toast(`Could not stop screen sync cleanly: ${error.message}`);
+  });
 }
 
-async function startScreenSync({ automatic = false } = {}) {
+function startScreenSync(options = {}) {
+  const pending = screenSyncLifecycle.start(() => runScreenSyncStart(options));
+  updatePreview();
+  return pending.catch((error) => {
+    toast(`Could not start screen sync: ${error.message}`);
+  }).finally(updatePreview);
+}
+
+async function runScreenSyncStart({ automatic = false } = {}) {
   const generation = ++screenSyncGeneration;
   if (!state.device.connected) return toast("Connect the LED controller before starting screen sync.");
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -531,11 +555,8 @@ async function startScreenSync({ automatic = false } = {}) {
     profile?.installationMethod ?? 0
   );
 
-  const button = $("#screen-sync-toggle");
   let stream;
   let hardwareSyncStarted = false;
-  screenSyncStarting = true;
-  button.disabled = true;
   updatePreview();
 
   try {
@@ -571,6 +592,9 @@ async function startScreenSync({ automatic = false } = {}) {
     }
 
     if (!stream.getVideoTracks().length) throw new Error("The display capture did not provide a video track.");
+    if (stream.getAudioTracks().length) {
+      throw new Error("Screen Sync received an audio track; audio input is not supported.");
+    }
     if (!video.videoWidth || !video.videoHeight) {
       throw new Error("The shared display has no available video dimensions.");
     }
@@ -585,14 +609,11 @@ async function startScreenSync({ automatic = false } = {}) {
     await window.ull.startScreenSync();
     hardwareSyncStarted = true;
     if (generation !== screenSyncGeneration) {
-      await window.ull.stopScreenSync();
-      hardwareSyncStarted = false;
       stream.getTracks().forEach((track) => track.stop());
       return;
     }
     const savedSettings = await window.ull.updateSettings({ resumeScreenSync: true });
     if (generation !== screenSyncGeneration) {
-      await window.ull.stopScreenSync();
       stream.getTracks().forEach((track) => track.stop());
       return;
     }
@@ -613,7 +634,6 @@ async function startScreenSync({ automatic = false } = {}) {
       sending: false
     };
     screenSyncSession = session;
-    screenSyncStarting = false;
     screenSyncError = "";
 
     stream.getVideoTracks()[0].onended = () => {
@@ -651,9 +671,7 @@ async function startScreenSync({ automatic = false } = {}) {
           canvas.height,
           session.layout
         );
-        session.colors = session.colors
-          ? window.ullScreenSync.blendColorArrays(session.colors, sampledColors, 0.9)
-          : sampledColors;
+        session.colors = sampledColors;
 
         session.pixelElements.forEach((pixel) => {
           const color = session.colors[Number(pixel.dataset.ledIndex)];
@@ -679,7 +697,7 @@ async function startScreenSync({ automatic = false } = {}) {
     if (!sessionOwnsStream) {
       stream?.getTracks().forEach((track) => track.stop());
     }
-    if (!sessionOwnsStream && (hardwareSyncStarted || automatic)) {
+    if (!sessionOwnsStream && (hardwareSyncStarted || automatic) && !screenSyncLifecycle.isStopping) {
       try {
         await window.ull.stopScreenSync();
       } catch (stopError) {
@@ -696,7 +714,6 @@ async function startScreenSync({ automatic = false } = {}) {
     updatePreview();
     toast(message);
   } finally {
-    screenSyncStarting = false;
     updatePreview();
   }
 }
@@ -1175,7 +1192,7 @@ function bindEvents() {
   $("#confirm-reset").addEventListener("click", resetAllData);
 
   $("#power-toggle").addEventListener("click", () => {
-    if (screenSyncSession || screenSyncStarting) stopScreenSync("", true);
+    if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
     queueSettings({ power: !state.settings.power }, true);
   });
 
@@ -1230,7 +1247,7 @@ function bindEvents() {
   });
 
   $("#screen-sync-toggle").addEventListener("click", () => {
-    if (screenSyncSession) stopScreenSync("", true);
+    if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
     else startScreenSync();
   });
 

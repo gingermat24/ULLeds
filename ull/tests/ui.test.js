@@ -70,7 +70,7 @@ test("power off always reaches the controller and the switch reports the live st
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
   assert.match(html, /id="power-toggle" class="power-switch" type="button" role="switch" aria-checked="true"/);
-  assert.match(app, /if \(screenSyncSession \|\| screenSyncStarting\) stopScreenSync\("", true\);\s+queueSettings\(\{ power: !state\.settings\.power \}, true\);/);
+  assert.match(app, /if \(screenSyncSession \|\| screenSyncLifecycle\.isStarting\) stopScreenSync\("", true\);\s+queueSettings\(\{ power: !state\.settings\.power \}, true\);/);
   assert.match(app, /\$\("#power-toggle"\)\.setAttribute\("aria-checked", String\(settings\.power\)\)/);
   assert.match(app, /\$\("#power-state"\)\.textContent = settings\.power \? "On" : "Off"/);
   assert.match(app, /style\.setProperty\("--led-opacity", settings\.power \? String\(settings\.brightness \/ 100\) : "0"\)/);
@@ -113,16 +113,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.34", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.35", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 34; version += 1) {
+  for (let version = 0; version <= 35; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.34<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.35<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -168,6 +168,9 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
   assert.match(html, /id="start-with-windows"/);
   assert.match(html, /id="resume-screen-sync"/);
   assert.match(app, /window\.ull\.screenSyncSource\(\)\.then/);
+  assert.match(app, /audio: false/);
+  assert.match(app, /stream\.getAudioTracks\(\)\.length/);
+  assert.match(app, /audio input is not supported/);
   assert.match(app, /chromeMediaSourceId: id/);
   assert.match(app, /const capture = window\.ull\.screenSyncSource\(\)\.then\(\(\{ id \}\) => navigator\.mediaDevices\.getUserMedia/);
   assert.doesNotMatch(app, /getDisplayMedia/);
@@ -184,10 +187,10 @@ test("saved Screen Sync preserves output only during reconnect and falls back wh
   assert.match(main, /updateAnimation\(\{ preserveOutput: settings\.resumeScreenSync \}\)/);
   assert.match(main, /parseDeviceLedCount\(response, messageId\)/);
   assert.match(main, /response\[offset \+ 3\] !== messageId \|\| response\[offset \+ 4\] !== 130/);
-  assert.match(app, /screenSyncStarting \|\| \(/);
+  assert.match(app, /screenSyncLifecycle\.isStarting \|\| \(/);
   assert.match(app, /syncPending \? "Starting…"/);
   assert.match(app, /syncPending\s*\?\s*"Resuming display capture…"/);
-  assert.match(app, /!sessionOwnsStream && \(hardwareSyncStarted \|\| automatic\)/);
+  assert.match(app, /!sessionOwnsStream && \(hardwareSyncStarted \|\| automatic\) && !screenSyncLifecycle\.isStopping/);
   assert.match(app, /autoSyncAttempted = true;\s*updatePreview\(\);\s*void startScreenSync\(\{ automatic: true \}\)/);
 });
 
@@ -363,4 +366,22 @@ test("screen sync uses an updated strip layout immediately after profile edits",
   assert.match(app, /screenSyncSession\.layoutSignature !== signature\) \{\s+screenSyncSession\.layout = layout;\s+screenSyncSession\.layoutSignature = signature;\s+screenSyncSession\.colors = null;\s+screenSyncSession\.lastSentSignature = "";/);
   assert.match(app, /Bottom left → over top → bottom right/);
   assert.match(app, /Bottom right → over top → bottom left/);
+});
+
+test("Screen Sync serializes its stop operation and permits canceling startup", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+
+  assert.match(html, /<script src="\.\.\/screen-sync-lifecycle\.js"><\/script>/);
+  assert.match(app, /screenSyncLifecycle\.start\(\(\) => runScreenSyncStart\(options\)\)/);
+  assert.match(app, /screenSyncLifecycle\.stop\(\(\) => \{/);
+  assert.match(app, /screenSyncLifecycle\.isStopping\s*\?\s*"Stopping…"/);
+  assert.match(app, /screenSyncSession \|\| screenSyncLifecycle\.isStarting\) stopScreenSync/);
+});
+
+test("Screen Sync sends sampled screen colors without synthetic transition blending", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+
+  assert.match(app, /session\.colors = sampledColors;/);
+  assert.doesNotMatch(app, /session\.colors = session\.colors\s*\?\s*window\.ullScreenSync\.blendColorArrays/);
 });

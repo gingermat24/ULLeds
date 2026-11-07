@@ -1,40 +1,5 @@
 "use strict";
 
-function averageColor(pixels) {
-  if (!pixels || !Number.isInteger(pixels.length) || pixels.length < 4 || pixels.length % 4 !== 0) {
-    throw new TypeError("Screen pixels must be RGBA data.");
-  }
-  let red = 0;
-  let green = 0;
-  let blue = 0;
-  let weight = 0;
-  for (let index = 0; index < pixels.length; index += 4) {
-    const alpha = pixels[index + 3] / 255;
-    red += pixels[index] * alpha;
-    green += pixels[index + 1] * alpha;
-    blue += pixels[index + 2] * alpha;
-    weight += alpha;
-  }
-  if (weight === 0) return "#000000";
-  return `#${[red, green, blue]
-    .map((channel) => Math.round(channel / weight).toString(16).padStart(2, "0"))
-    .join("")}`;
-}
-
-function blendColors(from, to, amount) {
-  if (!/^#[\da-f]{6}$/i.test(from) || !/^#[\da-f]{6}$/i.test(to) ||
-      !Number.isFinite(amount) || amount < 0 || amount > 1) {
-    throw new TypeError("Colors must be six-digit hex values and blend amount must be from 0 to 1.");
-  }
-  const left = from.slice(1).match(/../g);
-  const right = to.slice(1).match(/../g);
-  return `#${left.map((channel, index) => {
-    const value = Number.parseInt(channel, 16);
-    const target = Number.parseInt(right[index], 16);
-    return Math.round(value + (target - value) * amount).toString(16).padStart(2, "0");
-  }).join("")}`;
-}
-
 function sampleStripColors(pixels, width, height, layout) {
   if (!pixels || !Number.isInteger(width) || width < 1 ||
       !Number.isInteger(height) || height < 1 ||
@@ -50,40 +15,50 @@ function sampleStripColors(pixels, width, height, layout) {
     if (edge === "left") return [Math.min(width - 1, Math.max(0, Math.round(width * 0.06))), along];
     return [Math.min(width - 1, Math.max(0, Math.round(width * 0.94))), along];
   };
+  const sampleColor = (centerX, centerY) => {
+    const samples = [];
+    for (let y = Math.max(0, centerY - 1); y <= Math.min(height - 1, centerY + 1); y += 1) {
+      for (let x = Math.max(0, centerX - 1); x <= Math.min(width - 1, centerX + 1); x += 1) {
+        const offset = (y * width + x) * 4;
+        if (pixels[offset + 3] === 0) continue;
+        samples.push({
+          red: pixels[offset],
+          green: pixels[offset + 1],
+          blue: pixels[offset + 2],
+          distance: (x - centerX) ** 2 + (y - centerY) ** 2
+        });
+      }
+    }
+    if (!samples.length) return "#000000";
+
+    const representative = samples.reduce((best, candidate) => {
+      const cost = samples.reduce((sum, sample) =>
+        sum +
+          (candidate.red - sample.red) ** 2 +
+          (candidate.green - sample.green) ** 2 +
+          (candidate.blue - sample.blue) ** 2, 0);
+      const bestCost = samples.reduce((sum, sample) =>
+        sum +
+          (best.red - sample.red) ** 2 +
+          (best.green - sample.green) ** 2 +
+          (best.blue - sample.blue) ** 2, 0);
+      return cost < bestCost || (cost === bestCost && candidate.distance < best.distance)
+        ? candidate
+        : best;
+    });
+    return `#${[representative.red, representative.green, representative.blue]
+      .map((channel) => channel.toString(16).padStart(2, "0"))
+      .join("")}`;
+  };
   for (const [edge, indices] of Object.entries(layout.indices)) {
     indices.forEach((ledIndex, position) => {
       const [centerX, centerY] = samplePosition(edge, position, indices.length);
-      let red = 0;
-      let green = 0;
-      let blue = 0;
-      let weight = 0;
-      for (let y = Math.max(0, centerY - 1); y <= Math.min(height - 1, centerY + 1); y += 1) {
-        for (let x = Math.max(0, centerX - 1); x <= Math.min(width - 1, centerX + 1); x += 1) {
-          const offset = (y * width + x) * 4;
-          const alpha = pixels[offset + 3] / 255;
-          red += pixels[offset] * alpha;
-          green += pixels[offset + 1] * alpha;
-          blue += pixels[offset + 2] * alpha;
-          weight += alpha;
-        }
-      }
-      colors[ledIndex] = weight === 0
-        ? "#000000"
-        : `#${[red, green, blue]
-          .map((channel) => Math.round(channel / weight).toString(16).padStart(2, "0"))
-          .join("")}`;
+      colors[ledIndex] = sampleColor(centerX, centerY);
     });
   }
   return colors;
 }
 
-function blendColorArrays(from, to, amount) {
-  if (!Array.isArray(from) || !Array.isArray(to) || from.length !== to.length) {
-    throw new TypeError("Color arrays must have matching lengths.");
-  }
-  return to.map((color, index) => from[index] ? blendColors(from[index], color, amount) : color);
-}
-
-const screenSync = Object.freeze({ averageColor, blendColorArrays, blendColors, sampleStripColors });
+const screenSync = Object.freeze({ sampleStripColors });
 if (typeof module !== "undefined" && module.exports) module.exports = screenSync;
 else globalThis.ullScreenSync = screenSync;
