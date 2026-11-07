@@ -1,5 +1,26 @@
 "use strict";
 
+const MAX_CAPTURE_DIMENSION = 1280;
+
+function createDesktopCaptureConstraints(sourceId, maxFrameRate) {
+  if (typeof sourceId !== "string" || sourceId.length === 0 ||
+      !Number.isFinite(maxFrameRate) || maxFrameRate < 1) {
+    throw new TypeError("Screen capture source and frame rate are invalid.");
+  }
+  return {
+    audio: false,
+    video: {
+      mandatory: {
+        chromeMediaSource: "desktop",
+        chromeMediaSourceId: sourceId,
+        maxFrameRate,
+        maxWidth: MAX_CAPTURE_DIMENSION,
+        maxHeight: MAX_CAPTURE_DIMENSION
+      }
+    }
+  };
+}
+
 function sampleStripColors(pixels, width, height, layout) {
   if (!pixels || !Number.isInteger(width) || width < 1 ||
       !Number.isInteger(height) || height < 1 ||
@@ -86,6 +107,10 @@ function createLatestFrameSender({ send, isActive, getColors, onError }) {
   };
 }
 
-const screenSync = Object.freeze({ createLatestFrameSender, sampleStripColors });
+const screenSync = Object.freeze({
+  createDesktopCaptureConstraints,
+  createLatestFrameSender,
+  sampleStripColors
+});
 if (typeof module !== "undefined" && module.exports) module.exports = screenSync;
 else globalThis.ullScreenSync = screenSync;

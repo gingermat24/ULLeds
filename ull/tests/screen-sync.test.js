@@ -2,8 +2,27 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createLatestFrameSender, sampleStripColors } = require("../screen-sync");
+const {
+  createDesktopCaptureConstraints,
+  createLatestFrameSender,
+  sampleStripColors
+} = require("../screen-sync");
 const { allocateEdgeIndices } = require("../strip-layout");
+
+test("screen sync bounds desktop capture resolution and honors the requested frame rate", () => {
+  assert.deepEqual(createDesktopCaptureConstraints("screen:1:0", 30), {
+    audio: false,
+    video: {
+      mandatory: {
+        chromeMediaSource: "desktop",
+        chromeMediaSourceId: "screen:1:0",
+        maxFrameRate: 30,
+        maxWidth: 1280,
+        maxHeight: 1280
+      }
+    }
+  });
+});
 
 test("screen sync sends the newest sampled frame as soon as the active write finishes", async () => {
   let colors = ["#111111"];

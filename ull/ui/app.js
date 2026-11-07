@@ -562,16 +562,11 @@ async function runScreenSyncStart({ automatic = false } = {}) {
   updatePreview();
 
   try {
-    const capture = window.ull.screenSyncSource().then(({ id }) => navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        mandatory: {
-          chromeMediaSource: "desktop",
-          chromeMediaSourceId: id,
-          maxFrameRate: state.settings.syncFps
-        }
-      }
-    }));
+    const capture = window.ull.screenSyncSource().then(({ id }) =>
+      navigator.mediaDevices.getUserMedia(
+        window.ullScreenSync.createDesktopCaptureConstraints(id, state.settings.syncFps)
+      )
+    );
     if (!state.settings.power) {
       const result = await window.ull.updateSettings({ power: true });
       state.settings = result.settings;

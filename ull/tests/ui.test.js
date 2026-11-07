@@ -94,6 +94,7 @@ test("power off always reaches the controller and the switch reports the live st
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const screenSync = fs.readFileSync(path.join(__dirname, "..", "screen-sync.js"), "utf8");
 
   assert.match(html, /id="power-toggle" class="power-switch" type="button" role="switch" aria-checked="true"/);
   assert.match(app, /if \(screenSyncSession \|\| screenSyncLifecycle\.isStarting\) stopScreenSync\("", true\);\s+queueSettings\(\{ power: !state\.settings\.power \}, true\);/);
@@ -139,16 +140,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.41", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.42", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 41; version += 1) {
+  for (let version = 0; version <= 42; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.41<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.42<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -196,6 +197,7 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const screenSync = fs.readFileSync(path.join(__dirname, "..", "screen-sync.js"), "utf8");
 
   assert.match(main, /acquireSingleInstanceLock\(app, showMainWindow\)/);
   assert.match(main, /if \(!hasSingleInstanceLock\) return/);
@@ -209,11 +211,12 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
   assert.match(app, /video\.requestVideoFrameCallback\(sampleFrame\)/);
   assert.match(app, /session\.video\.cancelVideoFrameCallback\(session\.videoFrame\)/);
   assert.match(app, /createLatestFrameSender\(\{/);
-  assert.match(app, /audio: false/);
+  assert.match(screenSync, /audio: false/);
   assert.match(app, /stream\.getAudioTracks\(\)\.length/);
   assert.match(app, /audio input is not supported/);
-  assert.match(app, /chromeMediaSourceId: id/);
-  assert.match(app, /const capture = window\.ull\.screenSyncSource\(\)\.then\(\(\{ id \}\) => navigator\.mediaDevices\.getUserMedia/);
+  assert.match(screenSync, /chromeMediaSourceId: sourceId/);
+  assert.match(app, /const capture = window\.ull\.screenSyncSource\(\)\.then\(\(\{ id \}\) =>\s*navigator\.mediaDevices\.getUserMedia\(/);
+  assert.match(app, /createDesktopCaptureConstraints\(id, state\.settings\.syncFps\)/);
   assert.doesNotMatch(app, /getDisplayMedia/);
   assert.match(app, /maybeResumeScreenSync\(\)/);
   assert.match(app, /Will resume automatically when ULLeds starts/);
@@ -253,16 +256,17 @@ test("Screen Sync FPS is persisted and controls capture, sampling, and HID caden
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const screenSync = fs.readFileSync(path.join(__dirname, "..", "screen-sync.js"), "utf8");
 
   assert.match(html, /id="sync-fps-range"[^>]*min="5" max="60"[^>]*value="30"/);
   assert.match(html, /id="sync-fps-number"[^>]*min="5" max="60"[^>]*value="30"/);
   assert.match(main, /syncFps: 30/);
   assert.match(main, /Screen Sync FPS must be an integer from 5 to 60/);
-  assert.match(app, /maxFrameRate: state\.settings\.syncFps/);
+  assert.match(app, /createDesktopCaptureConstraints\(id, state\.settings\.syncFps\)/);
   assert.match(app, /1000 \/ clamp\(Number\(state\.settings\.syncFps\)/);
   assert.match(app, /video\.requestVideoFrameCallback\(sampleFrame\)/);
   assert.match(app, /createLatestFrameSender\(\{/);
-  assert.match(app, /maxFrameRate: state\.settings\.syncFps/);
+  assert.match(screenSync, /maxFrameRate,\s*maxWidth: MAX_CAPTURE_DIMENSION,\s*maxHeight: MAX_CAPTURE_DIMENSION/);
 });
 
 test("Updates has GitHub Releases selected by default and guarded local updates", () => {
