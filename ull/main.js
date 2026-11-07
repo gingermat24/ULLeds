@@ -32,6 +32,7 @@ const {
 } = require("./controller-catalog");
 const { createHidOutputQueue } = require("./hid-output");
 const { resetStoredData } = require("./reset-data");
+const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 
 const APP_ID = "com.gingermat.ulleds";
 const DEFAULTS = Object.freeze({
@@ -78,6 +79,7 @@ let downloadedUpdateVersion = null;
 let updateDownloadVersion = null;
 let updateCheckPromise = null;
 let resetPromise = null;
+let screenSyncDiagnostics = null;
 const startHidden = process.platform === "win32" && process.argv.includes("--hidden");
 
 autoUpdater.autoDownload = true;
@@ -400,7 +402,15 @@ async function writeColors(colors, effectBrightness = 1) {
     settings.channelGains
   );
   commandId = ((firstMessageId - 1 + packets.length) % 255) + 1;
-  await enqueueHidReports(device, packets.flatMap(buildHidReports));
+  const trace = screenSyncDiagnostics?.isActive;
+  if (trace) screenSyncDiagnostics.recordHidWrite("RB", "queued");
+  try {
+    const result = await enqueueHidReports(device, packets.flatMap(buildHidReports));
+    if (trace) screenSyncDiagnostics.recordHidWrite("RB", result.written ? "written" : "superseded");
+  } catch (error) {
+    if (trace) screenSyncDiagnostics.recordHidWrite("RB", "failed");
+    throw error;
+  }
 }
 
 async function writeScreenSyncColors(colors) {
@@ -422,7 +432,14 @@ async function writeScreenSyncColors(colors) {
     settings.channelGains
   );
   commandId = messageId;
-  await enqueueHidReports(device, buildHidReports(packet));
+  screenSyncDiagnostics?.recordHidWrite("SC", "queued");
+  try {
+    const result = await enqueueHidReports(device, buildHidReports(packet));
+    screenSyncDiagnostics?.recordHidWrite("SC", result.written ? "written" : "superseded");
+  } catch (error) {
+    screenSyncDiagnostics?.recordHidWrite("SC", "failed");
+    throw error;
+  }
 }
 
 function updateAnimation({ preserveOutput = false, waitForOutput = false } = {}) {
@@ -508,6 +525,9 @@ function disconnectDevice(error = "") {
   }
   hidDevice = null;
   screenSyncActive = false;
+  void screenSyncDiagnostics?.stop("controller-disconnected").catch((diagnosticError) => {
+    console.error("Could not finalize Screen Sync diagnostics:", diagnosticError);
+  });
   connectedInfo = null;
   deviceError = error;
   broadcastDeviceState(error);
@@ -791,6 +811,11 @@ ipcMain.handle("device:disconnect", () => {
 ipcMain.handle("screen-sync:start", () => {
   if (!hidDevice) throw new Error("Connect the LED controller before starting screen sync.");
   if (!settings.power) throw new Error("Turn the LEDs on before starting screen sync.");
+  screenSyncDiagnostics.start({
+    fps: settings.syncFps,
+    ledCount: settings.deviceProfile.ledCount,
+    audioTracks: 0
+  });
   screenSyncActive = true;
   updateAnimation();
   return { active: true };
@@ -806,7 +831,11 @@ ipcMain.handle("screen-sync:colors", (_event, colors) => {
 });
 ipcMain.handle("screen-sync:stop", async () => {
   screenSyncActive = false;
-  await updateAnimation({ waitForOutput: true });
+  try {
+    await updateAnimation({ waitForOutput: true });
+  } finally {
+    await screenSyncDiagnostics.stop("user");
+  }
   return { active: false };
 });
 ipcMain.handle("screen-sync:source", async () => {
@@ -912,6 +941,9 @@ autoUpdater.on("error", (error) => {
 });
 
 app.whenReady().then(async () => {
+  screenSyncDiagnostics = createScreenSyncDiagnostics(
+    path.join(app.getPath("appData"), "ULLeds", "screen-sync-diagnostics.log")
+  );
   loadSettings();
   configureLoginItem();
   Menu.setApplicationMenu(null);

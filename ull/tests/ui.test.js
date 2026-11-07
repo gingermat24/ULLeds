@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -24,6 +25,31 @@ test("renderer selectors resolve to unique elements in the page", () => {
 
   assert.deepEqual(duplicates, []);
   assert.deepEqual(missing, []);
+});
+
+test("renderer scripts load together and expose their APIs", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const scriptPaths = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)]
+    .map((match) => path.resolve(uiDirectory, match[1]));
+  const context = vm.createContext({});
+  context.window = context;
+
+  for (const scriptPath of scriptPaths) {
+    let source = fs.readFileSync(scriptPath, "utf8");
+    if (path.basename(scriptPath) === "app.js") {
+      const startupCall = /\nstart\(\);\s*$/;
+      assert.match(source, startupCall);
+      source = source.replace(startupCall, "\n");
+    }
+    assert.doesNotThrow(
+      () => new vm.Script(source, { filename: scriptPath }).runInContext(context),
+      `${path.relative(uiDirectory, scriptPath)} should load without a global declaration collision`
+    );
+  }
+
+  assert.equal(typeof context.ullScreenSyncLifecycle?.createScreenSyncLifecycle, "function");
+  assert.equal(typeof context.ullStripLayout?.allocateEdgeIndices, "function");
+  assert.equal(typeof context.ullLedSelection?.selectLed, "function");
 });
 
 test("update feedback includes an accessible progress bar and reports download size", () => {
@@ -79,7 +105,7 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\)\) return;/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
   assert.match(main, /ipcMain\.handle\("screen-sync:colors", \(_event, colors\) => \{\s+if \(!screenSyncActive \|\| !hidDevice \|\| !settings\.power\) return \{ active: false \};/);
-  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+await updateAnimation\(\{ waitForOutput: true \}\);/);
+  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
   assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \}/);
 });
 
@@ -113,17 +139,27 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.36", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.39", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 36; version += 1) {
+  for (let version = 0; version <= 39; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.36<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.39<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
+});
+
+test("LED preview scales with its card and selected LEDs stay within their grid cells", () => {
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(css, /\.preview-card\s*\{[^}]*container-type:\s*inline-size/s);
+  assert.match(css, /--led-rail-size:\s*clamp\(10px,\s*1\.5cqi,\s*18px\)/);
+  assert.match(css, /\.led-edge\s*\{[^}]*gap:\s*clamp\(2px,\s*0\.28cqi,\s*4px\)/s);
+  assert.match(css, /\.led-pixel\.selected\s*\{[^}]*outline:\s*2px solid #fff;[^}]*outline-offset:\s*-2px/s);
+  assert.doesNotMatch(css, /\.led-pixel(?:\.selected)?:hover\s*\{[^}]*transform:\s*scale/);
 });
 
 test("Scenes is archived behind a disabled feature flag", () => {

@@ -1,3 +1,4 @@
+(() => {
 "use strict";
 
 function createScreenSyncLifecycle() {
@@ -43,3 +44,4 @@ function createScreenSyncLifecycle() {
 const screenSyncLifecycle = Object.freeze({ createScreenSyncLifecycle });
 if (typeof module !== "undefined" && module.exports) module.exports = screenSyncLifecycle;
 else globalThis.ullScreenSyncLifecycle = screenSyncLifecycle;
+})();
