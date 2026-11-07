@@ -35,6 +35,8 @@ The **Screen Sync speed** control accepts 5–60 FPS and defaults to 30 FPS.
 It sets both the capture target and the sampling/HID update cadence.
 Screen Sync samples newly presented capture frames and sends the newest colors
 as soon as an in-progress controller write finishes.
+Closing the ULLeds window hides it in the tray. Launching ULLeds again focuses
+the existing window and does not start a second controller session.
 The 1.0.38 diagnostic build writes timestamped Screen Sync session details and
 per-second counts of ULLeds `SC` and `RB` USB writes to
 `%APPDATA%\ULLeds\screen-sync-diagnostics.log`. It does not record screen

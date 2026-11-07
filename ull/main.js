@@ -33,6 +33,7 @@ const {
 const { createHidOutputQueue } = require("./hid-output");
 const { resetStoredData } = require("./reset-data");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
+const { acquireSingleInstanceLock } = require("./single-instance");
 
 const APP_ID = "com.gingermat.ulleds";
 const DEFAULTS = Object.freeze({
@@ -81,6 +82,7 @@ let updateCheckPromise = null;
 let resetPromise = null;
 let screenSyncDiagnostics = null;
 const startHidden = process.platform === "win32" && process.argv.includes("--hidden");
+const hasSingleInstanceLock = acquireSingleInstanceLock(app, showMainWindow);
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = false;
@@ -941,6 +943,7 @@ autoUpdater.on("error", (error) => {
 });
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return;
   screenSyncDiagnostics = createScreenSyncDiagnostics(
     path.join(app.getPath("appData"), "ULLeds", "screen-sync-diagnostics.log")
   );
