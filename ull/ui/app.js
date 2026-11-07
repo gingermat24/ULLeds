@@ -20,6 +20,7 @@ let state = {
     ledColors: {},
     presets: [],
     deviceProfile: null,
+    devicePath: "",
     power: true,
     onboarded: false,
     updateFolder: "",
@@ -37,6 +38,8 @@ let settingsTimer;
 let settingsRevision = 0;
 let wizardStep = 0;
 let detectedDevices = [];
+let deviceConnecting = false;
+let connectingDevicePath = "";
 let selectedLedIndices = null;
 let screenSyncSession = null;
 let screenSyncStarting = false;
@@ -100,12 +103,38 @@ function renderConnection() {
   label.textContent = state.device.connected
     ? state.device.name || "LED controller connected"
     : state.device.error || "No LED controller connected";
+  renderDeviceSelector();
 
   $("#settings-device").textContent = state.device.connected
     ? `${state.device.name || "USB LED controller"}${state.device.serialNumber ? ` · ${state.device.serialNumber}` : ""}`
     : (state.device.error || "Not connected");
 
   renderProfile(profile);
+}
+
+function renderDeviceSelector() {
+  const select = $("#controller-select");
+  if (!select) return;
+  const currentPath = connectingDevicePath || state.device.devicePath || state.settings.devicePath || "";
+  const options = detectedDevices.map((device, index) => {
+    const identifiers = `${Number(device.vendorId).toString(16).padStart(4, "0")}:${Number(device.productId).toString(16).padStart(4, "0")}`;
+    const detail = device.serialNumber
+      ? `${device.serialNumber}${device.interface == null ? "" : ` · interface ${device.interface}`}`
+      : `${identifiers}${device.interface == null ? ` · controller ${index + 1}` : ` · interface ${device.interface}`}`;
+    return { value: device.path, label: `${device.name} · ${detail}` };
+  });
+  if (options.length === 0) {
+    select.replaceChildren(new Option("No compatible controller found", ""));
+    select.disabled = true;
+    return;
+  }
+  select.replaceChildren(...options.map(({ value, label }) => new Option(label, value)));
+  select.disabled = deviceConnecting;
+  select.value = options.some((option) => option.value === currentPath)
+    ? currentPath
+    : state.device.connected && options.some((option) => option.value === state.device.devicePath)
+      ? state.device.devicePath
+      : "";
 }
 
 function renderProfile(profile) {
@@ -571,15 +600,18 @@ async function startScreenSync({ automatic = false } = {}) {
     session.frame = requestAnimationFrame(sampleFrame);
     updatePreview();
   } catch (error) {
-    if (hardwareSyncStarted) {
+    const sessionOwnsStream = screenSyncSession?.stream === stream;
+    if (!sessionOwnsStream) {
+      stream?.getTracks().forEach((track) => track.stop());
+    }
+    if (!sessionOwnsStream && (hardwareSyncStarted || automatic)) {
       try {
         await window.ull.stopScreenSync();
       } catch (stopError) {
         console.error("Could not stop screen sync after startup failed:", stopError);
       }
     }
-    if (screenSyncSession?.stream === stream) stopScreenSync();
-    else stream?.getTracks().forEach((track) => track.stop());
+    if (sessionOwnsStream) stopScreenSync();
     const message = automatic
       ? `Could not resume screen sync: ${error.message}. Start it manually from Lighting.`
       : error.name === "NotAllowedError"
@@ -598,10 +630,12 @@ function applyDeviceState(device) {
   state.device = device;
   const profile = device.connected && device.profile;
   if (!device.connected && screenSyncSession) stopScreenSync("Controller disconnected.");
-  if (profile?.ledCount && !state.settings.deviceProfile) {
+  if (profile?.ledCount) {
+    const hadProfile = Boolean(state.settings.deviceProfile);
     state.settings.deviceProfile = profile;
     state.settings.ledCount = profile.ledCount;
-    if (profile.color) state.settings.color = profile.color;
+    state.settings.devicePath = device.devicePath;
+    if (!hadProfile && profile.color) state.settings.color = profile.color;
   }
 }
 
@@ -619,6 +653,29 @@ async function scanDevices() {
     state.device = { connected: false, error: error.message };
     renderConnection();
     toast(`Scan failed: ${error.message}`);
+  }
+}
+
+async function connectSelectedDevice(devicePath) {
+  if (!devicePath || deviceConnecting) return;
+  deviceConnecting = true;
+  connectingDevicePath = devicePath;
+  renderDeviceSelector();
+  try {
+    const device = await window.ull.connectDevice(devicePath);
+    applyDeviceState(device);
+    render();
+    if (!device.connected) {
+      toast(device.error || "Could not connect to that controller.");
+    } else {
+      toast(`Connected to ${device.name || "USB LED controller"}.`);
+    }
+  } catch (error) {
+    toast(`Could not connect to the selected controller: ${error.message}`);
+  } finally {
+    deviceConnecting = false;
+    connectingDevicePath = "";
+    renderDeviceSelector();
   }
 }
 
@@ -998,6 +1055,9 @@ function bindEvents() {
   });
 
   $("#scan-device").addEventListener("click", scanDevices);
+  $("#controller-select").addEventListener("change", (event) => {
+    void connectSelectedDevice(event.target.value);
+  });
   $("#open-setup").addEventListener("click", openSetup);
   $("#reset-all-data").addEventListener("click", openResetConfirmation);
   $("#confirm-reset").addEventListener("click", resetAllData);

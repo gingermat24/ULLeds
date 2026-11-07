@@ -19,10 +19,11 @@ function buildDeviceInfoRequest(messageId = 2) {
   return packet;
 }
 
-function parseDeviceLedCount(response, messageId) {
+function parseDeviceLedCount(response, messageId = response?.[3]) {
   if (!Buffer.isBuffer(response) || response.length < 12 ||
       response[0] !== 82 || response[1] !== 66 ||
       response[2] < 12 || response[2] > response.length ||
+      !Number.isInteger(messageId) || messageId < 1 || messageId > 255 ||
       response[3] !== messageId || response[4] !== 130) {
     throw new TypeError("The controller returned an invalid device-info response.");
   }

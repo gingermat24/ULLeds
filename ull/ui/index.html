@@ -167,6 +167,14 @@
             <button id="open-setup" class="secondary-btn">Edit profile</button>
           </div>
 
+          <div class="card controller-picker">
+            <label for="controller-select">USB controller</label>
+            <select id="controller-select" aria-label="Select USB LED controller">
+              <option value="">Scanning for compatible controllers…</option>
+            </select>
+            <p>Choose any connected ULLeds-compatible controller. Arbitrary HID devices are not driven. Use the scan button in the header to refresh this list.</p>
+          </div>
+
           <div class="card details-card">
             <div class="detail-row">
               <span>Controller</span>
@@ -291,9 +299,33 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.20</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.24</h3><span>Current</span></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Controller discovery accepts valid device-info replies even when another HID reader changes the response ID.</li><li>Saved Screen Sync no longer suppresses manual lighting controls when automatic resume fails.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.23</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Reset keeps the active controller connected and restores its detected profile.</li><li>The Windows app, tray, and refreshed shortcuts use the updated icon.</li></ul></div>
+              <div class="release-category"><strong>New</strong><ul><li>Choose between connected compatible controllers from Device settings.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Added separate release entries for every version from 1.0.0 through 1.0.23.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.22</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>The top navigation stays centered when controller status changes.</li><li>Connection details fit their reserved space instead of shifting the tabs.</li></ul></div>
+              <div class="release-category"><strong>Changed</strong><ul><li>Updated the app artwork and regenerated the Windows icon.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.21</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Reset clears saved settings without removing active browser data.</li><li>Windows shortcuts refresh to the current app icon after install or update.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.20</h3></header>
+              <div class="release-category"><strong>New</strong><ul><li>Added a confirmation flow to reset saved settings and imported DX Light/QuikLight profiles.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Reset preserves Electron browser data and only removes ULLeds settings and selected legacy profiles.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.19</h3></header>
               <div class="release-category"><strong>Changed</strong><ul><li>Fresh installs now start at #008100 and 50% brightness.</li></ul></div>
-              <div class="release-category"><strong>Improved</strong><ul><li>The interface now fills wide windows and scales spacing and type up on large displays.</li><li>The Windows icon is regenerated from the supplied app.png.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>The interface fills wide windows and scales spacing and type up on large displays.</li><li>The Windows icon is generated from the supplied app.png.</li></ul></div>
             </article>
             <article class="card release-entry">
               <header><h3>ULLeds 1.0.18</h3></header>
@@ -316,9 +348,65 @@
               <div class="release-category"><strong>Improved</strong><ul><li>Restores saved lighting and shortens the update restart flow.</li></ul></div>
             </article>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.12–1.0.14</h3></header>
-              <div class="release-category"><strong>Improved</strong><ul><li>Added update progress feedback and made the installer restart flow faster.</li></ul></div>
+              <header><h3>ULLeds 1.0.14</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Shortened the update restart flow and clarified that ULLeds reopens automatically.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.13</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Stopped controller work before update installation to make restart more reliable.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.12</h3></header>
+              <div class="release-category"><strong>New</strong><ul><li>Added visible update download progress.</li></ul></div>
               <div class="release-category"><strong>Removed</strong><ul><li>Archived Scenes from the active interface.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.11</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.10</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.9</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.8</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.7</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.6</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.5</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.4</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.3</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.2</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.1</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.0</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
             </article>
           </section>
         </section>
@@ -348,7 +436,7 @@
       <form method="dialog">
         <div class="card-label">RESET ULLeds</div>
         <h2>Clear all saved data?</h2>
-        <p>This deletes saved ULLeds settings, colors, strip layout, and update folder. It also deletes imported profiles from DX Light and QuikLight. ULLeds stays installed, its browser cache is kept, and update downloads are not removed.</p>
+        <p>This resets saved colors, preferences, and the update folder, and removes imported DX Light/QuikLight profiles. The active compatible controller stays connected and selected so ULLeds can continue detecting and controlling it. Browser data and the app installation are kept.</p>
         <div class="wizard-actions">
           <button id="cancel-reset" class="secondary-btn" type="submit" value="cancel">Keep my data</button>
           <button id="confirm-reset" class="danger-btn" type="button">Delete and reset</button>

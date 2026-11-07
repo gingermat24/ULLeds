@@ -42,6 +42,27 @@ test("the interface has no decorative glow, shadow, or backdrop blur", () => {
   assert.doesNotMatch(css, /box-shadow|text-shadow|backdrop-filter/);
 });
 
+test("topbar tabs stay centered independently of connection status changes", () => {
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(css, /\.topbar \{\s+display: grid;\s+grid-template-columns: minmax\(0, 1fr\) max-content minmax\(0, 1fr\);/);
+  assert.match(css, /\.tabs \{[^}]*justify-self: center;/s);
+  assert.match(css, /\.device-status \{[^}]*width: min\(260px, 100%\);/s);
+  assert.match(css, /#device-label \{\s+min-width: 0;\s+flex: 0 1 auto;\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
+  assert.match(css, /\.device-status \{[^}]*justify-content: flex-end;/s);
+  assert.match(css, /@media \(max-width: 980px\) \{\s+\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\) auto;/);
+});
+
+test("release notes have separate entries for every version from 1.0.0 through 1.0.24", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
+
+  for (let version = 0; version <= 24; version += 1) {
+    assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
+  }
+  assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
+});
+
 test("Scenes is archived behind a disabled feature flag", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
@@ -80,7 +101,7 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
   assert.match(main, /startWithWindows: true/);
   assert.match(main, /openAtLogin: settings\.startWithWindows/);
   assert.match(main, /args: \["--hidden"\]/);
-  assert.match(main, /if \(devices\.length\) void connectDevice\(devices\[0\]\.path\)/);
+  assert.match(main, /void scanAndConnect\(\)\.catch/);
   assert.match(html, /id="start-with-windows"/);
   assert.match(html, /id="resume-screen-sync"/);
   assert.match(app, /window\.ull\.screenSyncSource\(\)\.then/);
@@ -89,14 +110,19 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
   assert.match(app, /Will resume automatically when ULLeds starts/);
 });
 
-test("reopening during saved screen sync keeps hardware output and shows a starting state", () => {
+test("saved Screen Sync preserves output only during reconnect and falls back when resume fails", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
-  assert.match(main, /if \(screenSyncActive \|\| settings\.resumeScreenSync\) return/);
+  assert.match(main, /function updateAnimation\(\{ preserveOutput = false \} = \{\}\)/);
+  assert.match(main, /if \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\) return/);
+  assert.match(main, /updateAnimation\(\{ preserveOutput: settings\.resumeScreenSync \}\)/);
+  assert.match(main, /parseDeviceLedCount\(response\)/);
+  assert.match(main, /response\.length < 12 \|\| response\[4\] !== 130/);
   assert.match(app, /screenSyncStarting \|\| \(/);
   assert.match(app, /syncPending \? "Starting…"/);
   assert.match(app, /syncPending\s*\?\s*"Resuming display capture…"/);
+  assert.match(app, /!sessionOwnsStream && \(hardwareSyncStarted \|\| automatic\)/);
   assert.match(app, /autoSyncAttempted = true;\s*updatePreview\(\);\s*void startScreenSync\(\{ automatic: true \}\)/);
 });
 
@@ -152,7 +178,21 @@ test("the icon build consumes the user PNG and responsive motion preferences are
 
   assert.match(html, /src="\.\.\/assets\/app\.png"/);
   assert.match(iconScript, /app\.png/);
+  assert.match(iconScript, /\$sizes = \[int\[\]\]@\(16, 20, 24, 32, 40, 48, 64, 128, 256\)/);
   assert.doesNotMatch(iconScript, /bitmap\.Save\(\$pngPath/);
+  const iconPath = path.join(__dirname, "..", "assets", "app.ico");
+  const icon = fs.readFileSync(iconPath);
+  const iconCount = icon.readUInt16LE(4);
+  assert.equal(iconCount, 9);
+  assert.deepEqual(
+    Array.from({ length: iconCount }, (_, index) => {
+      const size = icon[6 + index * 16];
+      return size || 256;
+    }),
+    [16, 20, 24, 32, 40, 48, 64, 128, 256]
+  );
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  assert.match(main, /icon: path\.join\(__dirname, "assets", "app\.ico"\)/);
   assert.match(packageJson.scripts["dist:win"], /create-icon\.ps1/);
   assert.match(css, /@media \(max-width: 980px\)/);
   assert.match(css, /@media \(max-width: 640px\)/);
@@ -185,17 +225,35 @@ test("full reset is confirmed, clears app and imported profile data, and preserv
 
   assert.match(html, /id="reset-all-data"/);
   assert.match(html, /id="reset-dialog"/);
-  assert.match(html, /DX Light and QuikLight/);
-  assert.match(html, /ULLeds stays installed, and its browser cache is kept/);
+  assert.match(html, /DX Light\/QuikLight/);
+  assert.match(html, /active compatible controller stays connected and selected/);
   assert.match(app, /window\.ull\.resetData\(\)/);
   assert.match(app, /settingsQueue = \{\}/);
   assert.match(app, /screenSyncGeneration \+= 1/);
   assert.match(app, /generation !== screenSyncGeneration/);
   assert.match(preload, /resetData: \(\) => ipcRenderer\.invoke\("settings:reset"\)/);
   assert.match(main, /ipcMain\.handle\("settings:reset"/);
-  assert.match(main, /settings = defaultSettings\(\)/);
+  assert.match(main, /settings = settingsAfterReset\(defaultSettings\(\), activeProfile, activePath\)/);
+  const resetHandler = main.slice(main.indexOf('ipcMain.handle("settings:reset"'), main.indexOf('ipcMain.handle("app:initial-state"'));
+  assert.doesNotMatch(resetHandler, /await disconnectDevice\(\)/);
+  assert.match(resetHandler, /if \(hidDevice\) updateAnimation\(\)/);
   assert.match(main, /configureLoginItem\(\)/);
   assert.match(resetData, /path\.join\(root, "ULLeds", "settings\.json"\)/);
   assert.match(resetData, /path\.join\(root, "DX Light", "config\.json"\)/);
   assert.match(resetData, /path\.join\(root, "quiklight-desktop", "config\.json"\)/);
+});
+
+test("the Device page can list and switch between detected compatible controllers", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+
+  assert.match(html, /id="controller-select"/);
+  assert.match(app, /window\.ull\.connectDevice\(devicePath\)/);
+  assert.match(preload, /connectDevice: \(devicePath\) => ipcRenderer\.invoke\("device:connect", devicePath\)/);
+  assert.match(main, /devices,\s*\.\.\.deviceState\(\)/);
+  assert.match(main, /listSupportedControllers\(listHidDevices\(\), profiles\)/);
+  assert.match(html, /ULLeds-compatible controller/);
+  assert.match(html, /Arbitrary HID devices are not driven/);
 });

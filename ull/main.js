@@ -22,11 +22,15 @@ const {
   buildDeviceInfoRequest,
   buildHidReports,
   buildScreenSyncFrame,
-  isSupportedController,
   parseDeviceLedCount
 } = require("./protocol");
 const { createLocalUpdateServer } = require("./local-update-server");
-const { loadSavedProfiles, profileForDevice, resolveDeviceLedCount } = require("./device-profile");
+const { loadSavedProfiles, resolveDeviceLedCount } = require("./device-profile");
+const {
+  listSupportedControllers,
+  selectPreferredController,
+  settingsAfterReset
+} = require("./controller-catalog");
 const { createHidOutputQueue } = require("./hid-output");
 const { resetStoredData } = require("./reset-data");
 
@@ -41,6 +45,7 @@ const DEFAULTS = Object.freeze({
   ledColors: {},
   presets: [],
   deviceProfile: null,
+  devicePath: "",
   power: true,
   onboarded: false,
   updateFolder: "",
@@ -138,9 +143,9 @@ function readControllerLedCount(device) {
       else resolve(ledCount);
     };
     const onData = (response) => {
-      if (response.length < 5 || response[3] !== messageId || response[4] !== 130) return;
+      if (response.length < 12 || response[4] !== 130) return;
       try {
-        finish(null, parseDeviceLedCount(response, messageId));
+        finish(null, parseDeviceLedCount(response));
       } catch (error) {
         finish(error);
       }
@@ -280,6 +285,12 @@ function validateSettings(input) {
       throw new TypeError("Device profile must be an object or null.");
     }
   }
+  if ("devicePath" in input) {
+    if (typeof input.devicePath !== "string" || input.devicePath.length > 2048) {
+      throw new TypeError("Selected controller path is invalid.");
+    }
+    next.devicePath = input.devicePath;
+  }
   if ("power" in input) {
     if (typeof input.power !== "boolean") throw new TypeError("Power must be on or off.");
     next.power = input.power;
@@ -310,16 +321,8 @@ function validateSettings(input) {
 }
 
 function getDeviceList() {
-  const supported = listHidDevices().filter((device) => isSupportedController(device) && device.path);
   const profiles = loadSavedProfiles(app.getPath("appData"));
-  return supported.map((device) => ({
-      path: device.path,
-      name: typeof device.product === "string" && device.product !== "USBHID"
-        ? device.product
-        : "PC SYNC Backlight",
-      serialNumber: device.serialNumber || "",
-      profile: profileForDevice(device, supported, profiles)
-    }));
+  return listSupportedControllers(listHidDevices(), profiles);
 }
 
 function hueColor(hue) {
@@ -420,12 +423,12 @@ async function writeScreenSyncColors(colors) {
   await enqueueHidReports(device, buildHidReports(packet));
 }
 
-function updateAnimation() {
+function updateAnimation({ preserveOutput = false } = {}) {
   if (animationTimer) {
     clearInterval(animationTimer);
     animationTimer = null;
   }
-  if (screenSyncActive || settings.resumeScreenSync) return;
+  if (screenSyncActive || (preserveOutput && settings.resumeScreenSync)) return;
   if (!hidDevice || !settings.power || settings.effect === "steady") {
     if (hidDevice) {
       const device = hidDevice;
@@ -461,6 +464,7 @@ function deviceState() {
       name: connectedInfo.name,
       serialNumber: connectedInfo.serialNumber,
       profile: connectedInfo.profile,
+      devicePath: connectedInfo.path,
       error: ""
     }
     : {
@@ -468,6 +472,7 @@ function deviceState() {
       name: settings.deviceProfile?.name || "PC SYNC Backlight",
       serialNumber: "",
       profile: settings.deviceProfile,
+      devicePath: settings.devicePath,
       error: deviceError
     };
 }
@@ -509,7 +514,8 @@ function prepareForUpdate() {
 }
 
 async function connectDevice(targetPath) {
-  if (connectionPromise) return connectionPromise;
+  while (connectionPromise) await connectionPromise;
+  if (hidDevice && connectedInfo?.path === targetPath) return deviceState();
   const pending = connectDeviceNow(targetPath).catch((error) => {
     console.error("Could not connect to the LED controller:", error);
     disconnectDevice(error.message);
@@ -533,7 +539,9 @@ async function connectDeviceNow(targetPath) {
     hidDevice.on("error", (error) => disconnectDevice(error.message));
     const savedProfile = selected.profile?.ledCount
       ? selected.profile
-      : devices.length === 1 && settings.deviceProfile?.ledCount
+      : settings.devicePath === selected.path && settings.deviceProfile?.ledCount
+        ? settings.deviceProfile
+        : devices.length === 1 && settings.deviceProfile?.ledCount
         ? settings.deviceProfile
         : null;
     let reportedLedCount;
@@ -568,13 +576,14 @@ async function connectDeviceNow(targetPath) {
     connectedInfo = { ...selected, profile };
     settings.ledCount = ledCount;
     settings.deviceProfile = { ...profile };
+    settings.devicePath = selected.path;
     settings.ledColors = Object.fromEntries(
       Object.entries(settings.ledColors).filter(([index]) => Number(index) < ledCount)
     );
     if (!settings.color && profile.color) settings.color = profile.color;
     saveSettings();
     deviceError = "";
-    updateAnimation();
+    updateAnimation({ preserveOutput: settings.resumeScreenSync });
     broadcastDeviceState();
     return { ...deviceState(), error: "" };
   } catch (error) {
@@ -584,11 +593,22 @@ async function connectDeviceNow(targetPath) {
 }
 
 async function scanAndConnect() {
-  const devices = getDeviceList();
   if (connectionPromise) await connectionPromise;
-  else if (!hidDevice && devices.length) await connectDevice(devices[0].path);
+  let devices = getDeviceList();
+  if (hidDevice && !devices.some((device) => device.path === connectedInfo?.path)) {
+    await disconnectDevice("The selected controller is no longer available.");
+  }
+  if (!hidDevice && devices.length) {
+    const selected = selectPreferredController(
+      devices,
+      settings.devicePath,
+      connectedInfo?.path
+    );
+    if (selected) await connectDevice(selected.path);
+    devices = getDeviceList();
+  }
   return {
-    devices: devices.map(({ name, serialNumber, profile }) => ({ name, serialNumber, profile })),
+    devices,
     ...deviceState()
   };
 }
@@ -683,6 +703,7 @@ function createWindow() {
     minHeight: 480,
     show: false,
     title: "ULLeds",
+    icon: path.join(__dirname, "assets", "app.ico"),
     backgroundColor: "#151a22",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -716,7 +737,6 @@ ipcMain.handle("settings:reset", async () => {
   if (resetPromise) return resetPromise;
   resetPromise = (async () => {
     if (connectionPromise) await connectionPromise;
-    await disconnectDevice();
     screenSyncActive = false;
 
     if (updateServer) {
@@ -725,13 +745,16 @@ ipcMain.handle("settings:reset", async () => {
       updateServerFolder = "";
     }
 
+    const activeProfile = connectedInfo?.profile || settings.deviceProfile;
+    const activePath = connectedInfo?.path || settings.devicePath;
     const removedLegacyProfiles = resetStoredData(app.getPath("appData"));
-    settings = defaultSettings();
+    settings = settingsAfterReset(defaultSettings(), activeProfile, activePath);
     deviceError = "";
     saveSettings();
     configureLoginItem();
 
-    const device = await scanAndConnect();
+    if (hidDevice) updateAnimation();
+    const device = hidDevice ? deviceState() : await scanAndConnect();
     return {
       settings: settingsSnapshot(),
       device,
@@ -911,15 +934,15 @@ app.whenReady().then(async () => {
   createApplicationMenu();
   createTray();
   createWindow();
-  const devices = getDeviceList();
-  if (devices.length) void connectDevice(devices[0].path);
+  void scanAndConnect().catch((error) => {
+    console.error("Could not scan for the LED controller:", error);
+    deviceError = error.message;
+    broadcastDeviceState(error.message);
+  });
   watcherTimer = setInterval(async () => {
     try {
       if (!hidDevice) {
-        const device = getDeviceList()[0];
-        if (device) {
-          await connectDevice(device.path);
-        }
+        await scanAndConnect();
       }
     } catch (error) {
       console.error("Could not scan for the LED controller:", error);

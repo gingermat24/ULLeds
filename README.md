@@ -39,6 +39,9 @@ The confirmation dialog lists what will be removed; the app and downloaded
 updater cache remain installed. ULLeds browser caches and session data are also
 left untouched; reset removes the settings file and the two imported legacy
 profile files rather than deleting the app's entire user-data directory.
+Reset retains the active controller's detected profile and connection so the
+hardware remains usable. Device settings can select among connected compatible
+controllers; arbitrary HID devices are not probed or driven.
 
 ## Build the installer
 
@@ -109,7 +112,9 @@ Replace `ull/assets/app.png` with your square PNG artwork. The Windows build
 script converts it to `ull/assets/app.ico` before packaging, and the same PNG
 is used in the app header. Each installer also places a versioned ICO in the
 app's resources and refreshes the Start menu and desktop shortcuts to use it,
-so Windows does not keep showing a cached executable icon after an update.
+and the window and tray load the packaged ICO directly. The ICO includes
+multiple standard Windows sizes to avoid scaling artifacts and stale cached
+shortcuts after an update.
 A transparent 1024×1024 PNG is recommended.
 
 ## Repository note

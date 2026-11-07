@@ -26,6 +26,9 @@ test("the device-info request and response expose the controller's LED count", (
   response.set([82, 66, 25, 2, 130, 0, 6, 3, 32, 1, 0, 75]);
   assert.equal(parseDeviceLedCount(response, 2), 75);
   assert.throws(() => parseDeviceLedCount(response, 3), /invalid device-info response/);
+  const responseFromAnotherHidReader = Buffer.from(response);
+  responseFromAnotherHidReader[3] = 37;
+  assert.equal(parseDeviceLedCount(responseFromAnotherHidReader), 75);
   assert.throws(() => parseDeviceLedCount(Buffer.from([82, 66, 12, 2, 130, 0, 0, 0, 0, 0, 0, 0]), 2), /valid LED count/);
 });
 
