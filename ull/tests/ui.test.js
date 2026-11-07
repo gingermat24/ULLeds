@@ -37,27 +37,40 @@ test("update feedback includes an accessible progress bar and reports download s
   assert.match(app, /updateCheckInProgress/);
 });
 
-test("the interface has no decorative glow, shadow, or backdrop blur", () => {
+test("Liquid Glass can be adjusted or disabled and respects reduced-transparency preferences", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
-  assert.doesNotMatch(css, /box-shadow|text-shadow|backdrop-filter/);
+
+  assert.match(html, /id="appearance-card"/);
+  assert.match(html, /id="liquid-glass-toggle"/);
+  assert.match(html, /id="glass-clarity"[^>]*type="range"|<input id="glass-clarity" type="range"/);
+  assert.match(app, /const LIQUID_GLASS = "ON"/);
+  assert.match(app, /prefers-reduced-transparency: reduce/);
+  assert.match(app, /root\.dataset\.glass = glassIsActive\(\) \? "on" : "off"/);
+  assert.match(app, /--glass-alpha/);
+  assert.match(app, /--glass-blur/);
+  assert.match(css, /html\[data-glass="on"\].*backdrop-filter/s);
+  assert.match(css, /html\[data-glass="on"\].*box-shadow/s);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
 test("topbar tabs stay centered independently of connection status changes", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
-  assert.match(css, /\.topbar \{\s+display: grid;\s+grid-template-columns: minmax\(0, 1fr\) max-content minmax\(0, 1fr\);/);
+  assert.match(css, /\.topbar \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0, 1fr\) max-content minmax\(0, 1fr\);/s);
   assert.match(css, /\.tabs \{[^}]*justify-self: center;/s);
-  assert.match(css, /\.device-status \{[^}]*width: min\(260px, 100%\);/s);
-  assert.match(css, /#device-label \{\s+min-width: 0;\s+flex: 0 1 auto;\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
-  assert.match(css, /\.device-status \{[^}]*justify-content: flex-end;/s);
+  assert.match(css, /\.device-status \{[^}]*width: min\(280px, 100%\);/s);
+  assert.match(css, /#device-label \{\s+flex: 1 1 auto;\s+min-width: 0;\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
+  assert.match(css, /\.device-status \{[^}]*justify-self: end;/s);
   assert.match(css, /@media \(max-width: 980px\) \{\s+\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\) auto;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.24", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.25", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 24; version += 1) {
+  for (let version = 0; version <= 25; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
@@ -212,7 +225,7 @@ test("the default lighting is green at 50% brightness and the app expands on lar
   assert.match(html, /id="color-picker" type="color" value="#008100"/);
   assert.match(html, /id="hex-color"[^>]*value="#008100"/);
   assert.match(html, /id="brightness"[^>]*value="50"/);
-  assert.match(css, /\.app \{\s+width: 100%;\s+max-width: none;/);
+  assert.match(css, /\.app \{\s+width: 100%;\s+\}/);
   assert.match(css, /@media \(min-width: 1440px\)/);
 });
 

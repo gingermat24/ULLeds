@@ -1,5 +1,13 @@
 "use strict";
 
+/* ==========================================================================
+   LIQUID GLASS — master switch.
+   Write "ON" or "OFF" (nothing else needs to change).
+     "ON"  : Liquid Glass is enabled; users can fine-tune it in Device → Appearance.
+     "OFF" : flat theme everywhere, the Appearance card is hidden.
+   ========================================================================== */
+const LIQUID_GLASS = "ON";
+
 const SCENES_ENABLED = false;
 const DEFAULT_SCENES = [
   { name: "Rose dusk", color: "#e879a8" },
@@ -7,6 +15,9 @@ const DEFAULT_SCENES = [
   { name: "Lagoon", color: "#55c8d2" },
   { name: "Soft amber", color: "#f0ac65" }
 ];
+
+const GLASS_STORAGE_KEY = "ull.liquidGlass";
+const GLASS_DEFAULTS = { enabled: true, clarity: 40 };
 
 let state = {
   settings: {
@@ -48,9 +59,98 @@ let autoSyncAttempted = false;
 let screenSyncError = "";
 let updateCheckInProgress = false;
 let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
+let glassPrefs = { ...GLASS_DEFAULTS };
 
 const $ = (selector) => document.querySelector(selector);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+/* ---------- Appearance / Liquid Glass ---------- */
+
+function loadGlassPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(GLASS_STORAGE_KEY) || "null");
+    if (raw && typeof raw === "object") {
+      glassPrefs = {
+        enabled: raw.enabled !== false,
+        clarity: Number.isFinite(Number(raw.clarity)) ? clamp(Number(raw.clarity), 0, 100) : GLASS_DEFAULTS.clarity
+      };
+    }
+  } catch {
+    glassPrefs = { ...GLASS_DEFAULTS };
+  }
+}
+
+function saveGlassPrefs() {
+  try {
+    localStorage.setItem(GLASS_STORAGE_KEY, JSON.stringify(glassPrefs));
+  } catch {
+    /* storage unavailable: the preference simply won't persist */
+  }
+}
+
+function glassIsActive() {
+  const master = LIQUID_GLASS === "ON";
+  const reduced = window.matchMedia?.("(prefers-reduced-transparency: reduce)").matches || false;
+  return master && glassPrefs.enabled && !reduced;
+}
+
+function applyGlass() {
+  const root = document.documentElement;
+  const master = LIQUID_GLASS === "ON";
+  const clarity = glassPrefs.clarity;
+
+  root.dataset.glass = glassIsActive() ? "on" : "off";
+  // Clear (100) = lighter tint and less diffusion; Frosted (0) = heavier tint and more diffusion.
+  root.style.setProperty("--glass-alpha", (0.72 - (clarity / 100) * 0.48).toFixed(3));
+  root.style.setProperty("--glass-blur", `${(30 - (clarity / 100) * 14).toFixed(1)}px`);
+
+  $("#appearance-card")?.classList.toggle("hidden", !master);
+  const toggle = $("#liquid-glass-toggle");
+  if (toggle) toggle.checked = glassPrefs.enabled;
+  const slider = $("#glass-clarity");
+  if (slider) slider.value = clarity;
+  const output = $("#glass-clarity-value");
+  if (output) output.textContent = `${clarity}%`;
+  $("#glass-slider-block")?.setAttribute("aria-disabled", String(!glassPrefs.enabled));
+  if (slider) slider.disabled = !glassPrefs.enabled;
+
+  updateRangeFills();
+  requestAnimationFrame(() => positionTabIndicator(false));
+}
+
+function initAppearance() {
+  loadGlassPrefs();
+  applyGlass();
+  window.matchMedia?.("(prefers-reduced-transparency: reduce)").addEventListener?.("change", applyGlass);
+}
+
+/* Range sliders: write --fill so the CSS can paint the filled part of the track */
+function updateRangeFill(input) {
+  const min = Number(input.min || 0);
+  const max = Number(input.max || 100);
+  const percent = max > min ? ((Number(input.value) - min) / (max - min)) * 100 : 0;
+  input.style.setProperty("--fill", `${clamp(percent, 0, 100)}%`);
+}
+
+function updateRangeFills() {
+  document.querySelectorAll('input[type="range"]').forEach(updateRangeFill);
+}
+
+/* Sliding glass lens behind the active tab */
+function positionTabIndicator(animate = true) {
+  const indicator = $(".tab-indicator");
+  const active = $(".tabs .tab.active");
+  if (!indicator || !active || !active.offsetWidth) return;
+  indicator.style.transition = animate ? "" : "none";
+  indicator.style.width = `${active.offsetWidth}px`;
+  indicator.style.transform = `translateX(${active.offsetLeft}px)`;
+  if (!animate) {
+    void indicator.offsetWidth; // flush so the next change animates again
+    indicator.style.transition = "";
+  }
+}
+
+/* ---------- Helpers ---------- */
 
 function calibratedColor(color, gains = [100, 100, 100]) {
   const channels = color.slice(1).match(/../g).map((part, index) =>
@@ -103,6 +203,7 @@ function renderConnection() {
   label.textContent = state.device.connected
     ? state.device.name || "LED controller connected"
     : state.device.error || "No LED controller connected";
+  label.title = label.textContent;
   renderDeviceSelector();
 
   $("#settings-device").textContent = state.device.connected
@@ -282,7 +383,8 @@ function updatePreview() {
   $("#effect").value = settings.effect;
   const syncFps = clamp(Number(settings.syncFps) || 30, 5, 60);
   $("#sync-fps-range").value = syncFps;
-  $("#sync-fps-number").value = syncFps;
+  // Don't overwrite the number box while the user is typing in it
+  if (document.activeElement !== $("#sync-fps-number")) $("#sync-fps-number").value = syncFps;
   $("#sync-fps-value").textContent = `${syncFps} FPS`;
   $("#speed-control").classList.toggle("hidden", settings.effect === "steady");
   $("#power-toggle").setAttribute("aria-pressed", String(settings.power));
@@ -304,6 +406,8 @@ function updatePreview() {
   if (screenSyncSession) {
     screenSyncSession.pixelElements = [...document.querySelectorAll(".led-pixel")];
   }
+
+  updateRangeFills();
 }
 
 function renderScenes() {
@@ -682,11 +786,16 @@ async function connectSelectedDevice(devicePath) {
 function switchView(name) {
   if (name === "scenes" && !SCENES_ENABLED) return;
   document.querySelectorAll(".tab").forEach((item) => {
-    item.classList.toggle("active", item.dataset.view === name);
+    const active = item.dataset.view === name;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-selected", String(active));
+    item.tabIndex = active ? 0 : -1;
   });
   document.querySelectorAll(".view").forEach((panel) => {
     panel.classList.toggle("hidden", panel.id !== `view-${name}`);
   });
+  window.scrollTo({ top: 0 });
+  positionTabIndicator(true);
 }
 
 function renderUpdates() {
@@ -752,7 +861,6 @@ function showUpdateMessage(message, error = false, readyToInstall = false) {
     button.className = "primary-btn";
     button.type = "button";
     button.textContent = "Restart and update";
-    button.style.marginLeft = "10px";
     button.addEventListener("click", installUpdate);
     actions.append(button);
   }
@@ -1041,6 +1149,45 @@ function bindEvents() {
     item.addEventListener("click", () => switchView(item.dataset.view));
   });
 
+  // Arrow-key navigation between tabs
+  $(".tabs").addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    const tabs = [...document.querySelectorAll(".tab")].filter((tab) => tab.offsetWidth > 0);
+    const current = tabs.indexOf(document.activeElement);
+    if (current === -1) return;
+    event.preventDefault();
+    const next = tabs[(current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
+    next.focus();
+    switchView(next.dataset.view);
+  });
+
+  // Keep the glass tab lens aligned when the window or fonts change size
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(() => positionTabIndicator(false)).observe($(".tabs"));
+  }
+  window.addEventListener("resize", () => positionTabIndicator(false));
+  document.fonts?.ready.then(() => positionTabIndicator(false));
+  positionTabIndicator(false);
+
+  // Slider fill follows the thumb instantly
+  document.addEventListener("input", (event) => {
+    if (event.target instanceof HTMLInputElement && event.target.type === "range") {
+      updateRangeFill(event.target);
+    }
+  });
+
+  // Appearance
+  $("#liquid-glass-toggle").addEventListener("change", (event) => {
+    glassPrefs.enabled = event.target.checked;
+    saveGlassPrefs();
+    applyGlass();
+  });
+  $("#glass-clarity").addEventListener("input", (event) => {
+    glassPrefs.clarity = clamp(Number(event.target.value), 0, 100);
+    saveGlassPrefs();
+    applyGlass();
+  });
+
   $("#monitor").addEventListener("click", selectPreviewPosition);
   $("#monitor").addEventListener("keydown", (event) => {
     if ((event.key === "Enter" || event.key === " ") && event.target.classList.contains("led-edge")) {
@@ -1069,7 +1216,7 @@ function bindEvents() {
   $("#color-picker").addEventListener("input", (event) => applyColor(event.target.value));
   $("#hex-color").addEventListener("change", (event) => {
     const value = event.target.value.trim();
-    if (/^#[\da-f]{6}$/i.test(value)) applyColor(value);
+    if (/^#[\da-f]{6}$/i.test(value)) applyColor(value.toLowerCase());
     else {
       event.target.value = selectedColor();
       toast("Enter a color in #RRGGBB format.");
@@ -1244,6 +1391,7 @@ function bindEvents() {
 }
 
 async function start() {
+  initAppearance();
   bindEvents();
   try {
     state = await window.ull.initialState();
