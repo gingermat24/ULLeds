@@ -51,13 +51,12 @@ test("frosted glass is clean, adjustable, and respects reduced-transparency pref
   assert.match(app, /--glass-alpha/);
   assert.match(app, /--glass-blur/);
   assert.match(css, /html\[data-glass="on"\].*backdrop-filter/s);
-  assert.match(css, /html\[data-glass="on"\].*background-color: rgb\(31 39 50 \/ var\(--glass-alpha\)\)/s);
-  assert.doesNotMatch(css, /box-shadow|text-shadow|drop-shadow|radial-gradient/i);
+  assert.match(css, /html\[data-glass="on"\] \.card \{[^}]*background: rgb\(22 26 34 \/ calc\(var\(--glass-alpha\) \+ 0\.18\)\);[^}]*backdrop-filter: blur\(24px\)/s);
   assert.doesNotMatch(css, /ambient-led|glow/i);
   assert.match(html, /<html lang="en" data-glass="on">/);
   assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), /ULLeds|brand|logo/i);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(css, /input\[type="range"\]::-webkit-slider-thumb \{\s+-webkit-appearance: none;\s+width: 26px;\s+height: 18px;\s+margin-top: -8px;/);
+  assert.match(css, /input\[type="range"\]::-webkit-slider-thumb \{\s+-webkit-appearance: none;\s+width: 26px;\s+height: 18px;\s+margin-top: -6px;/);
 });
 
 test("topbar tabs stay centered independently of connection status changes", () => {
@@ -82,15 +81,15 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(app, /document\.addEventListener\("change", \(event\) => \{\s+if \(event\.target instanceof HTMLInputElement && event\.target\.type === "range"\)/);
   assert.doesNotMatch(app, /settingsRevision/);
   assert.match(css, /\.preference-row input\[type="checkbox"\]::after \{[^}]*top: 50%;[^}]*transform: translateY\(-50%\);/s);
-  assert.match(css, /\.preference-row input\[type="checkbox"\]:checked::after \{ transform: translate\(20px, -50%\); \}/);
-  assert.match(css, /\.preference-row input\[type="checkbox"\]:checked:active::after \{ transform: translate\(16px, -50%\); \}/);
+  assert.match(css, /\.preference-row input\[type="checkbox"\]:checked::after \{\s+transform: translate\(20px, -50%\);\s+\}/);
+  assert.match(css, /\.preference-row input\[type="checkbox"\]:checked:active::after \{\s+transform: translate\(16px, -50%\);\s+\}/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.28", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.29", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 28; version += 1) {
+  for (let version = 0; version <= 29; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
@@ -139,6 +138,8 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
   assert.match(html, /id="resume-screen-sync"/);
   assert.match(app, /window\.ull\.screenSyncSource\(\)\.then/);
   assert.match(app, /chromeMediaSourceId: id/);
+  assert.match(app, /const capture = window\.ull\.screenSyncSource\(\)\.then\(\(\{ id \}\) => navigator\.mediaDevices\.getUserMedia/);
+  assert.doesNotMatch(app, /getDisplayMedia/);
   assert.match(app, /maybeResumeScreenSync\(\)/);
   assert.match(app, /Will resume automatically when ULLeds starts/);
 });
@@ -183,8 +184,8 @@ test("Screen Sync FPS is persisted and controls capture, sampling, and HID caden
   assert.match(main, /syncFps: 30/);
   assert.match(main, /Screen Sync FPS must be an integer from 5 to 60/);
   assert.match(app, /maxFrameRate: state\.settings\.syncFps/);
-  assert.match(app, /frameRate: state\.settings\.syncFps/);
   assert.match(app, /1000 \/ clamp\(Number\(state\.settings\.syncFps\)/);
+  assert.match(app, /maxFrameRate: state\.settings\.syncFps/);
 });
 
 test("Updates has GitHub Releases selected by default and guarded local updates", () => {

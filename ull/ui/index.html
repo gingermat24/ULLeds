@@ -9,7 +9,6 @@
   </head>
   <body>
     <div class="app">
-      <!-- Top bar -->
       <header class="topbar">
         <nav class="tabs" role="tablist" aria-label="Sections">
           <span class="tab-indicator" aria-hidden="true"></span>
@@ -27,10 +26,8 @@
       </header>
 
       <main>
-        <!-- LIGHTING VIEW -->
         <section class="view" id="view-light" role="tabpanel">
           <div class="light-grid">
-            <!-- Preview Card -->
             <div class="card preview-card">
               <div class="card-header">
                 <div>
@@ -61,7 +58,6 @@
               </div>
             </div>
 
-            <!-- Controls Card -->
             <div class="card controls-card">
               <div class="card-label">CONTROLS</div>
 
@@ -128,7 +124,6 @@
           </div>
         </section>
 
-        <!-- SCENES VIEW -->
         <section class="view hidden" id="view-scenes" data-feature="scenes" role="tabpanel">
           <div class="section-header">
             <div>
@@ -150,7 +145,6 @@
           </div>
         </section>
 
-        <!-- SETTINGS VIEW -->
         <section class="view hidden" id="view-settings" role="tabpanel">
           <div class="section-header">
             <div>
@@ -220,7 +214,6 @@
             </label>
           </div>
 
-          <!-- Hidden automatically when LIQUID_GLASS = "OFF" in app.js -->
           <div class="card appearance-card" id="appearance-card">
             <div>
               <h3>Appearance</h3>
@@ -236,9 +229,9 @@
             <div class="glass-slider-block" id="glass-slider-block">
               <div class="range-row">
                 <label for="glass-clarity">Glass transparency</label>
-                <output id="glass-clarity-value">40%</output>
+                <output id="glass-clarity-value">45%</output>
               </div>
-              <input id="glass-clarity" type="range" min="0" max="100" value="40">
+              <input id="glass-clarity" type="range" min="0" max="100" value="45">
               <div class="glass-scale" aria-hidden="true"><span>Frosted</span><span>Clear</span></div>
             </div>
           </div>
@@ -250,10 +243,8 @@
             </div>
             <button id="reset-all-data" class="danger-btn" type="button">Reset all data</button>
           </div>
-
         </section>
 
-        <!-- UPDATES VIEW -->
         <section class="view hidden" id="view-updates" role="tabpanel">
           <div class="section-header">
             <div>
@@ -315,7 +306,11 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.28</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.29</h3><span>Current</span></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Refreshed the interface with a more spacious Liquid Glass layout and refined controls.</li><li>Manual Screen Sync now uses the direct primary-display capture path already used by automatic resume.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.28</h3></header>
               <div class="release-category"><strong>Fixed</strong><ul><li>Preference switch thumbs stay vertically centered in both states.</li><li>Rapid setting changes are saved in order without allowing older responses to overwrite newer control values.</li></ul></div>
               <div class="release-category"><strong>Improved</strong><ul><li>Power changes are sent immediately, and slider changes are flushed when released while continuing to update during dragging.</li></ul></div>
             </article>
@@ -448,7 +443,6 @@
       </main>
     </div>
 
-    <!-- Setup wizard -->
     <dialog id="setup-dialog" class="wizard">
       <form method="dialog">
         <div class="wizard-progress">

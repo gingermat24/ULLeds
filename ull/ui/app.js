@@ -1,11 +1,5 @@
 "use strict";
 
-/* ==========================================================================
-   LIQUID GLASS — master switch.
-   Write "ON" or "OFF" (nothing else needs to change).
-     "ON"  : Liquid Glass is enabled; users can fine-tune it in Device → Appearance.
-     "OFF" : flat theme everywhere, the Appearance card is hidden.
-   ========================================================================== */
 const LIQUID_GLASS = "ON";
 
 const SCENES_ENABLED = false;
@@ -17,7 +11,7 @@ const DEFAULT_SCENES = [
 ];
 
 const GLASS_STORAGE_KEY = "ull.liquidGlass";
-const GLASS_DEFAULTS = { enabled: true, clarity: 40 };
+const GLASS_DEFAULTS = { enabled: true, clarity: 45 };
 
 let state = {
   settings: {
@@ -64,8 +58,6 @@ let glassPrefs = { ...GLASS_DEFAULTS };
 const $ = (selector) => document.querySelector(selector);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-/* ---------- Appearance / Liquid Glass ---------- */
-
 function loadGlassPrefs() {
   try {
     const raw = JSON.parse(localStorage.getItem(GLASS_STORAGE_KEY) || "null");
@@ -84,7 +76,6 @@ function saveGlassPrefs() {
   try {
     localStorage.setItem(GLASS_STORAGE_KEY, JSON.stringify(glassPrefs));
   } catch {
-    /* storage unavailable: the preference simply won't persist */
   }
 }
 
@@ -100,7 +91,6 @@ function applyGlass() {
   const clarity = glassPrefs.clarity;
 
   root.dataset.glass = glassIsActive() ? "on" : "off";
-  // Clear (100) = lighter tint and less diffusion; Frosted (0) = heavier tint and more diffusion.
   root.style.setProperty("--glass-alpha", (0.72 - (clarity / 100) * 0.48).toFixed(3));
   root.style.setProperty("--glass-blur", `${(30 - (clarity / 100) * 14).toFixed(1)}px`);
 
@@ -124,7 +114,6 @@ function initAppearance() {
   window.matchMedia?.("(prefers-reduced-transparency: reduce)").addEventListener?.("change", applyGlass);
 }
 
-/* Range sliders: write --fill so the CSS can paint the filled part of the track */
 function updateRangeFill(input) {
   const min = Number(input.min || 0);
   const max = Number(input.max || 100);
@@ -136,7 +125,6 @@ function updateRangeFills() {
   document.querySelectorAll('input[type="range"]').forEach(updateRangeFill);
 }
 
-/* Sliding glass lens behind the active tab */
 function positionTabIndicator(animate = true) {
   const indicator = $(".tab-indicator");
   const active = $(".tabs .tab.active");
@@ -145,12 +133,10 @@ function positionTabIndicator(animate = true) {
   indicator.style.width = `${active.offsetWidth}px`;
   indicator.style.transform = `translateX(${active.offsetLeft}px)`;
   if (!animate) {
-    void indicator.offsetWidth; // flush so the next change animates again
+    void indicator.offsetWidth;
     indicator.style.transition = "";
   }
 }
-
-/* ---------- Helpers ---------- */
 
 function calibratedColor(color, gains = [100, 100, 100]) {
   const channels = color.slice(1).match(/../g).map((part, index) =>
@@ -404,7 +390,6 @@ function updatePreview() {
   $("#effect").value = settings.effect;
   const syncFps = clamp(Number(settings.syncFps) || 30, 5, 60);
   $("#sync-fps-range").value = syncFps;
-  // Don't overwrite the number box while the user is typing in it
   if (document.activeElement !== $("#sync-fps-number")) $("#sync-fps-number").value = syncFps;
   $("#sync-fps-value").textContent = `${syncFps} FPS`;
   $("#speed-control").classList.toggle("hidden", settings.effect === "steady");
@@ -565,7 +550,7 @@ function stopScreenSync(message = "", clearResumePreference = false) {
 async function startScreenSync({ automatic = false } = {}) {
   const generation = ++screenSyncGeneration;
   if (!state.device.connected) return toast("Connect the LED controller before starting screen sync.");
-  if (!navigator.mediaDevices?.getDisplayMedia || !navigator.mediaDevices?.getUserMedia) {
+  if (!navigator.mediaDevices?.getUserMedia) {
     return toast("Screen sharing is not available in this app environment.");
   }
 
@@ -588,18 +573,16 @@ async function startScreenSync({ automatic = false } = {}) {
   updatePreview();
 
   try {
-    const capture = automatic
-      ? window.ull.screenSyncSource().then(({ id }) => navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: id,
-            maxFrameRate: state.settings.syncFps
-          }
+    const capture = window.ull.screenSyncSource().then(({ id }) => navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        mandatory: {
+          chromeMediaSource: "desktop",
+          chromeMediaSourceId: id,
+          maxFrameRate: state.settings.syncFps
         }
-      }))
-      : navigator.mediaDevices.getDisplayMedia({ video: { frameRate: state.settings.syncFps }, audio: false });
+      }
+    }));
     if (!state.settings.power) {
       const result = await window.ull.updateSettings({ power: true });
       state.settings = result.settings;
@@ -1172,7 +1155,6 @@ function bindEvents() {
     item.addEventListener("click", () => switchView(item.dataset.view));
   });
 
-  // Arrow-key navigation between tabs
   $(".tabs").addEventListener("keydown", (event) => {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
     const tabs = [...document.querySelectorAll(".tab")].filter((tab) => tab.offsetWidth > 0);
@@ -1184,7 +1166,6 @@ function bindEvents() {
     switchView(next.dataset.view);
   });
 
-  // Keep the glass tab lens aligned when the window or fonts change size
   if (typeof ResizeObserver === "function") {
     new ResizeObserver(() => positionTabIndicator(false)).observe($(".tabs"));
   }
@@ -1192,7 +1173,6 @@ function bindEvents() {
   document.fonts?.ready.then(() => positionTabIndicator(false));
   positionTabIndicator(false);
 
-  // Slider fill follows the thumb instantly
   document.addEventListener("input", (event) => {
     if (event.target instanceof HTMLInputElement && event.target.type === "range") {
       updateRangeFill(event.target);
@@ -1206,7 +1186,6 @@ function bindEvents() {
     }
   });
 
-  // Appearance
   $("#liquid-glass-toggle").addEventListener("change", (event) => {
     glassPrefs.enabled = event.target.checked;
     saveGlassPrefs();

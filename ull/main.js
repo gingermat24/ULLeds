@@ -11,7 +11,6 @@ const {
   Menu,
   nativeImage,
   screen,
-  session,
   shell,
   Tray
 } = require("electron");
@@ -910,25 +909,6 @@ autoUpdater.on("error", (error) => {
 });
 
 app.whenReady().then(async () => {
-  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
-    if (!request.userGesture || !request.videoRequested) {
-      callback(null);
-      return;
-    }
-    try {
-      const sources = await desktopCapturer.getSources({
-        types: ["screen"],
-        thumbnailSize: { width: 0, height: 0 }
-      });
-      const primaryDisplayId = String(screen.getPrimaryDisplay().id);
-      const source = sources.find((candidate) => candidate.display_id === primaryDisplayId) || sources[0];
-      if (!source) throw new Error("No display is available to capture.");
-      callback({ video: source });
-    } catch (error) {
-      console.error("Could not start screen capture:", error);
-      callback(null);
-    }
-  });
   loadSettings();
   configureLoginItem();
   createApplicationMenu();
