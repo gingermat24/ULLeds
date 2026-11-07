@@ -158,3 +158,44 @@ test("the icon build consumes the user PNG and responsive motion preferences are
   assert.match(css, /@media \(max-width: 640px\)/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
+
+test("the default lighting is green at 50% brightness and the app expands on large windows", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(main, /color: "#008100"/);
+  assert.match(main, /brightness: 50/);
+  assert.match(app, /color: "#008100"/);
+  assert.match(app, /brightness: 50/);
+  assert.match(html, /id="color-picker" type="color" value="#008100"/);
+  assert.match(html, /id="hex-color"[^>]*value="#008100"/);
+  assert.match(html, /id="brightness"[^>]*value="50"/);
+  assert.match(css, /\.app \{\s+width: 100%;\s+max-width: none;/);
+  assert.match(css, /@media \(min-width: 1440px\)/);
+});
+
+test("full reset is confirmed, clears app and imported profile data, and preserves the installation", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  const resetData = fs.readFileSync(path.join(__dirname, "..", "reset-data.js"), "utf8");
+
+  assert.match(html, /id="reset-all-data"/);
+  assert.match(html, /id="reset-dialog"/);
+  assert.match(html, /DX Light and QuikLight/);
+  assert.match(html, /ULLeds stays installed, and its browser cache is kept/);
+  assert.match(app, /window\.ull\.resetData\(\)/);
+  assert.match(app, /settingsQueue = \{\}/);
+  assert.match(app, /screenSyncGeneration \+= 1/);
+  assert.match(app, /generation !== screenSyncGeneration/);
+  assert.match(preload, /resetData: \(\) => ipcRenderer\.invoke\("settings:reset"\)/);
+  assert.match(main, /ipcMain\.handle\("settings:reset"/);
+  assert.match(main, /settings = defaultSettings\(\)/);
+  assert.match(main, /configureLoginItem\(\)/);
+  assert.match(resetData, /path\.join\(root, "ULLeds", "settings\.json"\)/);
+  assert.match(resetData, /path\.join\(root, "DX Light", "config\.json"\)/);
+  assert.match(resetData, /path\.join\(root, "quiklight-desktop", "config\.json"\)/);
+});

@@ -2,6 +2,7 @@
 
 ULLeds is an independent Windows desktop controller for the USB LED strip
 behind a monitor. It is created by **gingermat**.
+The default lighting is `#008100` at 50% brightness.
 
 The active app is implemented from scratch in [`ull/`](./ull/). Its renderer,
 preload bridge, and HID controller do not import the earlier recovered
@@ -32,6 +33,12 @@ when you stop it. The startup sync option uses the primary display, while a
 manual start can still choose a display.
 The **Screen Sync speed** control accepts 5–60 FPS and defaults to 30 FPS.
 It sets both the capture target and the sampling/HID update cadence.
+Use **Device → Reset all data** to clear ULLeds settings, colors, device layout,
+update-folder preferences, and imported DX Light/QuikLight strip profile files.
+The confirmation dialog lists what will be removed; the app and downloaded
+updater cache remain installed. ULLeds browser caches and session data are also
+left untouched; reset removes the settings file and the two imported legacy
+profile files rather than deleting the app's entire user-data directory.
 
 ## Build the installer
 
@@ -100,7 +107,10 @@ enabled by default in installed builds; startup launches minimized to the tray.
 
 Replace `ull/assets/app.png` with your square PNG artwork. The Windows build
 script converts it to `ull/assets/app.ico` before packaging, and the same PNG
-is used in the app header. A transparent 1024×1024 PNG is recommended.
+is used in the app header. Each installer also places a versioned ICO in the
+app's resources and refreshes the Start menu and desktop shortcuts to use it,
+so Windows does not keep showing a cached executable icon after an update.
+A transparent 1024×1024 PNG is recommended.
 
 ## Repository note
 

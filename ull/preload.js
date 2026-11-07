@@ -11,6 +11,7 @@ function listen(channel, callback) {
 contextBridge.exposeInMainWorld("ull", Object.freeze({
   initialState: () => ipcRenderer.invoke("app:initial-state"),
   updateSettings: (settings) => ipcRenderer.invoke("settings:update", settings),
+  resetData: () => ipcRenderer.invoke("settings:reset"),
   flushSettings: (settings) => ipcRenderer.sendSync("settings:flush", settings),
   scanDevices: () => ipcRenderer.invoke("device:scan"),
   connectDevice: (devicePath) => ipcRenderer.invoke("device:connect", devicePath),

@@ -28,11 +28,12 @@ const {
 const { createLocalUpdateServer } = require("./local-update-server");
 const { loadSavedProfiles, profileForDevice, resolveDeviceLedCount } = require("./device-profile");
 const { createHidOutputQueue } = require("./hid-output");
+const { resetStoredData } = require("./reset-data");
 
 const APP_ID = "com.gingermat.ulleds";
 const DEFAULTS = Object.freeze({
-  color: "#e879a8",
-  brightness: 72,
+  color: "#008100",
+  brightness: 50,
   channelGains: [100, 100, 100],
   effect: "steady",
   speed: 48,
@@ -59,7 +60,7 @@ let isQuitting = false;
 let hidDevice = null;
 let deviceError = "";
 let connectionPromise = null;
-let settings = { ...DEFAULTS, palette: [...DEFAULTS.palette], ledColors: {}, presets: [] };
+let settings = defaultSettings();
 let connectedInfo = null;
 let animationTimer = null;
 let animationWriting = false;
@@ -72,6 +73,7 @@ let updateServerFolder = "";
 let downloadedUpdateVersion = null;
 let updateDownloadVersion = null;
 let updateCheckPromise = null;
+let resetPromise = null;
 const startHidden = process.platform === "win32" && process.argv.includes("--hidden");
 
 autoUpdater.autoDownload = true;
@@ -80,6 +82,10 @@ autoUpdater.disableDifferentialDownload = false;
 
 function settingsFile() {
   return path.join(app.getPath("appData"), "ULLeds", "settings.json");
+}
+
+function defaultSettings() {
+  return { ...DEFAULTS, palette: [...DEFAULTS.palette], ledColors: {}, presets: [] };
 }
 
 function configureLoginItem() {
@@ -706,6 +712,38 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, "ui", "index.html"));
 }
 
+ipcMain.handle("settings:reset", async () => {
+  if (resetPromise) return resetPromise;
+  resetPromise = (async () => {
+    if (connectionPromise) await connectionPromise;
+    await disconnectDevice();
+    screenSyncActive = false;
+
+    if (updateServer) {
+      await updateServer.close();
+      updateServer = null;
+      updateServerFolder = "";
+    }
+
+    const removedLegacyProfiles = resetStoredData(app.getPath("appData"));
+    settings = defaultSettings();
+    deviceError = "";
+    saveSettings();
+    configureLoginItem();
+
+    const device = await scanAndConnect();
+    return {
+      settings: settingsSnapshot(),
+      device,
+      removedLegacyProfiles
+    };
+  })();
+  try {
+    return await resetPromise;
+  } finally {
+    resetPromise = null;
+  }
+});
 ipcMain.handle("app:initial-state", () => ({
   version: app.getVersion(),
   settings: settingsSnapshot(),

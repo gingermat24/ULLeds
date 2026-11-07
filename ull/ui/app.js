@@ -10,8 +10,8 @@ const DEFAULT_SCENES = [
 
 let state = {
   settings: {
-    color: "#e879a8",
-    brightness: 72,
+    color: "#008100",
+    brightness: 50,
     channelGains: [100, 100, 100],
     ledCount: null,
     effect: "steady",
@@ -40,6 +40,7 @@ let detectedDevices = [];
 let selectedLedIndices = null;
 let screenSyncSession = null;
 let screenSyncStarting = false;
+let screenSyncGeneration = 0;
 let autoSyncAttempted = false;
 let screenSyncError = "";
 let updateCheckInProgress = false;
@@ -387,6 +388,7 @@ function selectPreviewPosition(event) {
 }
 
 function stopScreenSync(message = "", clearResumePreference = false) {
+  screenSyncGeneration += 1;
   const session = screenSyncSession;
   screenSyncSession = null;
   screenSyncStarting = false;
@@ -407,6 +409,7 @@ function stopScreenSync(message = "", clearResumePreference = false) {
 }
 
 async function startScreenSync({ automatic = false } = {}) {
+  const generation = ++screenSyncGeneration;
   if (!state.device.connected) return toast("Connect the LED controller before starting screen sync.");
   if (!navigator.mediaDevices?.getDisplayMedia || !navigator.mediaDevices?.getUserMedia) {
     return toast("Screen sharing is not available in this app environment.");
@@ -450,11 +453,19 @@ async function startScreenSync({ automatic = false } = {}) {
       render();
     }
     stream = await capture;
+    if (generation !== screenSyncGeneration) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
     const video = document.createElement("video");
     video.muted = true;
     video.playsInline = true;
     video.srcObject = stream;
     await video.play();
+    if (generation !== screenSyncGeneration) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
 
     if (!stream.getVideoTracks().length) throw new Error("The display capture did not provide a video track.");
     if (!video.videoWidth || !video.videoHeight) {
@@ -470,7 +481,18 @@ async function startScreenSync({ automatic = false } = {}) {
 
     await window.ull.startScreenSync();
     hardwareSyncStarted = true;
+    if (generation !== screenSyncGeneration) {
+      await window.ull.stopScreenSync();
+      hardwareSyncStarted = false;
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
     const savedSettings = await window.ull.updateSettings({ resumeScreenSync: true });
+    if (generation !== screenSyncGeneration) {
+      await window.ull.stopScreenSync();
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
     state.settings = savedSettings.settings;
     state.device = savedSettings;
 
@@ -916,6 +938,43 @@ function openSetup() {
   $("#setup-dialog").showModal();
 }
 
+function openResetConfirmation() {
+  $("#reset-dialog").showModal();
+}
+
+async function resetAllData() {
+  const button = $("#confirm-reset");
+  button.disabled = true;
+  button.textContent = "Resetting…";
+  clearTimeout(settingsTimer);
+  settingsQueue = {};
+  settingsRevision += 1;
+  stopScreenSync();
+  autoSyncAttempted = true;
+
+  try {
+    const result = await window.ull.resetData();
+    state.settings = result.settings;
+    state.device = result.device;
+    selectedLedIndices = null;
+    screenSyncError = "";
+    $("#reset-dialog").close();
+    render();
+    openSetup();
+    const resetMessage = result.removedLegacyProfiles.length
+      ? "All ULLeds data and imported legacy profiles were reset."
+      : "All ULLeds data was reset.";
+    toast(result.device.connected
+      ? resetMessage
+      : `${resetMessage} The controller is not connected; scan again after setup.`);
+  } catch (error) {
+    toast(`Could not reset ULLeds data: ${error.message}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Delete and reset";
+  }
+}
+
 function bindEvents() {
   document.querySelectorAll('[data-feature="scenes"]').forEach((element) => {
     element.classList.toggle("hidden", !SCENES_ENABLED);
@@ -940,6 +999,8 @@ function bindEvents() {
 
   $("#scan-device").addEventListener("click", scanDevices);
   $("#open-setup").addEventListener("click", openSetup);
+  $("#reset-all-data").addEventListener("click", openResetConfirmation);
+  $("#confirm-reset").addEventListener("click", resetAllData);
 
   $("#power-toggle").addEventListener("click", () => {
     queueSettings({ power: !state.settings.power }, true);
