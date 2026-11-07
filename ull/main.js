@@ -15,7 +15,7 @@ const {
   Tray
 } = require("electron");
 const { autoUpdater } = require("electron-updater");
-const { HIDAsync, devices: listHidDevices } = require("node-hid");
+const { HIDAsync, devicesAsync: listHidDevicesAsync } = require("node-hid");
 const {
   buildColorFrames,
   buildDeviceInfoRequest,
@@ -322,9 +322,9 @@ function validateSettings(input) {
   return next;
 }
 
-function getDeviceList() {
+async function getDeviceList() {
   const profiles = loadSavedProfiles(app.getPath("appData"));
-  return listSupportedControllers(listHidDevices(), profiles);
+  return listSupportedControllers(await listHidDevicesAsync(), profiles);
 }
 
 function hueColor(hue) {
@@ -527,10 +527,10 @@ function prepareForUpdate() {
   tray = null;
 }
 
-async function connectDevice(targetPath) {
+async function connectDevice(targetPath, knownDevices = null) {
   while (connectionPromise) await connectionPromise;
   if (hidDevice && connectedInfo?.path === targetPath) return deviceState();
-  const pending = connectDeviceNow(targetPath).catch((error) => {
+  const pending = connectDeviceNow(targetPath, knownDevices).catch((error) => {
     console.error("Could not connect to the LED controller:", error);
     disconnectDevice(error.message);
     return { ...deviceState(), error: `Could not open the controller: ${error.message}` };
@@ -543,8 +543,8 @@ async function connectDevice(targetPath) {
   }
 }
 
-async function connectDeviceNow(targetPath) {
-  const devices = getDeviceList();
+async function connectDeviceNow(targetPath, knownDevices) {
+  const devices = knownDevices || await getDeviceList();
   const selected = devices.find((device) => device.path === targetPath);
   if (!selected) throw new Error("That LED controller is no longer available. Scan again.");
   await disconnectDevice();
@@ -608,7 +608,7 @@ async function connectDeviceNow(targetPath) {
 
 async function scanAndConnect() {
   if (connectionPromise) await connectionPromise;
-  let devices = getDeviceList();
+  const devices = await getDeviceList();
   if (hidDevice && !devices.some((device) => device.path === connectedInfo?.path)) {
     await disconnectDevice("The selected controller is no longer available.");
   }
@@ -618,8 +618,7 @@ async function scanAndConnect() {
       settings.devicePath,
       connectedInfo?.path
     );
-    if (selected) await connectDevice(selected.path);
-    devices = getDeviceList();
+    if (selected) await connectDevice(selected.path, devices);
   }
   return {
     devices,

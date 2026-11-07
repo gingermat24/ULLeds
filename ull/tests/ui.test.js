@@ -113,16 +113,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.35", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.36", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 35; version += 1) {
+  for (let version = 0; version <= 36; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.35<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.36<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -324,7 +324,7 @@ test("the Device page can list and switch between detected compatible controller
   assert.match(app, /window\.ull\.connectDevice\(devicePath\)/);
   assert.match(preload, /connectDevice: \(devicePath\) => ipcRenderer\.invoke\("device:connect", devicePath\)/);
   assert.match(main, /devices,\s*\.\.\.deviceState\(\)/);
-  assert.match(main, /listSupportedControllers\(listHidDevices\(\), profiles\)/);
+  assert.match(main, /listSupportedControllers\(await listHidDevicesAsync\(\), profiles\)/);
   assert.match(html, /ULLeds-compatible controller/);
   assert.match(html, /Arbitrary HID devices are not driven/);
 });
@@ -384,4 +384,22 @@ test("Screen Sync sends sampled screen colors without synthetic transition blend
 
   assert.match(app, /session\.colors = sampledColors;/);
   assert.doesNotMatch(app, /session\.colors = session\.colors\s*\?\s*window\.ullScreenSync\.blendColorArrays/);
+});
+
+test("startup UI appears before the controller scan completes", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const start = app.slice(app.indexOf("async function start()"), app.indexOf("\nfunction maybeResumeScreenSync()"));
+
+  assert.match(start, /state = await window\.ull\.initialState\(\);\s+render\(\);\s+if \(!state\.settings\.onboarded\) openSetup\(\);\s+void scanDevices\(\)\.then\(maybeResumeScreenSync\)/);
+  assert.match(app, /if \(!state\.settings\.onboarded && \$\("#setup-dialog"\)\.open && wizardStep === 0\) \{\s+setWizardStep\(0\);/);
+});
+
+test("main-process controller discovery uses asynchronous HID enumeration", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(main, /devicesAsync: listHidDevicesAsync/);
+  assert.match(main, /async function getDeviceList\(\) \{\s+const profiles = loadSavedProfiles\(app\.getPath\("appData"\)\);\s+return listSupportedControllers\(await listHidDevicesAsync\(\), profiles\);/);
+  assert.match(main, /const devices = await getDeviceList\(\)/);
+  assert.match(main, /if \(selected\) await connectDevice\(selected\.path, devices\)/);
+  assert.doesNotMatch(main, /listHidDevices\(\)/);
 });

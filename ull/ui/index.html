@@ -287,7 +287,11 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.35</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.36</h3><span>Current</span></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Controller discovery no longer blocks the app's main thread while enumerating USB devices.</li><li>The interface and setup wizard appear immediately while device discovery runs in the background.</li><li>Startup discovery reuses its device scan rather than enumerating the same controllers multiple times.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.35</h3></header>
               <div class="release-category"><strong>Fixed</strong><ul><li>Screen Sync uses representative sampled pixels directly, avoiding invented colors from patch averages and transition blending.</li><li>Repeated Stop clicks now share one stop request, and Stop remains available while Screen Sync is starting.</li></ul></div>
               <div class="release-category"><strong>Changed</strong><ul><li>Screen Sync explicitly rejects audio tracks; it only samples display video.</li></ul></div>
             </article>

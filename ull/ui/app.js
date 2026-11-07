@@ -738,6 +738,9 @@ async function scanDevices() {
     detectedDevices = result.devices || [];
     applyDeviceState(result);
     render();
+    if (!state.settings.onboarded && $("#setup-dialog").open && wizardStep === 0) {
+      setWizardStep(0);
+    }
     if (!state.device.connected && !result.error) {
       toast(detectedDevices.length ? "Controller found but not connected." : "No supported USB controller found.");
     }
@@ -1378,9 +1381,11 @@ async function start() {
   try {
     state = await window.ull.initialState();
     render();
-    await scanDevices();
-    maybeResumeScreenSync();
     if (!state.settings.onboarded) openSetup();
+    void scanDevices().then(maybeResumeScreenSync).catch((error) => {
+      console.error("Could not finish ULLeds startup:", error);
+      toast(`Could not finish starting ULLeds: ${error.message}`);
+    });
   } catch (error) {
     toast(`ULLeds could not load: ${error.message}`);
   }
