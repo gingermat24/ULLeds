@@ -422,7 +422,7 @@ async function writeScreenSyncColors(colors) {
   await enqueueHidReports(device, buildHidReports(packet));
 }
 
-function updateAnimation({ preserveOutput = false } = {}) {
+function updateAnimation({ preserveOutput = false, waitForOutput = false } = {}) {
   if (animationTimer) {
     clearInterval(animationTimer);
     animationTimer = null;
@@ -431,7 +431,15 @@ function updateAnimation({ preserveOutput = false } = {}) {
   if (!hidDevice || !settings.power || settings.effect === "steady") {
     if (hidDevice) {
       const device = hidDevice;
-      writeColor(settings.color).catch((error) => {
+      const output = writeColor(settings.color);
+      if (waitForOutput) {
+        return output.catch((error) => {
+          console.error("LED color write failed:", error);
+          if (hidDevice === device) disconnectDevice(error.message);
+          throw error;
+        });
+      }
+      output.catch((error) => {
         console.error("LED color write failed:", error);
         if (hidDevice === device) disconnectDevice(error.message);
       });
@@ -612,7 +620,7 @@ async function scanAndConnect() {
   };
 }
 
-function setSettings(input) {
+function setSettings(input, updateOutput = true) {
   if (input && Object.hasOwn(input, "ledCount")) {
     throw new TypeError("LED count is read from the controller and cannot be changed here.");
   }
@@ -623,7 +631,8 @@ function setSettings(input) {
   settings = { ...settings, ...changes };
   saveSettings();
   if (Object.hasOwn(changes, "startWithWindows")) configureLoginItem();
-  if (hidDevice && ["color", "brightness", "channelGains", "effect", "speed", "palette", "ledColors", "power"]
+  if (updateOutput && hidDevice &&
+      ["color", "brightness", "channelGains", "effect", "speed", "palette", "ledColors", "power"]
     .some((key) => Object.hasOwn(changes, key))) {
     updateAnimation();
   }
@@ -771,7 +780,12 @@ ipcMain.handle("app:initial-state", () => ({
   settings: settingsSnapshot(),
   device: deviceState()
 }));
-ipcMain.handle("settings:update", (_event, input) => setSettings(input));
+ipcMain.handle("settings:update", async (_event, input) => {
+  const powerChanged = input && Object.hasOwn(input, "power");
+  const result = setSettings(input, !powerChanged);
+  if (powerChanged) await updateAnimation({ waitForOutput: true });
+  return result;
+});
 ipcMain.on("settings:flush", (event, input) => {
   try {
     event.returnValue = { result: setSettings(input) };
@@ -801,9 +815,9 @@ ipcMain.handle("screen-sync:colors", (_event, colors) => {
   }
   return writeScreenSyncColors(colors).then(() => ({ active: true }));
 });
-ipcMain.handle("screen-sync:stop", () => {
+ipcMain.handle("screen-sync:stop", async () => {
   screenSyncActive = false;
-  updateAnimation();
+  await updateAnimation({ waitForOutput: true });
   return { active: false };
 });
 ipcMain.handle("screen-sync:source", async () => {

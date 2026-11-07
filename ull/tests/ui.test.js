@@ -37,7 +37,7 @@ test("update feedback includes an accessible progress bar and reports download s
   assert.match(app, /updateCheckInProgress/);
 });
 
-test("frosted glass is clean, adjustable, and respects reduced-transparency preferences", () => {
+test("Liquid Glass remains archived without removing its implementation or controls", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
@@ -45,18 +45,26 @@ test("frosted glass is clean, adjustable, and respects reduced-transparency pref
   assert.match(html, /id="appearance-card"/);
   assert.match(html, /id="liquid-glass-toggle"/);
   assert.match(html, /id="glass-clarity"[^>]*type="range"|<input id="glass-clarity" type="range"/);
-  assert.match(app, /const LIQUID_GLASS = "ON"/);
+  assert.match(app, /const LIQUID_GLASS = "OFF"/);
   assert.match(app, /prefers-reduced-transparency: reduce/);
+  assert.match(app, /classList\.toggle\("hidden", !master\)/);
+  assert.match(app, /if \(LIQUID_GLASS === "ON"\) \{\s*\$\("#liquid-glass-toggle"\)\.addEventListener/);
   assert.match(app, /root\.dataset\.glass = glassIsActive\(\) \? "on" : "off"/);
   assert.match(app, /--glass-alpha/);
   assert.match(app, /--glass-blur/);
-  assert.match(css, /html\[data-glass="on"\].*backdrop-filter/s);
   assert.match(css, /html\[data-glass="on"\] \.card \{[^}]*background: rgb\(22 26 34 \/ calc\(var\(--glass-alpha\) \+ 0\.18\)\);[^}]*backdrop-filter: blur\(24px\)/s);
-  assert.doesNotMatch(css, /ambient-led|glow/i);
-  assert.match(html, /<html lang="en" data-glass="on">/);
+  assert.match(html, /<html lang="en" data-glass="off">/);
   assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), /ULLeds|brand|logo/i);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(css, /input\[type="range"\]::-webkit-slider-thumb \{\s+-webkit-appearance: none;\s+width: 26px;\s+height: 18px;\s+margin-top: -6px;/);
+});
+
+test("power changes stop Screen Sync and await configured LED output", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(app, /if \(screenSyncSession \|\| screenSyncStarting\) stopScreenSync\("", true\);\s+queueSettings\(\{ power: !state\.settings\.power \}, true\);/);
+  assert.match(main, /ipcMain\.handle\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+const result = setSettings\(input, !powerChanged\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
+  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+await updateAnimation\(\{ waitForOutput: true \}\);/);
+  assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \}/);
 });
 
 test("topbar tabs stay centered independently of connection status changes", () => {
@@ -85,11 +93,11 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\]:checked:active::after \{\s+transform: translate\(16px, -50%\);\s+\}/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.29", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.30", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 29; version += 1) {
+  for (let version = 0; version <= 30; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
@@ -148,7 +156,7 @@ test("saved Screen Sync preserves output only during reconnect and falls back wh
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
-  assert.match(main, /function updateAnimation\(\{ preserveOutput = false \} = \{\}\)/);
+  assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \} = \{\}\)/);
   assert.match(main, /if \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\) return/);
   assert.match(main, /updateAnimation\(\{ preserveOutput: settings\.resumeScreenSync \}\)/);
   assert.match(main, /parseDeviceLedCount\(response\)/);

@@ -1,6 +1,6 @@
 "use strict";
 
-const LIQUID_GLASS = "ON";
+const LIQUID_GLASS = "OFF";
 
 const SCENES_ENABLED = false;
 const DEFAULT_SCENES = [
@@ -1186,16 +1186,18 @@ function bindEvents() {
     }
   });
 
-  $("#liquid-glass-toggle").addEventListener("change", (event) => {
-    glassPrefs.enabled = event.target.checked;
-    saveGlassPrefs();
-    applyGlass();
-  });
-  $("#glass-clarity").addEventListener("input", (event) => {
-    glassPrefs.clarity = clamp(Number(event.target.value), 0, 100);
-    saveGlassPrefs();
-    applyGlass();
-  });
+  if (LIQUID_GLASS === "ON") {
+    $("#liquid-glass-toggle").addEventListener("change", (event) => {
+      glassPrefs.enabled = event.target.checked;
+      saveGlassPrefs();
+      applyGlass();
+    });
+    $("#glass-clarity").addEventListener("input", (event) => {
+      glassPrefs.clarity = clamp(Number(event.target.value), 0, 100);
+      saveGlassPrefs();
+      applyGlass();
+    });
+  }
 
   $("#monitor").addEventListener("click", selectPreviewPosition);
   $("#monitor").addEventListener("keydown", (event) => {
@@ -1219,6 +1221,7 @@ function bindEvents() {
   $("#confirm-reset").addEventListener("click", resetAllData);
 
   $("#power-toggle").addEventListener("click", () => {
+    if (screenSyncSession || screenSyncStarting) stopScreenSync("", true);
     queueSettings({ power: !state.settings.power }, true);
   });
 
