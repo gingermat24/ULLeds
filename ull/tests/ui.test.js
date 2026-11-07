@@ -51,11 +51,13 @@ test("frosted glass is clean, adjustable, and respects reduced-transparency pref
   assert.match(app, /--glass-alpha/);
   assert.match(app, /--glass-blur/);
   assert.match(css, /html\[data-glass="on"\].*backdrop-filter/s);
+  assert.match(css, /html\[data-glass="on"\].*background-color: rgb\(31 39 50 \/ var\(--glass-alpha\)\)/s);
   assert.doesNotMatch(css, /box-shadow|text-shadow|drop-shadow|radial-gradient/i);
   assert.doesNotMatch(css, /ambient-led|glow/i);
   assert.match(html, /<html lang="en" data-glass="on">/);
   assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), /ULLeds|brand|logo/i);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(css, /input\[type="range"\]::-webkit-slider-thumb \{\s+-webkit-appearance: none;\s+width: 26px;\s+height: 18px;\s+margin-top: -8px;/);
 });
 
 test("topbar tabs stay centered independently of connection status changes", () => {
@@ -69,11 +71,11 @@ test("topbar tabs stay centered independently of connection status changes", () 
   assert.match(css, /@media \(max-width: 980px\) \{\s+\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\) auto;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.26", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.27", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 26; version += 1) {
+  for (let version = 0; version <= 27; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);

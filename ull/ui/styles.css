@@ -333,7 +333,7 @@ input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 26px;
   height: 18px;
-  margin-top: -6px;
+  margin-top: -8px;
   border-radius: 999px;
   background: #F4F7FA;
   border: 0;
@@ -619,7 +619,7 @@ html[data-glass="on"] .topbar {
 }
 
 html[data-glass="on"] :is(.tabs, .device-status, .power-btn, .icon-btn, .secondary-btn, .wizard, .toast) {
-  background-color: rgb(255 255 255 / var(--glass-alpha));
+  background-color: rgb(31 39 50 / var(--glass-alpha));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(145%);
   backdrop-filter: blur(var(--glass-blur)) saturate(145%);
   border-color: rgb(255 255 255 / 0.16);
