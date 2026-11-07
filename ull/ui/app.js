@@ -34,6 +34,8 @@ let wizardStep = 0;
 let detectedDevices = [];
 let selectedLedIndices = null;
 let screenSyncSession = null;
+let autoSyncAttempted = false;
+let screenSyncError = "";
 let updateCheckInProgress = false;
 let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
 
@@ -144,7 +146,7 @@ function selectedColor() {
 }
 
 function applyColor(color, all = false) {
-  if (screenSyncSession) stopScreenSync();
+  if (screenSyncSession) stopScreenSync("", true);
   if (all || selectedLedIndices === null) {
     queueSettings({ color, ledColors: {} });
     return;
@@ -224,6 +226,11 @@ function updatePreview() {
   $("#power-label").textContent = settings.power ? "On" : "Off";
   $("#screen-sync-toggle").textContent = screenSyncSession ? "Stop" : "Start";
   $("#screen-sync-toggle").classList.toggle("syncing", Boolean(screenSyncSession));
+  $("#screen-sync-description").textContent = screenSyncSession
+    ? "Matching the primary display"
+    : screenSyncError || (settings.resumeScreenSync
+      ? "Will resume automatically when ULLeds starts"
+      : "Match LEDs to your display");
 
   if (screenSyncSession) {
     screenSyncSession.pixelElements = [...document.querySelectorAll(".led-pixel")];
@@ -303,6 +310,8 @@ function renderPalette() {
 
 function render() {
   $("#update-folder-label").textContent = state.settings.updateFolder || "No folder selected";
+  $("#start-with-windows").checked = state.settings.startWithWindows;
+  $("#resume-screen-sync").checked = state.settings.resumeScreenSync;
   renderConnection();
   updatePreview();
   if (SCENES_ENABLED) {
@@ -337,9 +346,10 @@ function selectPreviewPosition(event) {
   updatePreview();
 }
 
-function stopScreenSync(message = "") {
+function stopScreenSync(message = "", clearResumePreference = false) {
   const session = screenSyncSession;
   screenSyncSession = null;
+  screenSyncError = "";
   if (session) {
     cancelAnimationFrame(session.frame);
     session.stream.getTracks().forEach((track) => {
@@ -348,13 +358,16 @@ function stopScreenSync(message = "") {
     });
   }
   window.ull.stopScreenSync().catch((error) => toast(`Could not stop screen sync: ${error.message}`));
+  if (clearResumePreference && state.settings.resumeScreenSync) {
+    queueSettings({ resumeScreenSync: false }, true);
+  }
   updatePreview();
   if (message) toast(message);
 }
 
-async function startScreenSync() {
+async function startScreenSync({ automatic = false } = {}) {
   if (!state.device.connected) return toast("Connect the LED controller before starting screen sync.");
-  if (!navigator.mediaDevices?.getDisplayMedia) {
+  if (!navigator.mediaDevices?.getDisplayMedia || !navigator.mediaDevices?.getUserMedia) {
     return toast("Screen sharing is not available in this app environment.");
   }
 
@@ -371,10 +384,22 @@ async function startScreenSync() {
 
   const button = $("#screen-sync-toggle");
   let stream;
+  let hardwareSyncStarted = false;
   button.disabled = true;
 
   try {
-    const capture = navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
+    const capture = automatic
+      ? window.ull.screenSyncSource().then(({ id }) => navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: "desktop",
+            chromeMediaSourceId: id,
+            maxFrameRate: 30
+          }
+        }
+      }))
+      : navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: false });
     if (!state.settings.power) {
       const result = await window.ull.updateSettings({ power: true });
       state.settings = result.settings;
@@ -401,6 +426,10 @@ async function startScreenSync() {
     if (!context) throw new Error("Could not start screen color sampling.");
 
     await window.ull.startScreenSync();
+    hardwareSyncStarted = true;
+    const savedSettings = await window.ull.updateSettings({ resumeScreenSync: true });
+    state.settings = savedSettings.settings;
+    state.device = savedSettings;
 
     const session = {
       stream,
@@ -415,6 +444,7 @@ async function startScreenSync() {
       sending: false
     };
     screenSyncSession = session;
+    screenSyncError = "";
 
     stream.getVideoTracks()[0].onended = () => {
       if (screenSyncSession === session) stopScreenSync("Screen sharing ended.");
@@ -474,11 +504,22 @@ async function startScreenSync() {
     session.frame = requestAnimationFrame(sampleFrame);
     updatePreview();
   } catch (error) {
+    if (hardwareSyncStarted) {
+      try {
+        await window.ull.stopScreenSync();
+      } catch (stopError) {
+        console.error("Could not stop screen sync after startup failed:", stopError);
+      }
+    }
     if (screenSyncSession?.stream === stream) stopScreenSync();
     else stream?.getTracks().forEach((track) => track.stop());
-    const message = error.name === "NotAllowedError"
-      ? "Screen sharing was canceled or blocked."
-      : `Could not start screen sync: ${error.message}`;
+    const message = automatic
+      ? `Could not resume screen sync: ${error.message}. Start it manually from Lighting.`
+      : error.name === "NotAllowedError"
+        ? "Screen sharing was canceled or blocked."
+        : `Could not start screen sync: ${error.message}`;
+    if (automatic) screenSyncError = message;
+    updatePreview();
     toast(message);
   } finally {
     button.disabled = false;
@@ -846,8 +887,16 @@ function bindEvents() {
   });
 
   $("#screen-sync-toggle").addEventListener("click", () => {
-    if (screenSyncSession) stopScreenSync();
+    if (screenSyncSession) stopScreenSync("", true);
     else startScreenSync();
+  });
+
+  $("#start-with-windows").addEventListener("change", (event) => {
+    queueSettings({ startWithWindows: event.target.checked }, true);
+  });
+  $("#resume-screen-sync").addEventListener("change", (event) => {
+    queueSettings({ resumeScreenSync: event.target.checked }, true);
+    if (!event.target.checked && screenSyncSession) stopScreenSync();
   });
 
   if (SCENES_ENABLED) {
@@ -909,6 +958,8 @@ function bindEvents() {
   window.ull.onDeviceStatus((device) => {
     applyDeviceState(device);
     render();
+    if (!device.connected) autoSyncAttempted = false;
+    else maybeResumeScreenSync();
   });
 
   window.ull.onUpdateProgress((progress) => {
@@ -964,10 +1015,17 @@ async function start() {
     state = await window.ull.initialState();
     render();
     await scanDevices();
+    maybeResumeScreenSync();
     if (!state.settings.onboarded) openSetup();
   } catch (error) {
     toast(`ULLeds could not load: ${error.message}`);
   }
+}
+
+function maybeResumeScreenSync() {
+  if (autoSyncAttempted || !state.settings.resumeScreenSync || !state.device.connected) return;
+  autoSyncAttempted = true;
+  void startScreenSync({ automatic: true });
 }
 
 start();

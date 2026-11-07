@@ -108,7 +108,7 @@
               <div class="sync-block">
                 <div>
                   <div class="sync-title">Screen Sync</div>
-                  <div class="sync-desc">Match LEDs to your display</div>
+                  <div class="sync-desc" id="screen-sync-description">Match LEDs to your display</div>
                 </div>
                 <button id="screen-sync-toggle" class="secondary-btn">Start</button>
               </div>
@@ -165,6 +165,23 @@
               <span>Layout</span>
               <strong id="settings-layout">—</strong>
             </div>
+          </div>
+
+          <div class="card startup-card">
+            <label class="preference-row" for="start-with-windows">
+              <span>
+                <strong>Start ULLeds with Windows</strong>
+                <small>Restore your saved LED color after you sign in.</small>
+              </span>
+              <input id="start-with-windows" type="checkbox">
+            </label>
+            <label class="preference-row" for="resume-screen-sync">
+              <span>
+                <strong>Resume Screen Sync at startup</strong>
+                <small>Automatically sync the primary display when ULLeds starts.</small>
+              </span>
+              <input id="resume-screen-sync" type="checkbox">
+            </label>
           </div>
 
           <div class="card update-card">

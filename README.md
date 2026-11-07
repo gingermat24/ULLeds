@@ -23,6 +23,11 @@ matching saved strip profile in the existing ULLeds and QuikLight settings.
 The controller reports its LED count directly; the count is read-only in the
 app. The wizard lets you adjust the saved physical layout and color order.
 ULLeds saves settings under `%APPDATA%\ULLeds`.
+In the Device settings, **Start ULLeds with Windows** restores the saved
+lighting after sign-in. **Resume Screen Sync at startup** captures the primary
+display automatically; it is enabled when you start Screen Sync and disabled
+when you stop it. The startup sync option uses the primary display, while a
+manual start can still choose a display.
 
 ## Build the installer
 
@@ -60,9 +65,9 @@ without changing the lighting controls.
 The app scans for the USB controller with VID `1A86` / PID `FE07` at startup,
 on request, and every five seconds when disconnected. It supports color,
 brightness, hardware-detected LED count, six RGB channel orders, strip layout,
-steady color, breathing, spectrum, and palette-drift effects, plus named
-saved scenes. Moving effects are sent as paced HID frames; connect the
-controller to apply changes.
+steady color, breathing, spectrum, and palette-drift effects, plus saved
+per-LED colors. The Scenes tab is currently disabled. Moving effects are sent
+as paced HID frames; connect the controller to apply changes.
 
 The controller accepts addressable color sections. Click one preview LED to
 select it, Ctrl-click to add or remove individual LEDs, or click a side to
@@ -79,7 +84,8 @@ until you choose Quit.
 
 Quitting ULLeds leaves the controller's last color output on; it no longer
 sends an all-black frame. Colors and settings are saved in the existing
-per-user settings file and restored on the next launch.
+per-user settings file and restored on the next launch. Windows startup is
+enabled by default in installed builds; startup launches minimized to the tray.
 
 ## Repository note
 

@@ -41,7 +41,9 @@ const DEFAULTS = Object.freeze({
   deviceProfile: null,
   power: true,
   onboarded: false,
-  updateFolder: ""
+  updateFolder: "",
+  startWithWindows: true,
+  resumeScreenSync: false
 });
 const EFFECTS = new Set(["steady", "breathe", "spectrum", "palette"]);
 
@@ -67,6 +69,7 @@ let updateServerFolder = "";
 let downloadedUpdateVersion = null;
 let updateDownloadVersion = null;
 let updateCheckPromise = null;
+const startHidden = process.platform === "win32" && process.argv.includes("--hidden");
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = false;
@@ -74,6 +77,14 @@ autoUpdater.disableDifferentialDownload = false;
 
 function settingsFile() {
   return path.join(app.getPath("appData"), "ULLeds", "settings.json");
+}
+
+function configureLoginItem() {
+  if (process.platform !== "win32" || !app.isPackaged) return;
+  app.setLoginItemSettings({
+    openAtLogin: settings.startWithWindows,
+    args: ["--hidden"]
+  });
 }
 
 function loadSettings() {
@@ -258,6 +269,12 @@ function validateSettings(input) {
       throw new TypeError("Update folder path is invalid.");
     }
     next.updateFolder = input.updateFolder;
+  }
+  for (const key of ["startWithWindows", "resumeScreenSync"]) {
+    if (key in input) {
+      if (typeof input[key] !== "boolean") throw new TypeError(`${key} must be a boolean.`);
+      next[key] = input[key];
+    }
   }
   return next;
 }
@@ -536,6 +553,7 @@ function setSettings(input) {
   const changes = validateSettings(input);
   settings = { ...settings, ...changes };
   saveSettings();
+  if (Object.hasOwn(changes, "startWithWindows")) configureLoginItem();
   if (hidDevice && ["color", "brightness", "effect", "speed", "palette", "ledColors", "power"]
     .some((key) => Object.hasOwn(changes, key))) {
     updateAnimation();
@@ -624,7 +642,9 @@ function createWindow() {
       backgroundThrottling: false
     }
   });
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => {
+    if (!startHidden) mainWindow.show();
+  });
   mainWindow.on("close", (event) => {
     if (isQuitting) return;
     event.preventDefault();
@@ -681,6 +701,16 @@ ipcMain.handle("screen-sync:stop", () => {
   screenSyncActive = false;
   updateAnimation();
   return { active: false };
+});
+ipcMain.handle("screen-sync:source", async () => {
+  const sources = await desktopCapturer.getSources({
+    types: ["screen"],
+    thumbnailSize: { width: 0, height: 0 }
+  });
+  const primaryDisplayId = String(screen.getPrimaryDisplay().id);
+  const source = sources.find((candidate) => candidate.display_id === primaryDisplayId) || sources[0];
+  if (!source) throw new Error("No display is available to sync.");
+  return { id: source.id };
 });
 ipcMain.handle("updates:choose-folder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -792,11 +822,12 @@ app.whenReady().then(async () => {
     }
   });
   loadSettings();
+  configureLoginItem();
   createApplicationMenu();
   createTray();
   createWindow();
   const devices = getDeviceList();
-  if (devices.length) await connectDevice(devices[0].path);
+  if (devices.length) void connectDevice(devices[0].path);
   watcherTimer = setInterval(async () => {
     try {
       if (!hidDevice) {

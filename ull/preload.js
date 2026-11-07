@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("ull", Object.freeze({
   startScreenSync: () => ipcRenderer.invoke("screen-sync:start"),
   sendScreenSyncColors: (colors) => ipcRenderer.invoke("screen-sync:colors", colors),
   stopScreenSync: () => ipcRenderer.invoke("screen-sync:stop"),
+  screenSyncSource: () => ipcRenderer.invoke("screen-sync:source"),
   chooseUpdateFolder: () => ipcRenderer.invoke("updates:choose-folder"),
   checkUpdates: () => ipcRenderer.invoke("updates:check"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),

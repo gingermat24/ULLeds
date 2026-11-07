@@ -71,3 +71,20 @@ test("restart status tells users ULLeds will reopen automatically", () => {
   assert.match(app, /ULLeds will reopen automatically/);
   assert.match(app, /requestAnimationFrame\(\(\) => requestAnimationFrame\(resolve\)\)/);
 });
+
+test("saved color is restored at Windows sign-in and screen sync can resume automatically", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(main, /startWithWindows: true/);
+  assert.match(main, /openAtLogin: settings\.startWithWindows/);
+  assert.match(main, /args: \["--hidden"\]/);
+  assert.match(main, /if \(devices\.length\) void connectDevice\(devices\[0\]\.path\)/);
+  assert.match(html, /id="start-with-windows"/);
+  assert.match(html, /id="resume-screen-sync"/);
+  assert.match(app, /window\.ull\.screenSyncSource\(\)\.then/);
+  assert.match(app, /chromeMediaSourceId: id/);
+  assert.match(app, /maybeResumeScreenSync\(\)/);
+  assert.match(app, /Will resume automatically when ULLeds starts/);
+});
