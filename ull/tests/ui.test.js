@@ -71,11 +71,26 @@ test("topbar tabs stay centered independently of connection status changes", () 
   assert.match(css, /@media \(max-width: 980px\) \{\s+\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\) auto;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.27", () => {
+test("settings changes stay ordered and sliders flush their final value", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(app, /while \(Object\.keys\(settingsQueue\)\.length\)/);
+  assert.match(app, /Object\.assign\(state\.settings, settingsQueue\)/);
+  assert.match(app, /settingsQueue = \{ \.\.\.pending, \.\.\.settingsQueue \}/);
+  assert.match(app, /if \(immediate\) \{\s+settingsTimer = null;\s+void flushSettingsQueue\(\);/);
+  assert.match(app, /document\.addEventListener\("change", \(event\) => \{\s+if \(event\.target instanceof HTMLInputElement && event\.target\.type === "range"\)/);
+  assert.doesNotMatch(app, /settingsRevision/);
+  assert.match(css, /\.preference-row input\[type="checkbox"\]::after \{[^}]*top: 50%;[^}]*transform: translateY\(-50%\);/s);
+  assert.match(css, /\.preference-row input\[type="checkbox"\]:checked::after \{ transform: translate\(20px, -50%\); \}/);
+  assert.match(css, /\.preference-row input\[type="checkbox"\]:checked:active::after \{ transform: translate\(16px, -50%\); \}/);
+});
+
+test("release notes have separate entries for every version from 1.0.0 through 1.0.28", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 27; version += 1) {
+  for (let version = 0; version <= 28; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);

@@ -46,7 +46,7 @@ let state = {
 let toastTimer;
 let settingsQueue = {};
 let settingsTimer;
-let settingsRevision = 0;
+let settingsFlushPromise = null;
 let wizardStep = 0;
 let detectedDevices = [];
 let deviceConnecting = false;
@@ -168,28 +168,49 @@ function toast(message) {
 }
 
 function queueSettings(changes, immediate = false) {
-  const revision = ++settingsRevision;
   Object.assign(state.settings, changes);
   Object.assign(settingsQueue, changes);
   updatePreview();
   clearTimeout(settingsTimer);
-  settingsTimer = setTimeout(async () => {
-    const pending = settingsQueue;
-    settingsQueue = {};
-    try {
-      const result = await window.ull.updateSettings(pending);
-      if (revision === settingsRevision) {
+  if (immediate) {
+    settingsTimer = null;
+    void flushSettingsQueue();
+    return;
+  }
+  settingsTimer = setTimeout(() => {
+    settingsTimer = null;
+    void flushSettingsQueue();
+  }, 35);
+}
+
+async function flushSettingsQueue() {
+  if (settingsFlushPromise) return settingsFlushPromise;
+  settingsFlushPromise = (async () => {
+    while (Object.keys(settingsQueue).length) {
+      const pending = settingsQueue;
+      settingsQueue = {};
+      try {
+        const result = await window.ull.updateSettings(pending);
         state.settings = result.settings;
+        Object.assign(state.settings, settingsQueue);
         state.device = result;
         renderConnection();
         updatePreview();
         if (SCENES_ENABLED && Object.hasOwn(pending, "presets")) renderScenes();
         if (SCENES_ENABLED && Object.hasOwn(pending, "palette")) renderPalette();
+      } catch (error) {
+        settingsQueue = { ...pending, ...settingsQueue };
+        console.error("Could not save ULLeds settings:", error);
+        toast(`Could not save settings: ${error.message}`);
+        break;
       }
-    } catch (error) {
-      toast(`Could not save settings: ${error.message}`);
     }
-  }, immediate ? 0 : 110);
+  })();
+  try {
+    await settingsFlushPromise;
+  } finally {
+    settingsFlushPromise = null;
+  }
 }
 
 function renderConnection() {
@@ -1112,8 +1133,10 @@ async function resetAllData() {
   button.disabled = true;
   button.textContent = "Resetting…";
   clearTimeout(settingsTimer);
+  settingsTimer = null;
   settingsQueue = {};
-  settingsRevision += 1;
+  if (settingsFlushPromise) await settingsFlushPromise;
+  settingsQueue = {};
   stopScreenSync();
   autoSyncAttempted = true;
 
@@ -1173,6 +1196,13 @@ function bindEvents() {
   document.addEventListener("input", (event) => {
     if (event.target instanceof HTMLInputElement && event.target.type === "range") {
       updateRangeFill(event.target);
+    }
+  });
+  document.addEventListener("change", (event) => {
+    if (event.target instanceof HTMLInputElement && event.target.type === "range") {
+      clearTimeout(settingsTimer);
+      settingsTimer = null;
+      void flushSettingsQueue();
     }
   });
 

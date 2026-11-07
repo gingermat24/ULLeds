@@ -490,19 +490,20 @@ select:disabled { opacity: 0.55; cursor: default; }
 .preference-row input[type="checkbox"]::after {
   content: "";
   position: absolute;
-  top: 2px;
+  top: 50%;
   left: 2px;
   width: 24px;
   height: 24px;
   border-radius: 50%;
   background: #F4F7FA;
   border: 1px solid rgb(0 0 0 / 0.3);
+  transform: translateY(-50%);
   transition: transform 0.35s var(--ease-spring), width 0.2s ease;
 }
 .preference-row input[type="checkbox"]:checked { background: var(--green); border-color: var(--green); }
-.preference-row input[type="checkbox"]:checked::after { transform: translateX(20px); }
+.preference-row input[type="checkbox"]:checked::after { transform: translate(20px, -50%); }
 .preference-row input[type="checkbox"]:active::after { width: 28px; }
-.preference-row input[type="checkbox"]:checked:active::after { transform: translateX(16px); }
+.preference-row input[type="checkbox"]:checked:active::after { transform: translate(16px, -50%); }
 
 .reset-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
 .reset-card p { max-width: 640px; margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.55; }
