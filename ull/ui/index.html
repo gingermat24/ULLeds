@@ -200,6 +200,15 @@
             <small>Higher rates update more often and may use more CPU. Default: 30 FPS.</small>
           </div>
 
+          <div class="card sync-area-card">
+            <label for="sync-content-mode">Screen Sync picture area</label>
+            <p>Choose the area your movie fills. Widescreen mode samples the picture, away from 2.35:1 letterbox bars.</p>
+            <select id="sync-content-mode">
+              <option value="display">Full display</option>
+              <option value="cinema235">Cinema widescreen (2.35:1)</option>
+            </select>
+          </div>
+
           <div class="card startup-card">
             <label class="preference-row" for="start-with-windows">
               <span>
@@ -287,7 +296,11 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.42</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.43</h3><span>Current</span></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Screen Sync can sample inside the picture area of 2.35:1 widescreen movies instead of sampling letterbox bars.</li><li>The 1280-pixel capture cap scales the full display; it does not crop the capture.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.42</h3></header>
               <div class="release-category"><strong>Improved</strong><ul><li>Screen Sync limits desktop capture resolution to reduce processing work while preserving the existing color-sampling resolution.</li></ul></div>
             </article>
             <article class="card release-entry">

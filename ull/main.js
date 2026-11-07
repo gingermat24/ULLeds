@@ -52,6 +52,7 @@ const DEFAULTS = Object.freeze({
   updateFolder: "",
   updateSource: "github",
   syncFps: 30,
+  syncContentMode: "display",
   startWithWindows: true,
   resumeScreenSync: false
 });
@@ -223,6 +224,12 @@ function validateSettings(input) {
       throw new RangeError("Screen Sync FPS must be an integer from 5 to 60.");
     }
     next.syncFps = value;
+  }
+  if ("syncContentMode" in input) {
+    if (!["display", "cinema235"].includes(input.syncContentMode)) {
+      throw new TypeError("Choose a supported Screen Sync picture area.");
+    }
+    next.syncContentMode = input.syncContentMode;
   }
   if ("palette" in input) {
     if (!Array.isArray(input.palette) || input.palette.length < 2 || input.palette.length > 8 ||

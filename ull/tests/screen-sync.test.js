@@ -78,6 +78,25 @@ test("screen sync samples one color for each physical LED position", () => {
   assert.throws(() => sampleStripColors(pixels, 15, 12, layout), /image and strip layout/);
 });
 
+test("screen sync samples a widescreen picture rectangle instead of its letterbox bars", () => {
+  const width = 160;
+  const height = 90;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const inPicture = y >= 11 && y < 79;
+      pixels.set(inPicture ? [24, 96, 180, 255] : [0, 0, 0, 255], (y * width + x) * 4);
+    }
+  }
+
+  const colors = sampleStripColors(pixels, width, height, {
+    ledCount: 4,
+    indices: { top: [0], right: [1], bottom: [2], left: [3] }
+  }, 2.35);
+
+  assert.deepEqual(colors, Array(4).fill("#1860b4"));
+});
+
 test("screen sync preserves different screen colors at individual LED positions", () => {
   const width = 80;
   const height = 45;

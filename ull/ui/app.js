@@ -26,6 +26,7 @@ let state = {
     updateFolder: "",
     updateSource: "github",
     syncFps: 30,
+    syncContentMode: "display",
     startWithWindows: true,
     resumeScreenSync: false
   },
@@ -350,6 +351,7 @@ function updatePreview() {
   $("#sync-fps-range").value = syncFps;
   if (document.activeElement !== $("#sync-fps-number")) $("#sync-fps-number").value = syncFps;
   $("#sync-fps-value").textContent = `${syncFps} FPS`;
+  $("#sync-content-mode").value = settings.syncContentMode || "display";
   $("#speed-control").classList.toggle("hidden", settings.effect === "steady");
   $("#power-toggle").setAttribute("aria-checked", String(settings.power));
   $("#power-toggle").setAttribute("aria-label", `LED power: ${settings.power ? "on" : "off"}`);
@@ -658,7 +660,8 @@ async function runScreenSyncStart({ automatic = false } = {}) {
           pixels,
           canvas.width,
           canvas.height,
-          session.layout
+          session.layout,
+          state.settings.syncContentMode === "cinema235" ? 2.35 : null
         );
         session.colors = sampledColors;
 
@@ -1233,6 +1236,9 @@ function bindEvents() {
       event.target.value = state.settings.syncFps;
       toast("Screen Sync FPS must be from 5 to 60.");
     }
+  });
+  $("#sync-content-mode").addEventListener("change", (event) => {
+    queueSettings({ syncContentMode: event.target.value }, true);
   });
 
   $("#screen-sync-toggle").addEventListener("click", () => {

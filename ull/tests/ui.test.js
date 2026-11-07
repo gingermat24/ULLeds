@@ -140,16 +140,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.42", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.43", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 42; version += 1) {
+  for (let version = 0; version <= 43; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.42<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.43<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -267,6 +267,22 @@ test("Screen Sync FPS is persisted and controls capture, sampling, and HID caden
   assert.match(app, /video\.requestVideoFrameCallback\(sampleFrame\)/);
   assert.match(app, /createLatestFrameSender\(\{/);
   assert.match(screenSync, /maxFrameRate,\s*maxWidth: MAX_CAPTURE_DIMENSION,\s*maxHeight: MAX_CAPTURE_DIMENSION/);
+});
+
+test("Screen Sync picture area is persisted and supports cinema widescreen sampling", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const screenSync = fs.readFileSync(path.join(__dirname, "..", "screen-sync.js"), "utf8");
+
+  assert.match(html, /id="sync-content-mode"[\s\S]*value="display"[\s\S]*value="cinema235"/);
+  assert.match(html, /ULLeds 1\.0\.43/);
+  assert.match(app, /syncContentMode: "display"/);
+  assert.match(app, /queueSettings\(\{ syncContentMode: event\.target\.value \}, true\)/);
+  assert.match(app, /state\.settings\.syncContentMode === "cinema235" \? 2\.35 : null/);
+  assert.match(main, /syncContentMode: "display"/);
+  assert.match(main, /Choose a supported Screen Sync picture area/);
+  assert.match(screenSync, /contentAspectRatio = null/);
 });
 
 test("Updates has GitHub Releases selected by default and guarded local updates", () => {

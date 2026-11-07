@@ -21,20 +21,56 @@ function createDesktopCaptureConstraints(sourceId, maxFrameRate) {
   };
 }
 
-function sampleStripColors(pixels, width, height, layout) {
+function sampleStripColors(pixels, width, height, layout, contentAspectRatio = null) {
   if (!pixels || !Number.isInteger(width) || width < 1 ||
       !Number.isInteger(height) || height < 1 ||
       pixels.length !== width * height * 4 ||
-      !layout || !Number.isInteger(layout.ledCount) || !layout.indices) {
+      !layout || !Number.isInteger(layout.ledCount) || !layout.indices ||
+      (contentAspectRatio !== null &&
+        (!Number.isFinite(contentAspectRatio) || contentAspectRatio <= 0))) {
     throw new TypeError("Screen image and strip layout are invalid.");
+  }
+  let contentLeft = 0;
+  let contentTop = 0;
+  let contentWidth = width;
+  let contentHeight = height;
+  if (contentAspectRatio !== null) {
+    if (width / height > contentAspectRatio) {
+      contentWidth = height * contentAspectRatio;
+      contentLeft = (width - contentWidth) / 2;
+    } else {
+      contentHeight = width / contentAspectRatio;
+      contentTop = (height - contentHeight) / 2;
+    }
   }
   const colors = Array(layout.ledCount).fill("#000000");
   const samplePosition = (edge, position, count) => {
-    const along = Math.round((position + 0.5) / count * ((edge === "top" || edge === "bottom" ? width : height) - 1));
-    if (edge === "top") return [along, Math.min(height - 1, Math.max(0, Math.round(height * 0.06)))];
-    if (edge === "bottom") return [along, Math.min(height - 1, Math.max(0, Math.round(height * 0.94)))];
-    if (edge === "left") return [Math.min(width - 1, Math.max(0, Math.round(width * 0.06))), along];
-    return [Math.min(width - 1, Math.max(0, Math.round(width * 0.94))), along];
+    const horizontal = edge === "top" || edge === "bottom";
+    const along = Math.round((position + 0.5) / count *
+      ((horizontal ? contentWidth : contentHeight) - 1));
+    if (edge === "top") {
+      return [
+        Math.min(width - 1, Math.max(0, Math.round(contentLeft + along))),
+        Math.min(height - 1, Math.max(0, Math.round(contentTop + contentHeight * 0.06)))
+      ];
+    }
+    if (edge === "bottom") {
+      return [
+        Math.min(width - 1, Math.max(0, Math.round(contentLeft + along))),
+        Math.min(height - 1, Math.max(0, Math.round(contentTop + contentHeight * 0.94)))
+      ];
+    }
+    const y = Math.min(height - 1, Math.max(0, Math.round(contentTop + along)));
+    if (edge === "left") {
+      return [
+        Math.min(width - 1, Math.max(0, Math.round(contentLeft + contentWidth * 0.06))),
+        y
+      ];
+    }
+    return [
+      Math.min(width - 1, Math.max(0, Math.round(contentLeft + contentWidth * 0.94))),
+      y
+    ];
   };
   const sampleColor = (centerX, centerY) => {
     const samples = [];
