@@ -48,7 +48,14 @@ function parseColor(color) {
   return { R: red, G: green, B: blue };
 }
 
-function buildColorSections(colors, brightness = 100, power = true, effectBrightness = 1, colorOrder = "RGB") {
+function buildColorSections(
+  colors,
+  brightness = 100,
+  power = true,
+  effectBrightness = 1,
+  colorOrder = "RGB",
+  channelGains = [100, 100, 100]
+) {
   if (!Array.isArray(colors) || colors.length < 1 || colors.length > MAX_LEDS) {
     throw new RangeError(`Color data must contain 1 to ${MAX_LEDS} LEDs.`);
   }
@@ -58,11 +65,17 @@ function buildColorSections(colors, brightness = 100, power = true, effectBright
   }
   if (typeof power !== "boolean") throw new TypeError("Power must be on or off.");
   validateColorOrder(colorOrder);
+  if (!Array.isArray(channelGains) || channelGains.length !== 3 ||
+      channelGains.some((gain) => !Number.isInteger(gain) || gain < 50 || gain > 150)) {
+    throw new RangeError("RGB channel gains must be integers from 50% to 150%.");
+  }
 
   const factor = power ? brightness / 100 * effectBrightness : 0;
   const orderedColors = colors.map((color) => {
     const rgb = parseColor(color);
-    return colorOrder.split("").map((channel) => Math.round(rgb[channel] * factor));
+    return colorOrder.split("").map((channel) =>
+      Math.round(rgb[channel] * factor * channelGains["RGB".indexOf(channel)] / 100)
+    );
   });
   const sections = [];
   let start = 1;
@@ -134,11 +147,18 @@ function buildSectionPackets(sections, firstMessageId = 2) {
   return packets;
 }
 
-function buildScreenSyncFrame(colors, brightness = 100, power = true, colorOrder = "RGB", messageId = 2) {
+function buildScreenSyncFrame(
+  colors,
+  brightness = 100,
+  power = true,
+  colorOrder = "RGB",
+  messageId = 2,
+  channelGains = [100, 100, 100]
+) {
   if (!Number.isInteger(messageId) || messageId < 1 || messageId > 255) {
     throw new RangeError("Message ID must be between 1 and 255.");
   }
-  const sections = buildColorSections(colors, brightness, power, 1, colorOrder)
+  const sections = buildColorSections(colors, brightness, power, 1, colorOrder, channelGains)
     .filter(([start]) => start <= colors.length);
   const lastSection = sections.at(-1);
   lastSection[4] = colors.length;
@@ -171,20 +191,46 @@ function buildHidReports(packet) {
   return reports;
 }
 
-function buildColorFrames(colors, brightness = 100, power = true, effectBrightness = 1, colorOrder = "RGB", firstMessageId = 2) {
+function buildColorFrames(
+  colors,
+  brightness = 100,
+  power = true,
+  effectBrightness = 1,
+  colorOrder = "RGB",
+  firstMessageId = 2,
+  channelGains = [100, 100, 100]
+) {
   return buildSectionPackets(
-    buildColorSections(colors, brightness, power, effectBrightness, colorOrder),
+    buildColorSections(colors, brightness, power, effectBrightness, colorOrder, channelGains),
     firstMessageId
   );
 }
 
-function buildFrame(color, ledCount, brightness = 100, power = true, effectBrightness = 1, colorOrder = "RGB", ledColors = {}, firstMessageId = 2) {
+function buildFrame(
+  color,
+  ledCount,
+  brightness = 100,
+  power = true,
+  effectBrightness = 1,
+  colorOrder = "RGB",
+  ledColors = {},
+  firstMessageId = 2,
+  channelGains = [100, 100, 100]
+) {
   if (!Number.isInteger(ledCount) || ledCount < 1 || ledCount > MAX_LEDS) {
     throw new RangeError(`LED count must be between 1 and ${MAX_LEDS}.`);
   }
   parseColor(color);
   const colors = Array.from({ length: ledCount }, (_, index) => ledColors[index] || color);
-  return buildColorFrames(colors, brightness, power, effectBrightness, colorOrder, firstMessageId);
+  return buildColorFrames(
+    colors,
+    brightness,
+    power,
+    effectBrightness,
+    colorOrder,
+    firstMessageId,
+    channelGains
+  );
 }
 
 module.exports = {

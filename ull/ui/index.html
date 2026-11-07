@@ -87,6 +87,24 @@
                 <input id="brightness" type="range" min="0" max="100" value="72">
               </div>
 
+              <details class="color-tuning">
+                <summary>LED color tuning</summary>
+                <p>Adjust channel balance if your LEDs look different from the selected color.</p>
+                <div class="tuning-channel">
+                  <label for="rgb-red">Red <output id="rgb-red-value">100%</output></label>
+                  <input id="rgb-red" type="range" min="50" max="150" value="100">
+                </div>
+                <div class="tuning-channel">
+                  <label for="rgb-green">Green <output id="rgb-green-value">100%</output></label>
+                  <input id="rgb-green" type="range" min="50" max="150" value="100">
+                </div>
+                <div class="tuning-channel">
+                  <label for="rgb-blue">Blue <output id="rgb-blue-value">100%</output></label>
+                  <input id="rgb-blue" type="range" min="50" max="150" value="100">
+                </div>
+                <button id="reset-color-tuning" class="ghost-btn" type="button">Reset channel balance</button>
+              </details>
+
               <div class="control-group">
                 <label>Effect</label>
                 <select id="effect">
@@ -108,7 +126,7 @@
               <div class="sync-block">
                 <div>
                   <div class="sync-title">Screen Sync</div>
-                  <div class="sync-desc" id="screen-sync-description">Match LEDs to your display</div>
+                  <div class="sync-desc" id="screen-sync-description">Samples visible colors around your primary display</div>
                 </div>
                 <button id="screen-sync-toggle" class="secondary-btn">Start</button>
               </div>

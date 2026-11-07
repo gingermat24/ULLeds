@@ -33,6 +33,7 @@ const APP_ID = "com.gingermat.ulleds";
 const DEFAULTS = Object.freeze({
   color: "#e879a8",
   brightness: 72,
+  channelGains: [100, 100, 100],
   effect: "steady",
   speed: 48,
   palette: ["#e879a8", "#8d7cff", "#55c8d2"],
@@ -154,6 +155,7 @@ function settingsSnapshot() {
   return {
     ...settings,
     palette: [...settings.palette],
+    channelGains: [...settings.channelGains],
     ledColors: { ...settings.ledColors },
     presets: [...settings.presets]
   };
@@ -172,6 +174,13 @@ function validateSettings(input) {
     const value = Number(input.brightness);
     if (!Number.isFinite(value)) throw new TypeError("Brightness must be a number.");
     next.brightness = Math.round(Math.max(0, Math.min(100, value)));
+  }
+  if ("channelGains" in input) {
+    if (!Array.isArray(input.channelGains) || input.channelGains.length !== 3 ||
+        input.channelGains.some((gain) => !Number.isInteger(gain) || gain < 50 || gain > 150)) {
+      throw new RangeError("RGB channel gains must be integers from 50% to 150%.");
+    }
+    next.channelGains = [...input.channelGains];
   }
   if ("ledCount" in input) {
     const value = Number(input.ledCount);
@@ -361,7 +370,8 @@ async function writeColors(colors, effectBrightness = 1) {
     settings.power,
     effectBrightness,
     profile?.colorOrder || "RGB",
-    firstMessageId
+    firstMessageId,
+    settings.channelGains
   );
   commandId = ((firstMessageId - 1 + packets.length) % 255) + 1;
   await enqueueHidReports(device, packets.flatMap(buildHidReports));
@@ -382,7 +392,8 @@ async function writeScreenSyncColors(colors) {
     settings.brightness,
     settings.power,
     profile?.colorOrder || "RGB",
-    messageId
+    messageId,
+    settings.channelGains
   );
   commandId = messageId;
   await enqueueHidReports(device, buildHidReports(packet));
@@ -554,7 +565,7 @@ function setSettings(input) {
   settings = { ...settings, ...changes };
   saveSettings();
   if (Object.hasOwn(changes, "startWithWindows")) configureLoginItem();
-  if (hidDevice && ["color", "brightness", "effect", "speed", "palette", "ledColors", "power"]
+  if (hidDevice && ["color", "brightness", "channelGains", "effect", "speed", "palette", "ledColors", "power"]
     .some((key) => Object.hasOwn(changes, key))) {
     updateAnimation();
   }

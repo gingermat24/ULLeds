@@ -53,14 +53,25 @@ function sampleStripColors(pixels, width, height, layout) {
   for (const [edge, indices] of Object.entries(layout.indices)) {
     indices.forEach((ledIndex, position) => {
       const [centerX, centerY] = samplePosition(edge, position, indices.length);
-      const sample = [];
+      let red = 0;
+      let green = 0;
+      let blue = 0;
+      let weight = 0;
       for (let y = Math.max(0, centerY - 1); y <= Math.min(height - 1, centerY + 1); y += 1) {
         for (let x = Math.max(0, centerX - 1); x <= Math.min(width - 1, centerX + 1); x += 1) {
           const offset = (y * width + x) * 4;
-          sample.push(pixels[offset], pixels[offset + 1], pixels[offset + 2], pixels[offset + 3]);
+          const alpha = pixels[offset + 3] / 255;
+          red += pixels[offset] * alpha;
+          green += pixels[offset + 1] * alpha;
+          blue += pixels[offset + 2] * alpha;
+          weight += alpha;
         }
       }
-      colors[ledIndex] = averageColor(sample);
+      colors[ledIndex] = weight === 0
+        ? "#000000"
+        : `#${[red, green, blue]
+          .map((channel) => Math.round(channel / weight).toString(16).padStart(2, "0"))
+          .join("")}`;
     });
   }
   return colors;

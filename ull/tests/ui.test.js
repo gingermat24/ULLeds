@@ -99,3 +99,17 @@ test("reopening during saved screen sync keeps hardware output and shows a start
   assert.match(app, /syncPending\s*\?\s*"Resuming display capture…"/);
   assert.match(app, /autoSyncAttempted = true;\s*updatePreview\(\);\s*void startScreenSync\(\{ automatic: true \}\)/);
 });
+
+test("LED channel calibration is exposed, saved, and applied to the preview", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(html, /id="rgb-red"/);
+  assert.match(html, /id="rgb-green"/);
+  assert.match(html, /id="rgb-blue"/);
+  assert.match(app, /function calibratedColor/);
+  assert.match(app, /queueSettings\(\{ channelGains \}\)/);
+  assert.match(main, /channelGains: \[100, 100, 100\]/);
+  assert.match(main, /settings\.channelGains/);
+});

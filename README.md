@@ -75,7 +75,11 @@ select that side. Color changes apply only to the selection; **Select all**
 returns to whole-strip editing. ULLeds saves per-LED colors between sessions.
 The preview follows the configured physical strip direction.
 Screen sync captures the primary display when started in the app, samples the
-screen near each LED's corresponding edge, and smoothly updates the preview.
+visible primary-display image near each LED's corresponding edge, and smoothly
+updates the preview. It samples only those edge positions, not individual
+windows. Screen-sync smoothing favors responsiveness while averaging nearby
+pixels to reduce noise. Use **LED color tuning** if your strip's red, green, or
+blue output needs calibration; hardware LEDs may not match the monitor exactly.
 Sampling and HID writes run at up to 30 FPS. HID writes are
 asynchronous and stale queued frames are replaced by the newest colors, so
 slow controller writes do not block the app or build a delayed frame backlog.

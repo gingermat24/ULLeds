@@ -43,6 +43,13 @@ let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
 const $ = (selector) => document.querySelector(selector);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+function calibratedColor(color, gains = [100, 100, 100]) {
+  const channels = color.slice(1).match(/../g).map((part, index) =>
+    clamp(Math.round(Number.parseInt(part, 16) * gains[index] / 100), 0, 255)
+  );
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
 function toast(message) {
   const element = $("#toast");
   element.textContent = message;
@@ -124,8 +131,11 @@ function makePixels(container, indices, edge) {
   for (const [position, index] of indices.entries()) {
     const pixel = container.children[position];
     const selected = selectedLedIndices?.has(index) || false;
-    const color = screenSyncSession?.colors?.[index] ||
-      state.settings.ledColors?.[index] || state.settings.color;
+    const color = calibratedColor(
+      screenSyncSession?.colors?.[index] ||
+        state.settings.ledColors?.[index] || state.settings.color,
+      state.settings.channelGains
+    );
     const label = `Select LED ${index + 1}, ${edge} side${selected ? ", selected" : ""}`;
 
     if (pixel.dataset.color !== color) {
@@ -163,6 +173,12 @@ function applyColor(color, all = false) {
 
 function updatePreview() {
   const settings = state.settings;
+  const channelGainIds = ["rgb-red", "rgb-green", "rgb-blue"];
+  const channelGainOutputIds = ["rgb-red-value", "rgb-green-value", "rgb-blue-value"];
+  channelGainIds.forEach((id, index) => {
+    $(`#${id}`).value = settings.channelGains[index];
+    $(`#${channelGainOutputIds[index]}`).textContent = `${settings.channelGains[index]}%`;
+  });
   const profile = state.device.profile || settings.deviceProfile;
   const count = Number.isInteger(profile?.ledCount) ? clamp(profile.ledCount, 1, 253) : 0;
   const edgeCount = clamp(Number(profile?.edgeCount) || 3, 1, 4);
@@ -492,7 +508,7 @@ async function startScreenSync({ automatic = false } = {}) {
           session.layout
         );
         session.colors = session.colors
-          ? window.ullScreenSync.blendColorArrays(session.colors, sampledColors, 0.65)
+          ? window.ullScreenSync.blendColorArrays(session.colors, sampledColors, 0.9)
           : sampledColors;
 
         session.pixelElements.forEach((pixel) => {
@@ -888,6 +904,17 @@ function bindEvents() {
 
   $("#brightness").addEventListener("input", (event) => {
     queueSettings({ brightness: Number(event.target.value) });
+  });
+
+  ["rgb-red", "rgb-green", "rgb-blue"].forEach((id, index) => {
+    $(`#${id}`).addEventListener("input", (event) => {
+      const channelGains = [...state.settings.channelGains];
+      channelGains[index] = Number(event.target.value);
+      queueSettings({ channelGains });
+    });
+  });
+  $("#reset-color-tuning").addEventListener("click", () => {
+    queueSettings({ channelGains: [100, 100, 100] }, true);
   });
 
   $("#effect").addEventListener("change", (event) => {

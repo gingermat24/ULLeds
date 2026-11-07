@@ -312,6 +312,35 @@ h2 {
 #color-picker::-webkit-color-swatch-wrapper { padding: 0; }
 #color-picker::-webkit-color-swatch { border: none; border-radius: 6px; }
 
+.color-tuning {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.color-tuning summary {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.color-tuning p {
+  margin: 10px 0;
+  color: var(--quiet);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.tuning-channel {
+  margin: 12px 0;
+}
+.tuning-channel label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.tuning-channel output {
+  font-variant-numeric: tabular-nums;
+}
+
 .hex-input {
   flex: 1;
   height: 40px;

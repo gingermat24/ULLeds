@@ -46,6 +46,18 @@ test("color order and brightness are applied before encoding LED ranges", () => 
   assert.throws(() => buildFrame("#ffffff", 75, 100, true, 1, "RRG"), /Color order/);
 });
 
+test("RGB channel calibration is applied before the configured wire order", () => {
+  const sections = buildColorSections(["#804020"], 100, true, 1, "GRB", [125, 100, 75]);
+  assert.deepEqual(sections, [
+    [1, 64, 160, 24, 1],
+    [2, 0, 0, 0, 254]
+  ]);
+  assert.throws(
+    () => buildColorSections(["#ffffff"], 100, true, 1, "RGB", [100, 151, 100]),
+    /channel gains/
+  );
+});
+
 test("per-LED colors become contiguous addressable sections", () => {
   assert.deepEqual(buildColorSections(["#ff0000", "#0000ff", "#0000ff"], 100), [
     [1, 255, 0, 0, 1],
@@ -73,6 +85,11 @@ test("screen sync uses the controller's SC command with a 16-bit length and one 
   ]);
   assert.equal(frame[frame.length - 1], frame.subarray(0, -1)
     .reduce((sum, value) => (sum + value) & 0xff, 0));
+});
+
+test("screen sync applies the same RGB channel calibration as static colors", () => {
+  const frame = buildScreenSyncFrame(["#804020"], 100, true, "RGB", 9, [125, 100, 75]);
+  assert.deepEqual([...frame.subarray(6, -1)], [1, 160, 64, 24, 1]);
 });
 
 test("power-off sends black across the configured strip and trailing range", () => {
