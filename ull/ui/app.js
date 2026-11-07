@@ -52,6 +52,10 @@ let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
 const $ = (selector) => document.querySelector(selector);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+function stripLayoutSignature(layout) {
+  return JSON.stringify([layout.ledCount, layout.indices]);
+}
+
 // Saved profiles and live HID data can still carry the original vendor name.
 // Show a neutral product label instead of the legacy branding.
 function deviceLabel(value, fallback = "USB LED controller") {
@@ -365,6 +369,13 @@ function updatePreview() {
       : "Match LEDs to your display");
 
   if (screenSyncSession) {
+    const signature = stripLayoutSignature(layout);
+    if (screenSyncSession.layoutSignature !== signature) {
+      screenSyncSession.layout = layout;
+      screenSyncSession.layoutSignature = signature;
+      screenSyncSession.colors = null;
+      screenSyncSession.lastSentSignature = "";
+    }
     screenSyncSession.pixelElements = [...document.querySelectorAll(".led-pixel")];
   }
 
@@ -598,6 +609,7 @@ async function startScreenSync({ automatic = false } = {}) {
       lastSentSignature: "",
       colors: null,
       layout,
+      layoutSignature: stripLayoutSignature(layout),
       sending: false
     };
     screenSyncSession = session;
@@ -972,8 +984,8 @@ function setWizardStep(step) {
     const installationMethod = document.createElement("select");
     installationMethod.dataset.setting = "installationMethod";
     [
-      ["0", "Left side, bottom to top"],
-      ["1", "Right side, bottom to top"]
+      ["0", "Bottom left → over top → bottom right"],
+      ["1", "Bottom right → over top → bottom left"]
     ].forEach(([value, label]) => {
       const option = document.createElement("option");
       option.value = value;

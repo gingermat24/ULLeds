@@ -113,16 +113,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.33", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.34", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 33; version += 1) {
+  for (let version = 0; version <= 34; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.33<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.34<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -256,6 +256,9 @@ test("the icon build consumes the user PNG and responsive motion preferences are
     }),
     [16, 20, 24, 32, 40, 48, 64, 128, 256]
   );
+  const appPng = fs.readFileSync(path.join(__dirname, "..", "assets", "app.png"));
+  assert.equal(appPng.readUInt32BE(16), 1024);
+  assert.equal(appPng.readUInt32BE(20), 1024);
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   assert.match(main, /icon: path\.join\(__dirname, "assets", "app\.ico"\)/);
   assert.match(packageJson.scripts["dist:win"], /create-icon\.ps1/);
@@ -351,4 +354,13 @@ test("editing a connected strip profile updates the live connection profile and 
 
   assert.match(main, /if \(Object\.hasOwn\(changes, "deviceProfile"\) && connectedInfo\) \{\s+connectedInfo = \{\s+\.\.\.connectedInfo,\s+profile: settings\.deviceProfile\s+\?/);
   assert.match(main, /const savedProfile = settings\.devicePath === selected\.path && settings\.deviceProfile\?\.ledCount\s+\?\s+settings\.deviceProfile\s+:\s+selected\.profile\?\.ledCount/);
+});
+
+test("screen sync uses an updated strip layout immediately after profile edits", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+
+  assert.match(app, /function stripLayoutSignature\(layout\) \{\s+return JSON\.stringify\(\[layout\.ledCount, layout\.indices\]\);/);
+  assert.match(app, /screenSyncSession\.layoutSignature !== signature\) \{\s+screenSyncSession\.layout = layout;\s+screenSyncSession\.layoutSignature = signature;\s+screenSyncSession\.colors = null;\s+screenSyncSession\.lastSentSignature = "";/);
+  assert.match(app, /Bottom left → over top → bottom right/);
+  assert.match(app, /Bottom right → over top → bottom left/);
 });
