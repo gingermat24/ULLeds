@@ -19,15 +19,19 @@ function buildDeviceInfoRequest(messageId = 2) {
   return packet;
 }
 
-function parseDeviceLedCount(response, messageId = response?.[3]) {
-  if (!Buffer.isBuffer(response) || response.length < 12 ||
-      response[0] !== 82 || response[1] !== 66 ||
-      response[2] < 12 || response[2] > response.length ||
-      !Number.isInteger(messageId) || messageId < 1 || messageId > 255 ||
-      response[3] !== messageId || response[4] !== 130) {
+function parseDeviceLedCount(response, messageId) {
+  const offset = Buffer.isBuffer(response) &&
+    response[0] === 0 && response[1] === 82 && response[2] === 66 ? 1 : 0;
+  const responseMessageId = response?.[offset + 3];
+  const expectedMessageId = messageId ?? responseMessageId;
+  if (!Buffer.isBuffer(response) || response.length < offset + 12 ||
+      response[offset] !== 82 || response[offset + 1] !== 66 ||
+      response[offset + 2] < 12 || response[offset + 2] > response.length - offset ||
+      !Number.isInteger(expectedMessageId) || expectedMessageId < 1 || expectedMessageId > 255 ||
+      responseMessageId !== expectedMessageId || response[offset + 4] !== 130) {
     throw new TypeError("The controller returned an invalid device-info response.");
   }
-  const ledCount = response[11];
+  const ledCount = response[offset + 11];
   if (!Number.isInteger(ledCount) || ledCount < 1 || ledCount > MAX_LEDS) {
     throw new RangeError("The controller did not report a valid LED count.");
   }

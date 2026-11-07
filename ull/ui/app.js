@@ -119,7 +119,7 @@ function queueSettings(changes, immediate = false) {
   settingsTimer = setTimeout(() => {
     settingsTimer = null;
     void flushSettingsQueue();
-  }, 35);
+  }, 16);
 }
 
 async function flushSettingsQueue() {
@@ -312,9 +312,10 @@ function updatePreview() {
   });
 
   $("#monitor").dataset.position = position;
+  $("#monitor").dataset.power = settings.power ? "on" : "off";
   $("#preview-title").textContent = positionLabels[position] || positionLabels["monitor-back"];
   document.documentElement.style.setProperty("--led-color", settings.color);
-  document.documentElement.style.setProperty("--led-opacity", settings.power ? String(settings.brightness / 100) : "0.12");
+  document.documentElement.style.setProperty("--led-opacity", settings.power ? String(settings.brightness / 100) : "0");
   $("#preview-led-count").textContent = count
     ? `${count} LEDs ${profile?.countSource === "saved profile"
       ? "from saved setup"
@@ -346,8 +347,9 @@ function updatePreview() {
   if (document.activeElement !== $("#sync-fps-number")) $("#sync-fps-number").value = syncFps;
   $("#sync-fps-value").textContent = `${syncFps} FPS`;
   $("#speed-control").classList.toggle("hidden", settings.effect === "steady");
-  $("#power-toggle").setAttribute("aria-pressed", String(settings.power));
-  $("#power-label").textContent = settings.power ? "On" : "Off";
+  $("#power-toggle").setAttribute("aria-checked", String(settings.power));
+  $("#power-toggle").setAttribute("aria-label", `LED power: ${settings.power ? "on" : "off"}`);
+  $("#power-state").textContent = settings.power ? "On" : "Off";
   const syncPending = screenSyncStarting || (
     settings.resumeScreenSync && autoSyncAttempted && !screenSyncSession && !screenSyncError
   );

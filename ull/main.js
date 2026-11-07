@@ -142,9 +142,12 @@ function readControllerLedCount(device) {
       else resolve(ledCount);
     };
     const onData = (response) => {
-      if (response.length < 12 || response[4] !== 130) return;
+      if (!Buffer.isBuffer(response)) return;
+      const offset = response[0] === 0 && response[1] === 82 && response[2] === 66 ? 1 : 0;
+      if (response[offset] !== 82 || response[offset + 1] !== 66 ||
+          response[offset + 3] !== messageId || response[offset + 4] !== 130) return;
       try {
-        finish(null, parseDeviceLedCount(response));
+        finish(null, parseDeviceLedCount(response, messageId));
       } catch (error) {
         finish(error);
       }
@@ -548,10 +551,10 @@ async function connectDeviceNow(targetPath) {
   try {
     hidDevice = await HIDAsync.open(selected.path);
     hidDevice.on("error", (error) => disconnectDevice(error.message));
-    const savedProfile = selected.profile?.ledCount
-      ? selected.profile
-      : settings.devicePath === selected.path && settings.deviceProfile?.ledCount
-        ? settings.deviceProfile
+    const savedProfile = settings.devicePath === selected.path && settings.deviceProfile?.ledCount
+      ? settings.deviceProfile
+      : selected.profile?.ledCount
+        ? selected.profile
         : devices.length === 1 && settings.deviceProfile?.ledCount
         ? settings.deviceProfile
         : null;
@@ -633,6 +636,17 @@ function setSettings(input, updateOutput = true) {
   }
   const changes = validateSettings(input);
   settings = { ...settings, ...changes };
+  if (Object.hasOwn(changes, "deviceProfile") && connectedInfo) {
+    connectedInfo = {
+      ...connectedInfo,
+      profile: settings.deviceProfile
+        ? {
+          ...settings.deviceProfile,
+          countSource: connectedInfo.profile?.countSource || "controller"
+        }
+        : null
+    };
+  }
   saveSettings();
   if (Object.hasOwn(changes, "startWithWindows")) configureLoginItem();
   if (updateOutput && hidDevice &&
@@ -641,40 +655,6 @@ function setSettings(input, updateOutput = true) {
     updateAnimation();
   }
   return { settings: settingsSnapshot(), ...deviceState() };
-}
-
-function createApplicationMenu() {
-  const menu = Menu.buildFromTemplate([
-    {
-      label: "ULLeds",
-      submenu: [
-        { label: "Setup wizard", click: () => mainWindow?.webContents.send("app:open-setup") },
-        { type: "separator" },
-        { role: "quit" }
-      ]
-    },
-    {
-      label: "Device",
-      submenu: [
-        { label: "Scan for LED controller", click: () => mainWindow?.webContents.send("device:scan-request") },
-        { label: "Disconnect", click: () => disconnectDevice() }
-      ]
-    },
-    {
-      label: "Updates",
-      submenu: [
-        {
-          label: "Choose local update folder…",
-          click: () => mainWindow?.webContents.send("updates:choose-folder")
-        },
-        {
-          label: "Check for updates",
-          click: () => mainWindow?.webContents.send("updates:check-request")
-        }
-      ]
-    }
-  ]);
-  Menu.setApplicationMenu(menu);
 }
 
 function showMainWindow() {
@@ -717,6 +697,12 @@ function createWindow() {
     title: "ULLeds",
     icon: path.join(__dirname, "assets", "app.ico"),
     backgroundColor: "#000000",
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#000000",
+      symbolColor: "#F5F5F5",
+      height: 40
+    },
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -929,7 +915,7 @@ autoUpdater.on("error", (error) => {
 app.whenReady().then(async () => {
   loadSettings();
   configureLoginItem();
-  createApplicationMenu();
+  Menu.setApplicationMenu(null);
   createTray();
   createWindow();
   void scanAndConnect().catch((error) => {

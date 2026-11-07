@@ -10,11 +10,6 @@
   <body>
     <div class="app">
       <header class="topbar">
-        <div class="brand">
-          <span class="brand-dot" aria-hidden="true"></span>
-          <span class="brand-name">ULLeds</span>
-        </div>
-
         <nav class="tabs" role="tablist" aria-label="Sections">
           <span class="tab-indicator" aria-hidden="true"></span>
           <button class="tab active" data-view="light" role="tab" aria-selected="true">Lighting</button>
@@ -39,10 +34,13 @@
                   <div class="card-label">PREVIEW</div>
                   <h2 id="preview-title">Behind your monitor</h2>
                 </div>
-                <button id="power-toggle" class="power-btn" type="button" aria-pressed="true">
-                  <span class="power-icon" aria-hidden="true">⏻</span>
-                  <span id="power-label">On</span>
-                </button>
+                <div class="power-control">
+                  <span class="power-caption" aria-hidden="true">Power</span>
+                  <button id="power-toggle" class="power-switch" type="button" role="switch" aria-checked="true" aria-label="LED power: on">
+                    <span class="power-track" aria-hidden="true"><span class="power-knob"></span></span>
+                    <span id="power-state" class="power-state">On</span>
+                  </button>
+                </div>
               </div>
 
               <div class="preview-stage">
@@ -289,7 +287,17 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.31</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.33</h3><span>Current</span></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Detecting LED counts now handles both HID report formats, including 75-LED controllers.</li><li>Edited strip layouts stay visible on the connected controller and take precedence over older imported profiles after reconnecting.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Power-off output remains black, and the live switch state stays in sync with the controller.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.32</h3></header>
+              <div class="release-category"><strong>Changed</strong><ul><li>Power is now a labelled switch that reports the live LED state, so On and Off can no longer read as the opposite action.</li><li>The whole interface uses a single typeface, and the top-left logo has been removed.</li><li>The Windows title bar is black to match the app, and the redundant native menu bar is gone.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Switching the LEDs off now leaves the preview dark, so the preview and the controller agree.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.31</h3></header>
               <div class="release-category"><strong>Changed</strong><ul><li>Redesigned the interface in a Nothing/CMF language: pure black surfaces, hairline borders, monospaced labels, and a single red accent.</li><li>Removed Liquid Glass, glow, and archived Scenes from the active interface.</li></ul></div>
               <div class="release-category"><strong>Fixed</strong><ul><li>Powering off now always reaches the controller, even while Screen Sync is active, so the button and the LEDs stay in agreement.</li><li>Only one release is marked Current in the changelog.</li></ul></div>
               <div class="release-category"><strong>Improved</strong><ul><li>Lighting updates and Screen Sync frames skip work while the output is off.</li></ul></div>

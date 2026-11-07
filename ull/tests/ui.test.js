@@ -46,7 +46,7 @@ test("Liquid Glass is fully removed from the interface", () => {
     assert.doesNotMatch(source, /data-glass|liquid-glass-toggle|glass-clarity|LIQUID_GLASS|--glass-|backdrop-filter/);
   }
   assert.match(html, /<html lang="en">/);
-  assert.match(html, /<span class="brand-name">ULLeds<\/span>/);
+  assert.doesNotMatch(html, /class="brand"/);
   assert.match(css, /--accent: #D71921/);
   assert.match(css, /--bg: #000000/);
   assert.doesNotMatch(css, /box-shadow|text-shadow/i);
@@ -64,13 +64,17 @@ test("legacy vendor names are replaced with a neutral device label", () => {
   assert.doesNotMatch(html, /Robobloq|ROBOBLOQ|PC SYNC/i);
 });
 
-test("power off always reaches the controller while Screen Sync may still be active", () => {
+test("power off always reaches the controller and the switch reports the live state", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
+  assert.match(html, /id="power-toggle" class="power-switch" type="button" role="switch" aria-checked="true"/);
   assert.match(app, /if \(screenSyncSession \|\| screenSyncStarting\) stopScreenSync\("", true\);\s+queueSettings\(\{ power: !state\.settings\.power \}, true\);/);
-  assert.match(app, /\$\("#power-toggle"\)\.setAttribute\("aria-pressed", String\(settings\.power\)\)/);
-  assert.match(app, /\$\("#power-label"\)\.textContent = settings\.power \? "On" : "Off"/);
+  assert.match(app, /\$\("#power-toggle"\)\.setAttribute\("aria-checked", String\(settings\.power\)\)/);
+  assert.match(app, /\$\("#power-state"\)\.textContent = settings\.power \? "On" : "Off"/);
+  assert.match(app, /style\.setProperty\("--led-opacity", settings\.power \? String\(settings\.brightness \/ 100\) : "0"\)/);
+  assert.match(app, /\$\("#monitor"\)\.dataset\.power = settings\.power \? "on" : "off"/);
   assert.match(main, /ipcMain\.handle\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+const result = setSettings\(input, !powerChanged\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
   assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\)\) return;/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
@@ -83,17 +87,21 @@ test("topbar tabs stay centered independently of connection status changes", () 
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.match(css, /\.topbar \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0, 1fr\) max-content minmax\(0, 1fr\);/s);
-  assert.match(css, /\.tabs \{[^}]*justify-self: center;/s);
+  assert.match(css, /\.tabs \{[^}]*position: absolute;[^}]*left: 50%;[^}]*transform: translateX\(-50%\);/s);
+  assert.match(css, /\.topbar button, \.tabs, \.device-status \{ -webkit-app-region: no-drag; \}/);
   assert.match(css, /\.device-status \{[^}]*width: min\(280px, 100%\);/s);
   assert.match(css, /#device-label \{\s+flex: 1 1 auto;\s+min-width: 0;\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
   assert.match(css, /\.device-status \{[^}]*justify-self: end;/s);
-  assert.match(css, /@media \(max-width: 980px\) \{\s+\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /\.topbar \{[^}]*padding: 0 calc\(var\(--pad-x\) \+ max\(148px, 100% - env\(titlebar-area-width, 100%\)\)\) 0 var\(--pad-x\);/s);
+  assert.match(css, /@media \(max-width: 1180px\) \{\s+\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /@media \(max-width: 1180px\) \{[\s\S]*\.tabs \{\s+position: relative;/);
 });
 
 test("settings changes stay ordered and sliders flush their final value", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
+  assert.match(app, /void flushSettingsQueue\(\);\s+\}, 16\);/);
   assert.match(app, /while \(Object\.keys\(settingsQueue\)\.length\)/);
   assert.match(app, /Object\.assign\(state\.settings, settingsQueue\)/);
   assert.match(app, /settingsQueue = \{ \.\.\.pending, \.\.\.settingsQueue \}/);
@@ -105,16 +113,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.31", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.33", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 31; version += 1) {
+  for (let version = 0; version <= 33; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.31<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.33<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -174,8 +182,8 @@ test("saved Screen Sync preserves output only during reconnect and falls back wh
   assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \} = \{\}\)/);
   assert.match(main, /if \(!powerOff && \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\)\) return/);
   assert.match(main, /updateAnimation\(\{ preserveOutput: settings\.resumeScreenSync \}\)/);
-  assert.match(main, /parseDeviceLedCount\(response\)/);
-  assert.match(main, /response\.length < 12 \|\| response\[4\] !== 130/);
+  assert.match(main, /parseDeviceLedCount\(response, messageId\)/);
+  assert.match(main, /response\[offset \+ 3\] !== messageId \|\| response\[offset \+ 4\] !== 130/);
   assert.match(app, /screenSyncStarting \|\| \(/);
   assert.match(app, /syncPending \? "Starting…"/);
   assert.match(app, /syncPending\s*\?\s*"Resuming display capture…"/);
@@ -313,4 +321,34 @@ test("the Device page can list and switch between detected compatible controller
   assert.match(main, /listSupportedControllers\(listHidDevices\(\), profiles\)/);
   assert.match(html, /ULLeds-compatible controller/);
   assert.match(html, /Arbitrary HID devices are not driven/);
+});
+
+test("the interface uses a single typeface and no top-left branding", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.doesNotMatch(html, /class="brand|brand-name|brand-dot/);
+  assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), />\s*ULLeds\s*</);
+  assert.match(css, /--sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;/);
+  assert.match(css, /--mono: var\(--sans\);/);
+  assert.doesNotMatch(css, /ui-monospace|Consolas|SF Mono|Cascadia Mono|monospace/);
+});
+
+test("the Windows title bar blends into the app and the native menu bar is removed", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(main, /titleBarStyle: "hidden"/);
+  assert.match(main, /titleBarOverlay: \{\s+color: "#000000",\s+symbolColor: "#F5F5F5",\s+height: 40\s+\}/);
+  assert.match(main, /Menu\.setApplicationMenu\(null\)/);
+  assert.doesNotMatch(main, /createApplicationMenu/);
+  assert.match(css, /\.topbar \{[^}]*[-]webkit-app-region: drag;/s);
+  assert.match(css, /[-]webkit-app-region: no-drag/);
+});
+
+test("editing a connected strip profile updates the live connection profile and saved profile wins on reconnect", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(main, /if \(Object\.hasOwn\(changes, "deviceProfile"\) && connectedInfo\) \{\s+connectedInfo = \{\s+\.\.\.connectedInfo,\s+profile: settings\.deviceProfile\s+\?/);
+  assert.match(main, /const savedProfile = settings\.devicePath === selected\.path && settings\.deviceProfile\?\.ledCount\s+\?\s+settings\.deviceProfile\s+:\s+selected\.profile\?\.ledCount/);
 });
