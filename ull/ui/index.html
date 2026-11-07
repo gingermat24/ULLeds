@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-glass="off">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,6 +10,11 @@
   <body>
     <div class="app">
       <header class="topbar">
+        <div class="brand">
+          <span class="brand-dot" aria-hidden="true"></span>
+          <span class="brand-name">ULLeds</span>
+        </div>
+
         <nav class="tabs" role="tablist" aria-label="Sections">
           <span class="tab-indicator" aria-hidden="true"></span>
           <button class="tab active" data-view="light" role="tab" aria-selected="true">Lighting</button>
@@ -214,28 +219,6 @@
             </label>
           </div>
 
-          <div class="card appearance-card" id="appearance-card">
-            <div>
-              <h3>Appearance</h3>
-              <p class="appearance-intro">Liquid Glass is used for navigation, floating controls, and dialogs. Content stays solid for readability.</p>
-            </div>
-            <label class="preference-row" for="liquid-glass-toggle">
-              <span>
-                <strong>Liquid Glass</strong>
-                <small>Translucent, refracting surfaces. Turned off automatically if Windows reduces transparency.</small>
-              </span>
-              <input id="liquid-glass-toggle" type="checkbox">
-            </label>
-            <div class="glass-slider-block" id="glass-slider-block">
-              <div class="range-row">
-                <label for="glass-clarity">Glass transparency</label>
-                <output id="glass-clarity-value">45%</output>
-              </div>
-              <input id="glass-clarity" type="range" min="0" max="100" value="45">
-              <div class="glass-scale" aria-hidden="true"><span>Frosted</span><span>Clear</span></div>
-            </div>
-          </div>
-
           <div class="card reset-card">
             <div>
               <h3>Reset ULLeds</h3>
@@ -306,12 +289,18 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.30</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.31</h3><span>Current</span></header>
+              <div class="release-category"><strong>Changed</strong><ul><li>Redesigned the interface in a Nothing/CMF language: pure black surfaces, hairline borders, monospaced labels, and a single red accent.</li><li>Removed Liquid Glass, glow, and archived Scenes from the active interface.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Powering off now always reaches the controller, even while Screen Sync is active, so the button and the LEDs stay in agreement.</li><li>Only one release is marked Current in the changelog.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Lighting updates and Screen Sync frames skip work while the output is off.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.30</h3></header>
               <div class="release-category"><strong>Fixed</strong><ul><li>Power changes stop Screen Sync first and wait for the requested lighting output to settle.</li><li>Stopping Screen Sync waits for the saved LED colors or selected lighting effect to be restored.</li></ul></div>
               <div class="release-category"><strong>Changed</strong><ul><li>Archived Liquid Glass without removing its implementation or settings markup.</li></ul></div>
             </article>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.29</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.29</h3></header>
               <div class="release-category"><strong>Improved</strong><ul><li>Refreshed the interface with a more spacious Liquid Glass layout and refined controls.</li><li>Manual Screen Sync now uses the direct primary-display capture path already used by automatic resume.</li></ul></div>
             </article>
             <article class="card release-entry">

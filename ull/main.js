@@ -427,8 +427,12 @@ function updateAnimation({ preserveOutput = false, waitForOutput = false } = {})
     clearInterval(animationTimer);
     animationTimer = null;
   }
-  if (screenSyncActive || (preserveOutput && settings.resumeScreenSync)) return;
-  if (!hidDevice || !settings.power || settings.effect === "steady") {
+  // Powering off must always reach the controller, even while Screen Sync is
+  // still winding down or an output restore is in progress. Otherwise the
+  // lights can stay lit while the interface reports Off.
+  const powerOff = !settings.power;
+  if (!powerOff && (screenSyncActive || (preserveOutput && settings.resumeScreenSync))) return;
+  if (!hidDevice || powerOff || settings.effect === "steady") {
     if (hidDevice) {
       const device = hidDevice;
       const output = writeColor(settings.color);
@@ -712,7 +716,7 @@ function createWindow() {
     show: false,
     title: "ULLeds",
     icon: path.join(__dirname, "assets", "app.ico"),
-    backgroundColor: "#151a22",
+    backgroundColor: "#000000",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -807,7 +811,7 @@ ipcMain.handle("screen-sync:start", () => {
   return { active: true };
 });
 ipcMain.handle("screen-sync:colors", (_event, colors) => {
-  if (!screenSyncActive || !hidDevice) return { active: false };
+  if (!screenSyncActive || !hidDevice || !settings.power) return { active: false };
   const ledCount = settings.deviceProfile?.ledCount;
   if (!Number.isInteger(ledCount)) throw new Error("The controller's LED count has not been detected.");
   if (!Array.isArray(colors) || colors.length !== ledCount || !colors.every(validColor)) {

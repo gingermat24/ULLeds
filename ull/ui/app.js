@@ -1,7 +1,5 @@
 "use strict";
 
-const LIQUID_GLASS = "OFF";
-
 const SCENES_ENABLED = false;
 const DEFAULT_SCENES = [
   { name: "Rose dusk", color: "#e879a8" },
@@ -9,9 +7,6 @@ const DEFAULT_SCENES = [
   { name: "Lagoon", color: "#55c8d2" },
   { name: "Soft amber", color: "#f0ac65" }
 ];
-
-const GLASS_STORAGE_KEY = "ull.liquidGlass";
-const GLASS_DEFAULTS = { enabled: true, clarity: 45 };
 
 let state = {
   settings: {
@@ -53,65 +48,23 @@ let autoSyncAttempted = false;
 let screenSyncError = "";
 let updateCheckInProgress = false;
 let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
-let glassPrefs = { ...GLASS_DEFAULTS };
 
 const $ = (selector) => document.querySelector(selector);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-function loadGlassPrefs() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(GLASS_STORAGE_KEY) || "null");
-    if (raw && typeof raw === "object") {
-      glassPrefs = {
-        enabled: raw.enabled !== false,
-        clarity: Number.isFinite(Number(raw.clarity)) ? clamp(Number(raw.clarity), 0, 100) : GLASS_DEFAULTS.clarity
-      };
-    }
-  } catch {
-    glassPrefs = { ...GLASS_DEFAULTS };
-  }
-}
-
-function saveGlassPrefs() {
-  try {
-    localStorage.setItem(GLASS_STORAGE_KEY, JSON.stringify(glassPrefs));
-  } catch {
-  }
-}
-
-function glassIsActive() {
-  const master = LIQUID_GLASS === "ON";
-  const reduced = window.matchMedia?.("(prefers-reduced-transparency: reduce)").matches || false;
-  return master && glassPrefs.enabled && !reduced;
-}
-
-function applyGlass() {
-  const root = document.documentElement;
-  const master = LIQUID_GLASS === "ON";
-  const clarity = glassPrefs.clarity;
-
-  root.dataset.glass = glassIsActive() ? "on" : "off";
-  root.style.setProperty("--glass-alpha", (0.72 - (clarity / 100) * 0.48).toFixed(3));
-  root.style.setProperty("--glass-blur", `${(30 - (clarity / 100) * 14).toFixed(1)}px`);
-
-  $("#appearance-card")?.classList.toggle("hidden", !master);
-  const toggle = $("#liquid-glass-toggle");
-  if (toggle) toggle.checked = glassPrefs.enabled;
-  const slider = $("#glass-clarity");
-  if (slider) slider.value = clarity;
-  const output = $("#glass-clarity-value");
-  if (output) output.textContent = `${clarity}%`;
-  $("#glass-slider-block")?.setAttribute("aria-disabled", String(!glassPrefs.enabled));
-  if (slider) slider.disabled = !glassPrefs.enabled;
-
-  updateRangeFills();
-  requestAnimationFrame(() => positionTabIndicator(false));
-}
-
-function initAppearance() {
-  loadGlassPrefs();
-  applyGlass();
-  window.matchMedia?.("(prefers-reduced-transparency: reduce)").addEventListener?.("change", applyGlass);
+// Saved profiles and live HID data can still carry the original vendor name.
+// Show a neutral product label instead of the legacy branding.
+function deviceLabel(value, fallback = "USB LED controller") {
+  const text = String(value || "").trim();
+  if (!text) return fallback;
+  const cleaned = text
+    .replace(/\brobo\s*bloq\b/gi, "")
+    .replace(/\bpc\s*sync\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s·,:;-]+|[\s·,:;-]+$/g, "")
+    .trim();
+  if (!cleaned || /^backlight$/i.test(cleaned)) return fallback;
+  return cleaned;
 }
 
 function updateRangeFill(input) {
@@ -208,13 +161,13 @@ function renderConnection() {
   indicator.classList.toggle("has-error", Boolean(state.device.error));
 
   label.textContent = state.device.connected
-    ? state.device.name || "LED controller connected"
+    ? deviceLabel(state.device.name, "LED controller connected")
     : state.device.error || "No LED controller connected";
   label.title = label.textContent;
   renderDeviceSelector();
 
   $("#settings-device").textContent = state.device.connected
-    ? `${state.device.name || "USB LED controller"}${state.device.serialNumber ? ` · ${state.device.serialNumber}` : ""}`
+    ? `${deviceLabel(state.device.name)}${state.device.serialNumber ? ` · ${state.device.serialNumber}` : ""}`
     : (state.device.error || "Not connected");
 
   renderProfile(profile);
@@ -229,7 +182,7 @@ function renderDeviceSelector() {
     const detail = device.serialNumber
       ? `${device.serialNumber}${device.interface == null ? "" : ` · interface ${device.interface}`}`
       : `${identifiers}${device.interface == null ? ` · controller ${index + 1}` : ` · interface ${device.interface}`}`;
-    return { value: device.path, label: `${device.name} · ${detail}` };
+    return { value: device.path, label: `${deviceLabel(device.name)} · ${detail}` };
   });
   if (options.length === 0) {
     select.replaceChildren(new Option("No compatible controller found", ""));
@@ -776,7 +729,7 @@ async function connectSelectedDevice(devicePath) {
     if (!device.connected) {
       toast(device.error || "Could not connect to that controller.");
     } else {
-      toast(`Connected to ${device.name || "USB LED controller"}.`);
+      toast(`Connected to ${deviceLabel(device.name)}.`);
     }
   } catch (error) {
     toast(`Could not connect to the selected controller: ${error.message}`);
@@ -1058,7 +1011,7 @@ function setWizardStep(step) {
     const hint = document.createElement("p");
     hint.className = "wizard-hint";
     hint.textContent = current.matchedBy
-      ? `Imported from your saved ${current.name} setup.`
+      ? `Imported from your saved ${deviceLabel(current.name)} setup.`
       : "These physical details are not part of the controller's USB data.";
     fields.append(hint);
 
@@ -1071,7 +1024,7 @@ function setWizardStep(step) {
     const status = document.createElement("div");
     status.className = "wizard-device";
     status.textContent = state.device.connected
-      ? `${state.device.name || "PC SYNC Backlight"} is connected and ready.`
+      ? `${deviceLabel(state.device.name)} is connected and ready.`
       : state.device.error || "No controller connected yet.";
     content.append(status);
 
@@ -1185,19 +1138,6 @@ function bindEvents() {
       void flushSettingsQueue();
     }
   });
-
-  if (LIQUID_GLASS === "ON") {
-    $("#liquid-glass-toggle").addEventListener("change", (event) => {
-      glassPrefs.enabled = event.target.checked;
-      saveGlassPrefs();
-      applyGlass();
-    });
-    $("#glass-clarity").addEventListener("input", (event) => {
-      glassPrefs.clarity = clamp(Number(event.target.value), 0, 100);
-      saveGlassPrefs();
-      applyGlass();
-    });
-  }
 
   $("#monitor").addEventListener("click", selectPreviewPosition);
   $("#monitor").addEventListener("keydown", (event) => {
@@ -1320,7 +1260,7 @@ function bindEvents() {
           return toast("Connect the controller so ULLeds can detect the LED count.");
         }
         const profile = {
-          name: state.device.profile?.name || state.settings.deviceProfile?.name || "PC SYNC Backlight",
+          name: deviceLabel(state.device.profile?.name || state.settings.deviceProfile?.name),
           ledCount: detectedCount,
           edgeCount: Number($('[data-setting="edgeCount"]').value),
           installationMethod: Number($('[data-setting="installationMethod"]').value),
@@ -1403,7 +1343,6 @@ function bindEvents() {
 }
 
 async function start() {
-  initAppearance();
   bindEvents();
   try {
     state = await window.ull.initialState();

@@ -109,8 +109,9 @@ enabled by default in installed builds; startup launches minimized to the tray.
 ## App icon
 
 Replace `ull/assets/app.png` with your square PNG artwork. The Windows build
-script converts it to `ull/assets/app.ico` before packaging, and the same PNG
-is used in the app header. Each installer also places a versioned ICO in the
+script converts it to `ull/assets/app.ico` before packaging. The interface
+header uses a text wordmark with a red dot motif instead of the bitmap artwork.
+Each installer also places a versioned ICO in the
 app's resources and refreshes the Start menu and desktop shortcuts to use it,
 and the window and tray load the packaged ICO directly. The ICO includes
 multiple standard Windows sizes to avoid scaling artifacts and stale cached
