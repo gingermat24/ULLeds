@@ -50,6 +50,7 @@ let updateCheckInProgress = false;
 let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
 
 const releaseDates = new Map([
+  ["1.0.65", "2026-11-08"],
   ["1.0.64", "2026-11-08"],
   ["1.0.47", "2026-11-08"],
   ["1.0.48", "2026-11-08"],
@@ -152,7 +153,7 @@ function showVersionNotice(installer) {
   };
   notice.classList.remove("hidden");
   clearTimeout(versionNoticeTimer);
-  versionNoticeTimer = setTimeout(dismissVersionNotice, 5000);
+  versionNoticeTimer = setTimeout(dismissVersionNotice, 8000);
 }
 
 async function startReleaseUpdate(version, button) {

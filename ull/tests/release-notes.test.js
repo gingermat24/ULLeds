@@ -10,17 +10,17 @@ const html = fs.readFileSync(path.join(__dirname, "..", "ui", "index.html"), "ut
 
 test("GitHub release text is generated from every in-app changelog entry", () => {
   const entries = extractReleaseNotes(html);
-  assert.equal(entries.length, 65);
-  for (let version = 0; version <= 64; version += 1) {
+  assert.equal(entries.length, 66);
+  for (let version = 0; version <= 65; version += 1) {
     assert.ok(entries.some((entry) => entry.version === `1.0.${version}`));
   }
 });
 
 test("release note output preserves categories and user-facing items", () => {
-  const notes = formatReleaseNotes(html, "1.0.64");
-  assert.match(notes, /^## ULLeds 1\.0\.64/m);
-  assert.match(notes, /GitHub's Releases API is rate-limited/);
-  assert.match(notes, /### Fixed/);
+  const notes = formatReleaseNotes(html, "1.0.65");
+  assert.match(notes, /^## ULLeds 1\.0\.65/m);
+  assert.match(notes, /startup update notice visible for longer/);
+  assert.match(notes, /### Improved/);
   assert.doesNotMatch(notes, /UI tests/);
 });
 

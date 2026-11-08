@@ -2187,7 +2187,7 @@ select:disabled {
   height: 100%;
   transform-origin: left center;
   background: rgb(255 255 255 / 0.72);
-  animation: version-notice-expire 5s linear forwards;
+  animation: version-notice-expire 8s linear forwards;
 }
 
 @keyframes version-notice-enter {
