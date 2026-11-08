@@ -150,16 +150,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.50", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.51", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 50; version += 1) {
+  for (let version = 0; version <= 51; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.50<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.51<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -173,6 +173,13 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
   assert.match(css, /\.led-pixel:focus-visible:not\(\.selected\)\s*\{[^}]*outline:\s*2px solid var\(--accent\)/s);
   assert.match(css, /:focus-visible:not\(\.led-pixel\)/);
   assert.doesNotMatch(css, /\.led-pixel(?:\.selected)?:hover\s*\{[^}]*transform:\s*scale/);
+});
+
+test("dropdowns and text fields use a single border for visible keyboard focus", () => {
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(css, /:is\(button, input, summary, \.led-edge\):focus-visible:not\(\.led-pixel\)/);
+  assert.match(css, /:is\(select, \.hex-input, \.fps-number, \.scene-name-input\):focus-visible\s*\{[^}]*outline:\s*none;[^}]*border-color:\s*var\(--accent\)/s);
 });
 
 test("Shift-click selects an inclusive LED range and selected focus keeps its selection mark", () => {
@@ -285,6 +292,7 @@ test("Screen Sync FPS is persisted and controls capture, sampling, and HID caden
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
   const screenSync = fs.readFileSync(path.join(__dirname, "..", "screen-sync.js"), "utf8");
 
   assert.match(html, /id="sync-fps-range"[^>]*min="5" max="60"[^>]*value="30"/);
@@ -295,6 +303,10 @@ test("Screen Sync FPS is persisted and controls capture, sampling, and HID caden
   assert.match(app, /1000 \/ clamp\(Number\(state\.settings\.syncFps\)/);
   assert.match(app, /video\.requestVideoFrameCallback\(sampleFrame\)/);
   assert.match(app, /createLatestFrameSender\(\{/);
+  assert.match(app, /performanceCallbackCount \+= 1/);
+  assert.match(app, /recordScreenSyncPerformance\(\{/);
+  assert.match(main, /ipcMain\.on\("screen-sync:performance"/);
+  assert.match(preload, /recordScreenSyncPerformance: \(metrics\)/);
   assert.match(screenSync, /maxFrameRate,\s*maxWidth: MAX_CAPTURE_DIMENSION,\s*maxHeight: MAX_CAPTURE_DIMENSION/);
 });
 

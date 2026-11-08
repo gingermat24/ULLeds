@@ -921,6 +921,14 @@ ipcMain.handle("screen-sync:colors", (_event, colors) => {
   }
   return writeScreenSyncColors(colors).then(() => ({ active: true }));
 });
+ipcMain.on("screen-sync:performance", (event, metrics) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents || !screenSyncActive) return;
+  try {
+    screenSyncDiagnostics.recordRendererPerformance(metrics);
+  } catch (error) {
+    console.error("Could not record Screen Sync performance metrics:", error);
+  }
+});
 ipcMain.handle("screen-sync:stop", async () => {
   screenSyncActive = false;
   dismissMovieFormatPrompt();

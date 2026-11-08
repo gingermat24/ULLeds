@@ -615,6 +615,7 @@ function stopScreenSync(message = "", clearResumePreference = false) {
     screenSyncSession = null;
     screenSyncError = "";
     if (session) {
+      if (session.performanceTimer !== null) clearInterval(session.performanceTimer);
       cancelAnimationFrame(session.frame);
       if (session.videoFrame && typeof session.video.cancelVideoFrameCallback === "function") {
         session.video.cancelVideoFrameCallback(session.videoFrame);
@@ -739,11 +740,34 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       frame: 0,
       videoFrame: 0,
       lastSample: 0,
+      performanceWindowStartedAt: performance.now(),
+      performanceCallbackCount: 0,
+      performanceSampleCount: 0,
+      performanceSampleTotalMs: 0,
+      performanceSampleMaxMs: 0,
+      performanceTimer: null,
       colors: null,
       layout,
       layoutSignature: stripLayoutSignature(layout)
     };
     screenSyncSession = session;
+    session.performanceTimer = window.setInterval(() => {
+      if (screenSyncSession !== session) return;
+      const now = performance.now();
+      const windowMs = now - session.performanceWindowStartedAt;
+      window.ull.recordScreenSyncPerformance({
+        windowMs,
+        callbackCount: session.performanceCallbackCount,
+        sampleCount: session.performanceSampleCount,
+        sampleTotalMs: session.performanceSampleTotalMs,
+        sampleMaxMs: session.performanceSampleMaxMs
+      });
+      session.performanceWindowStartedAt = now;
+      session.performanceCallbackCount = 0;
+      session.performanceSampleCount = 0;
+      session.performanceSampleTotalMs = 0;
+      session.performanceSampleMaxMs = 0;
+    }, 1000);
     screenSyncError = "";
     const sendLatestFrame = window.ullScreenSync.createLatestFrameSender({
       send: (colors) => window.ull.sendScreenSyncColors(colors),
@@ -758,6 +782,7 @@ async function runScreenSyncStart({ automatic = false } = {}) {
 
     const sampleFrame = (now) => {
       if (screenSyncSession !== session) return;
+      session.performanceCallbackCount += 1;
       if (typeof video.requestVideoFrameCallback === "function") {
         session.videoFrame = video.requestVideoFrameCallback(sampleFrame);
       } else {
@@ -766,6 +791,8 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       const sampleInterval = 1000 / clamp(Number(state.settings.syncFps) || 30, 5, 60);
       if (now - session.lastSample < sampleInterval || video.readyState < 2) return;
       session.lastSample = now;
+      session.performanceSampleCount += 1;
+      const sampleStartedAt = performance.now();
       try {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -810,6 +837,13 @@ async function runScreenSyncStart({ automatic = false } = {}) {
         void sendLatestFrame();
       } catch (error) {
         stopScreenSync(`Screen sync stopped: ${error.message}`);
+      } finally {
+        const sampleDuration = performance.now() - sampleStartedAt;
+        session.performanceSampleTotalMs += sampleDuration;
+        session.performanceSampleMaxMs = Math.max(
+          session.performanceSampleMaxMs,
+          sampleDuration
+        );
       }
     };
 

@@ -50,6 +50,37 @@ function createScreenSyncDiagnostics(filePath, onError = console.error) {
     counts[command][status] += 1;
   }
 
+  function recordRendererPerformance(metrics) {
+    if (!stream) return;
+    if (!metrics || typeof metrics !== "object") {
+      throw new TypeError("Screen Sync diagnostics received invalid renderer performance metrics.");
+    }
+    const {
+      windowMs,
+      callbackCount,
+      sampleCount,
+      sampleTotalMs,
+      sampleMaxMs
+    } = metrics;
+    if (![windowMs, callbackCount, sampleCount, sampleTotalMs, sampleMaxMs].every(Number.isFinite) ||
+        windowMs <= 0 ||
+        !Number.isInteger(callbackCount) || callbackCount < 0 ||
+        !Number.isInteger(sampleCount) || sampleCount < 0 || sampleCount > callbackCount ||
+        sampleTotalMs < 0 || sampleMaxMs < 0 || sampleMaxMs > sampleTotalMs) {
+      throw new TypeError("Screen Sync diagnostics received invalid renderer performance metrics.");
+    }
+    writeEntry({
+      event: "renderer-performance",
+      windowMs: Math.round(windowMs),
+      callbackCount,
+      callbackFps: round(callbackCount * 1000 / windowMs),
+      sampleCount,
+      sampledFps: round(sampleCount * 1000 / windowMs),
+      sampleAverageMs: sampleCount ? round(sampleTotalMs / sampleCount) : null,
+      sampleMaxMs: round(sampleMaxMs)
+    });
+  }
+
   function stop(reason) {
     if (!stream) return Promise.resolve();
     if (summaryTimer) clearInterval(summaryTimer);
@@ -67,6 +98,7 @@ function createScreenSyncDiagnostics(filePath, onError = console.error) {
   return Object.freeze({
     get isActive() { return Boolean(stream); },
     recordHidWrite,
+    recordRendererPerformance,
     start,
     stop
   });
@@ -77,6 +109,10 @@ function createCounts() {
     command,
     Object.fromEntries(STATUSES.map((status) => [status, 0]))
   ]));
+}
+
+function round(value) {
+  return Math.round(value * 10) / 10;
 }
 
 module.exports = { createScreenSyncDiagnostics };

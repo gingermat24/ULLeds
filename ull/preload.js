@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("ull", Object.freeze({
   disconnectDevice: () => ipcRenderer.invoke("device:disconnect"),
   startScreenSync: () => ipcRenderer.invoke("screen-sync:start"),
   sendScreenSyncColors: (colors) => ipcRenderer.invoke("screen-sync:colors", colors),
+  recordScreenSyncPerformance: (metrics) => ipcRenderer.send("screen-sync:performance", metrics),
   stopScreenSync: () => ipcRenderer.invoke("screen-sync:stop"),
   screenSyncSource: () => ipcRenderer.invoke("screen-sync:source"),
   notifyMovieFormat: (aspectRatio) => ipcRenderer.send("screen-sync:movie-detected", aspectRatio),

@@ -41,6 +41,9 @@ Releases in the app. Earlier versions must be updated manually.
 Screen Sync analyzes the display locally to choose colors for the LEDs. ULLeds
 does not record or upload screen images. It samples the display edges rather
 than individual app windows, so the part of the display being shown matters.
+Local diagnostics record callback rates and processing times, not screen images
+or sampled colors. They are saved to
+`%APPDATA%\ULLeds\screen-sync-diagnostics.log`.
 
 For widescreen content with black bars, optional detection looks for stable
 letterbox bars and shows a compact prompt at the top of the screen. Choose

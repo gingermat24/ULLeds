@@ -1291,9 +1291,14 @@ select:disabled { opacity: 0.5; cursor: default; }
 
 .hidden { display: none !important; }
 
-:is(button, input, select, summary, .led-edge):focus-visible:not(.led-pixel) {
+:is(button, input, summary, .led-edge):focus-visible:not(.led-pixel) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+:is(select, .hex-input, .fps-number, .scene-name-input):focus-visible {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .view { animation: fade-in 0.25s var(--ease-out); }
