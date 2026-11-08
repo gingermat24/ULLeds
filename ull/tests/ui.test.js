@@ -150,16 +150,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.51", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.52", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 51; version += 1) {
+  for (let version = 0; version <= 52; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.51<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.52<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -300,7 +300,7 @@ test("Screen Sync FPS is persisted and controls capture, sampling, and HID caden
   assert.match(main, /syncFps: 30/);
   assert.match(main, /Screen Sync FPS must be an integer from 5 to 60/);
   assert.match(app, /createDesktopCaptureConstraints\(id, state\.settings\.syncFps\)/);
-  assert.match(app, /1000 \/ clamp\(Number\(state\.settings\.syncFps\)/);
+  assert.match(app, /isSampleFrameDue\(session\.lastSample, now, sampleFps\)/);
   assert.match(app, /video\.requestVideoFrameCallback\(sampleFrame\)/);
   assert.match(app, /createLatestFrameSender\(\{/);
   assert.match(app, /performanceCallbackCount \+= 1/);
@@ -308,6 +308,7 @@ test("Screen Sync FPS is persisted and controls capture, sampling, and HID caden
   assert.match(main, /ipcMain\.on\("screen-sync:performance"/);
   assert.match(preload, /recordScreenSyncPerformance: \(metrics\)/);
   assert.match(screenSync, /maxFrameRate,\s*maxWidth: MAX_CAPTURE_DIMENSION,\s*maxHeight: MAX_CAPTURE_DIMENSION/);
+  assert.match(screenSync, /return lastSample === 0 \|\| now - lastSample >= 900 \/ fps/);
 });
 
 test("Screen Sync picture area is persisted and supports cinema widescreen sampling", () => {

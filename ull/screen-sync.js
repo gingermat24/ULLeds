@@ -21,6 +21,14 @@ function createDesktopCaptureConstraints(sourceId, maxFrameRate) {
   };
 }
 
+function isSampleFrameDue(lastSample, now, fps) {
+  if (![lastSample, now, fps].every(Number.isFinite) ||
+      lastSample < 0 || now < lastSample || fps < 5 || fps > 60) {
+    throw new TypeError("Screen Sync sample timing is invalid.");
+  }
+  return lastSample === 0 || now - lastSample >= 900 / fps;
+}
+
 function detectLetterboxAspectRatio(pixels, width, height) {
   if (!pixels || !Number.isInteger(width) || width < 32 ||
       !Number.isInteger(height) || height < 32 ||
@@ -243,6 +251,7 @@ function createLatestFrameSender({ send, isActive, getColors, onError }) {
 
 const screenSync = Object.freeze({
   createDesktopCaptureConstraints,
+  isSampleFrameDue,
   createLetterboxStability,
   detectLetterboxAspectRatio,
   createLatestFrameSender,

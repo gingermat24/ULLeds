@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   createDesktopCaptureConstraints,
+  isSampleFrameDue,
   createLetterboxStability,
   detectLetterboxAspectRatio,
   createLatestFrameSender,
@@ -24,6 +25,32 @@ test("screen sync bounds desktop capture resolution and honors the requested fra
       }
     }
   });
+});
+
+test("30 FPS sampling tolerates capture timestamp jitter without halving samples", () => {
+  const callbackTimes = [];
+  let timestamp = 0;
+  for (let frame = 0; frame < 30; frame += 1) {
+    timestamp += frame % 2 === 0 ? 32 : 35;
+    callbackTimes.push(timestamp);
+  }
+  let lastSample = 0;
+  let sampled = 0;
+  for (const now of callbackTimes) {
+    if (!isSampleFrameDue(lastSample, now, 30)) continue;
+    sampled += 1;
+    lastSample = now;
+  }
+  assert.ok(sampled >= 28);
+
+  lastSample = 0;
+  sampled = 0;
+  for (const now of callbackTimes) {
+    if (!isSampleFrameDue(lastSample, now, 15)) continue;
+    sampled += 1;
+    lastSample = now;
+  }
+  assert.equal(sampled, 15);
 });
 
 test("screen sync sends the newest sampled frame as soon as the active write finishes", async () => {

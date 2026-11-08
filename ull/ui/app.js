@@ -788,8 +788,9 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       } else {
         session.frame = requestAnimationFrame(sampleFrame);
       }
-      const sampleInterval = 1000 / clamp(Number(state.settings.syncFps) || 30, 5, 60);
-      if (now - session.lastSample < sampleInterval || video.readyState < 2) return;
+      const sampleFps = clamp(Number(state.settings.syncFps) || 30, 5, 60);
+      if (!window.ullScreenSync.isSampleFrameDue(session.lastSample, now, sampleFps) ||
+          video.readyState < 2) return;
       session.lastSample = now;
       session.performanceSampleCount += 1;
       const sampleStartedAt = performance.now();
