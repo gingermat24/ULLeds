@@ -78,19 +78,6 @@ function updateRangeFills() {
   document.querySelectorAll('input[type="range"]').forEach(updateRangeFill);
 }
 
-function positionTabIndicator(animate = true) {
-  const indicator = $(".tab-indicator");
-  const active = $(".tabs .tab.active");
-  if (!indicator || !active || !active.offsetWidth) return;
-  indicator.style.transition = animate ? "" : "none";
-  indicator.style.width = `${active.offsetWidth}px`;
-  indicator.style.transform = `translateX(${active.offsetLeft}px)`;
-  if (!animate) {
-    void indicator.offsetWidth;
-    indicator.style.transition = "";
-  }
-}
-
 function calibratedColor(color, gains = [100, 100, 100]) {
   const channels = color.slice(1).match(/../g).map((part, index) =>
     clamp(Math.round(Number.parseInt(part, 16) * gains[index] / 100), 0, 255)
@@ -920,7 +907,6 @@ function switchView(name) {
     panel.classList.toggle("hidden", panel.id !== `view-${name}`);
   });
   window.scrollTo({ top: 0 });
-  positionTabIndicator(true);
 }
 
 function renderUpdates() {
@@ -1282,13 +1268,6 @@ function bindEvents() {
     next.focus();
     switchView(next.dataset.view);
   });
-
-  if (typeof ResizeObserver === "function") {
-    new ResizeObserver(() => positionTabIndicator(false)).observe($(".tabs"));
-  }
-  window.addEventListener("resize", () => positionTabIndicator(false));
-  document.fonts?.ready.then(() => positionTabIndicator(false));
-  positionTabIndicator(false);
 
   document.addEventListener("input", (event) => {
     if (event.target instanceof HTMLInputElement && event.target.type === "range") {

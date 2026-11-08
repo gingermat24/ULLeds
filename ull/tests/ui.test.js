@@ -111,18 +111,23 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \}/);
 });
 
-test("topbar tabs stay centered independently of connection status changes", () => {
+test("topbar navigation stays left-aligned and clears the native window controls", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
-  assert.match(css, /\.topbar \{[^}]*display: grid;[^}]*grid-template-columns: minmax\(0, 1fr\) max-content minmax\(0, 1fr\);/s);
-  assert.match(css, /\.tabs \{[^}]*position: absolute;[^}]*left: 50%;[^}]*transform: translateX\(-50%\);/s);
+  assert.match(css, /\.topbar \{[^}]*grid-template-columns: minmax\(0, 1fr\) max-content;[^}]*height: 64px;/s);
+  assert.match(css, /\.tabs \{[^}]*display: flex;[^}]*align-items: stretch;/s);
+  assert.match(css, /\.tab::after \{[^}]*background: var\(--accent\);/s);
   assert.match(css, /\.topbar button, \.tabs, \.device-status \{ -webkit-app-region: no-drag; \}/);
-  assert.match(css, /\.device-status \{[^}]*width: min\(280px, 100%\);/s);
+  assert.match(css, /\.device-status \{[^}]*width: min\(260px, 100%\);/s);
   assert.match(css, /#device-label \{\s+flex: 1 1 auto;\s+min-width: 0;\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
   assert.match(css, /\.device-status \{[^}]*justify-self: end;/s);
   assert.match(css, /\.topbar \{[^}]*padding: 0 calc\(var\(--pad-x\) \+ max\(148px, 100% - env\(titlebar-area-width, 100%\)\)\) 0 var\(--pad-x\);/s);
-  assert.match(css, /@media \(max-width: 1180px\) \{\s+\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\) auto;/);
-  assert.match(css, /@media \(max-width: 1180px\) \{[\s\S]*\.tabs \{\s+position: relative;/);
+  assert.match(css, /@media \(max-width: 820px\) \{\s+\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(css, /@media \(max-width: 820px\) \{[\s\S]*\.device-status \{ grid-row: 1;/);
+  assert.doesNotMatch(html, /class="tab-indicator"/);
+  assert.doesNotMatch(app, /positionTabIndicator|tab-indicator/);
 });
 
 test("settings changes stay ordered and sliders flush their final value", () => {
@@ -141,16 +146,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.44", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.45", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 44; version += 1) {
+  for (let version = 0; version <= 45; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.44<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.45<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
