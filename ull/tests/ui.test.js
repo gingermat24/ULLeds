@@ -126,7 +126,7 @@ test("topbar uses compact status, shared page padding, and matching title-bar co
   assert.match(css, /#device-label \{\s+flex: 0 1 auto;\s+min-width: 0;\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
   assert.match(css, /main \{\s+flex: 1 1 auto;\s+min-height: 0;\s+overflow-y: auto;\s+scrollbar-gutter: stable;/);
   assert.match(css, /\.app \{\s+display: flex;\s+flex-direction: column;[\s\S]*height: 100dvh;/);
-  assert.match(css, /--page-gutter: clamp\(20px, 2\.8vw, 44px\)/);
+  assert.match(css, /--page-gutter: 24px/);
   assert.match(css, /\.topbar \{[^}]*padding: 0 calc\(var\(--page-gutter\) \+ max\(148px, 100% - env\(titlebar-area-width, 100%\)\)\) 0 var\(--page-gutter\);/s);
   assert.match(css, /@media \(max-width: 820px\) \{[\s\S]*\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\);\s+grid-template-rows: 52px 42px;[\s\S]*\.tabs \{\s+grid-column: 1;\s+grid-row: 2;[\s\S]*\.device-status \{\s+grid-column: 1;\s+grid-row: 1;/);
   assert.match(css, /main \{[^}]*width: 100%;[^}]*max-width: none;[^}]*align-self: stretch;/s);
@@ -145,10 +145,29 @@ test("lighting layout fills the window and the monitor preview matches the displ
   assert.match(css, /\.preview-card \{[^}]*min-height: max\(400px, calc\(100dvh - 114px\)\);/s);
   assert.match(css, /\.monitor \{[^}]*aspect-ratio: var\(--monitor-aspect-ratio, 16 \/ 9\);/s);
   assert.match(css, /\.monitor \{[^}]*width: min\(100%, calc\(\(100dvh - 360px\) \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
-  assert.match(css, /font-size: clamp\(13px, 0\.85vw, 16px\)/);
-  assert.match(css, /--control-h: clamp\(34px, 1\.7vw, 44px\)/);
+  assert.match(css, /font-size: 14px/);
+  assert.match(css, /--control-h: 34px/);
   assert.match(app, /function updateMonitorAspectRatio\(\) \{\s+const \{ width, height \} = window\.screen;\s+if \(!Number\.isFinite\(width\) \|\| !Number\.isFinite\(height\) \|\| width <= 0 \|\| height <= 0\) return;\s+document\.documentElement\.style\.setProperty\("--monitor-aspect-ratio", String\(width \/ height\)\);/);
   assert.match(app, /updateMonitorAspectRatio\(\);\s+window\.addEventListener\("resize", updateMonitorAspectRatio\);/);
+});
+
+test("lighting spacing and control sizes stay consistent while resizing the window", () => {
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(css, /--page-gutter:\s*24px;/);
+  assert.match(css, /--control-h:\s*34px;/);
+  assert.match(css, /--control-h-sm:\s*30px;/);
+  assert.match(css, /body\s*\{[^}]*font-size:\s*14px;/s);
+  assert.match(css, /\.card\s*\{[^}]*padding:\s*24px;/s);
+  assert.match(css, /h2\s*\{[^}]*font-size:\s*24px;/s);
+  assert.match(css, /\.light-grid\s*\{[^}]*gap:\s*20px;/s);
+  assert.match(css, /\.controls-card\s*\{[^}]*gap:\s*20px;/s);
+  assert.doesNotMatch(css, /--(?:page-gutter|control-h|control-h-sm):\s*clamp/);
+  assert.doesNotMatch(css, /(?:^|\n)\s*body\s*\{[^}]*font-size:\s*clamp/s);
+  assert.doesNotMatch(css, /(?:^|\n)\s*\.card\s*\{[^}]*padding:\s*clamp/s);
+  assert.doesNotMatch(css, /(?:^|\n)\s*h2\s*\{[^}]*font-size:\s*clamp/s);
+  assert.doesNotMatch(css, /(?:^|\n)\s*\.light-grid\s*\{[^}]*gap:\s*clamp/s);
+  assert.doesNotMatch(css, /(?:^|\n)\s*\.controls-card\s*\{[^}]*gap:\s*clamp/s);
 });
 
 test("settings changes stay ordered and sliders flush their final value", () => {
@@ -167,16 +186,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 99px;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.55", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.56", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 55; version += 1) {
+  for (let version = 0; version <= 56; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.55<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.56<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -452,7 +471,7 @@ test("the icon build consumes the user PNG and responsive motion preferences are
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
-test("the default lighting is green at 50% brightness and the app expands on large windows", () => {
+test("the default lighting is green at 50% brightness and the app fills large windows", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
@@ -466,7 +485,7 @@ test("the default lighting is green at 50% brightness and the app expands on lar
   assert.match(html, /id="hex-color"[^>]*value="#008100"/);
   assert.match(html, /id="brightness"[^>]*value="50"/);
   assert.match(css, /\.app \{\s+display: flex;\s+flex-direction: column;[\s\S]*height: 100dvh;/);
-  assert.match(css, /@media \(min-width: 1440px\)/);
+  assert.match(css, /main \{[^}]*width: 100%;[^}]*max-width: none;/s);
 });
 
 test("full reset is confirmed, clears app and imported profile data, and preserves the installation", () => {
