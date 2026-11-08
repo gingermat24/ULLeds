@@ -129,10 +129,26 @@ test("topbar uses compact status, shared page padding, and matching title-bar co
   assert.match(css, /--page-gutter: clamp\(20px, 2\.8vw, 44px\)/);
   assert.match(css, /\.topbar \{[^}]*padding: 0 calc\(var\(--page-gutter\) \+ max\(148px, 100% - env\(titlebar-area-width, 100%\)\)\) 0 var\(--page-gutter\);/s);
   assert.match(css, /@media \(max-width: 820px\) \{[\s\S]*\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\);\s+grid-template-rows: 52px 42px;[\s\S]*\.tabs \{\s+grid-column: 1;\s+grid-row: 2;[\s\S]*\.device-status \{\s+grid-column: 1;\s+grid-row: 1;/);
+  assert.match(css, /main \{[^}]*width: 100%;[^}]*max-width: none;[^}]*align-self: stretch;/s);
   assert.match(main, /backgroundColor: "#050505",[\s\S]*titleBarOverlay: \{\s+color: "#050505",\s+symbolColor: "#F5F5F5",\s+height: 64/);
   assert.doesNotMatch(html, /class="tab-indicator"/);
   assert.doesNotMatch(app, /positionTabIndicator|tab-indicator/);
   assert.match(app, /label\.textContent = state\.device\.connected\s+\? "Connected"\s+: state\.device\.error\s+\? "Connection issue"\s+: "Not connected"/);
+});
+
+test("lighting layout fills the window and the monitor preview matches the display ratio", () => {
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+
+  assert.match(css, /\.light-grid \{[^}]*align-items: stretch;/s);
+  assert.match(css, /\.controls-card \{[^}]*justify-content: space-between;/s);
+  assert.match(css, /\.preview-card \{[^}]*min-height: max\(400px, calc\(100dvh - 114px\)\);/s);
+  assert.match(css, /\.monitor \{[^}]*aspect-ratio: var\(--monitor-aspect-ratio, 16 \/ 9\);/s);
+  assert.match(css, /\.monitor \{[^}]*width: min\(100%, calc\(\(100dvh - 360px\) \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
+  assert.match(css, /font-size: clamp\(13px, 0\.85vw, 16px\)/);
+  assert.match(css, /--control-h: clamp\(34px, 1\.7vw, 44px\)/);
+  assert.match(app, /function updateMonitorAspectRatio\(\) \{\s+const \{ width, height \} = window\.screen;\s+if \(!Number\.isFinite\(width\) \|\| !Number\.isFinite\(height\) \|\| width <= 0 \|\| height <= 0\) return;\s+document\.documentElement\.style\.setProperty\("--monitor-aspect-ratio", String\(width \/ height\)\);/);
+  assert.match(app, /updateMonitorAspectRatio\(\);\s+window\.addEventListener\("resize", updateMonitorAspectRatio\);/);
 });
 
 test("settings changes stay ordered and sliders flush their final value", () => {
@@ -151,16 +167,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 99px;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.54", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.55", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 54; version += 1) {
+  for (let version = 0; version <= 55; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.54<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.55<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -170,6 +186,7 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
   assert.match(css, /\.preview-card\s*\{[^}]*container-type:\s*inline-size/s);
   assert.match(css, /--led-rail-size:\s*clamp\(9px,\s*1\.4cqi,\s*16px\)/);
   assert.match(css, /\.led-edge\s*\{[^}]*gap:\s*clamp\(2px,\s*0\.25cqi,\s*3px\)/s);
+  assert.match(css, /\.led-pixel\s*\{[^}]*border-radius:\s*clamp\(2px,\s*calc\(var\(--led-rail-size\) \* 0\.18\),\s*var\(--radius\)\)/s);
   assert.match(css, /\.led-pixel\.selected\s*\{[^}]*outline:\s*1\.5px solid #fff;[^}]*outline-offset:\s*-1\.5px/s);
   assert.match(css, /\.led-pixel:focus-visible:not\(\.selected\)\s*\{[^}]*outline:\s*1\.5px solid #fff/s);
   assert.match(css, /:focus-visible:not\(\.led-pixel\)/);

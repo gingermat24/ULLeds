@@ -78,6 +78,12 @@ function updateRangeFills() {
   document.querySelectorAll('input[type="range"]').forEach(updateRangeFill);
 }
 
+function updateMonitorAspectRatio() {
+  const { width, height } = window.screen;
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+  document.documentElement.style.setProperty("--monitor-aspect-ratio", String(width / height));
+}
+
 function calibratedColor(color, gains = [100, 100, 100]) {
   const channels = color.slice(1).match(/../g).map((part, index) =>
     clamp(Math.round(Number.parseInt(part, 16) * gains[index] / 100), 0, 255)
@@ -1536,6 +1542,8 @@ function bindEvents() {
 
 async function start() {
   bindEvents();
+  updateMonitorAspectRatio();
+  window.addEventListener("resize", updateMonitorAspectRatio);
   try {
     state = await window.ull.initialState();
     render();
