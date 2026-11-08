@@ -65,7 +65,8 @@ const releaseDates = new Map([
   ["1.0.59", "2026-11-08"],
   ["1.0.60", "2026-11-08"],
   ["1.0.61", "2026-11-08"],
-  ["1.0.62", "2026-11-08"]
+  ["1.0.62", "2026-11-08"],
+  ["1.0.63", "2026-11-08"]
 ]);
 
 const $ = (selector) => document.querySelector(selector);
@@ -1421,8 +1422,6 @@ function setupReleaseCarousel() {
         { duration: 200, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
       );
     }
-    olderButton.hidden = currentIndex === entries.length - 1;
-    newerButton.hidden = currentIndex === 0;
     position.textContent = `${currentIndex + 1}/${entries.length}`;
     previousIndex = currentIndex;
   }
@@ -1454,21 +1453,27 @@ function setupReleaseCarousel() {
     marker.setAttribute("aria-label", `Show ULLeds ${version}`);
     marker.addEventListener("click", () => showRelease(index));
     marker.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowLeft" && index > 0) {
+      if (event.key === "ArrowLeft") {
         event.preventDefault();
-        showRelease(index - 1);
-        markers.children[index - 1].focus();
-      } else if (event.key === "ArrowRight" && index < entries.length - 1) {
+        const nextIndex = (index - 1 + entries.length) % entries.length;
+        showRelease(nextIndex);
+        markers.children[nextIndex].focus();
+      } else if (event.key === "ArrowRight") {
         event.preventDefault();
-        showRelease(index + 1);
-        markers.children[index + 1].focus();
+        const nextIndex = (index + 1) % entries.length;
+        showRelease(nextIndex);
+        markers.children[nextIndex].focus();
       }
     });
     markers.append(marker);
   });
 
-  newerButton.addEventListener("click", () => showRelease(currentIndex - 1));
-  olderButton.addEventListener("click", () => showRelease(currentIndex + 1));
+  newerButton.addEventListener("click", () =>
+    showRelease((currentIndex - 1 + entries.length) % entries.length)
+  );
+  olderButton.addEventListener("click", () =>
+    showRelease((currentIndex + 1) % entries.length)
+  );
   showRelease(currentIndex);
 }
 
