@@ -212,21 +212,31 @@ function sampleStripColors(pixels, width, height, layout, contentAspectRatio = n
     }
     if (!samples.length) return "#000000";
 
-    const representative = samples.reduce((best, candidate) => {
-      const cost = samples.reduce((sum, sample) =>
-        sum +
-          (candidate.red - sample.red) ** 2 +
-          (candidate.green - sample.green) ** 2 +
-          (candidate.blue - sample.blue) ** 2, 0);
-      const bestCost = samples.reduce((sum, sample) =>
-        sum +
-          (best.red - sample.red) ** 2 +
-          (best.green - sample.green) ** 2 +
-          (best.blue - sample.blue) ** 2, 0);
-      return cost < bestCost || (cost === bestCost && candidate.distance < best.distance)
-        ? candidate
-        : best;
-    });
+    const channelTotals = samples.reduce((totals, sample) => {
+      totals.red += sample.red;
+      totals.green += sample.green;
+      totals.blue += sample.blue;
+      totals.squared += sample.red ** 2 + sample.green ** 2 + sample.blue ** 2;
+      return totals;
+    }, { red: 0, green: 0, blue: 0, squared: 0 });
+    const colorCost = (sample) =>
+      samples.length * (sample.red ** 2 + sample.green ** 2 + sample.blue ** 2) -
+      2 * (
+        sample.red * channelTotals.red +
+        sample.green * channelTotals.green +
+        sample.blue * channelTotals.blue
+      ) +
+      channelTotals.squared;
+    let representative = samples[0];
+    let representativeCost = colorCost(representative);
+    for (const candidate of samples.slice(1)) {
+      const cost = colorCost(candidate);
+      if (cost < representativeCost ||
+          (cost === representativeCost && candidate.distance < representative.distance)) {
+        representative = candidate;
+        representativeCost = cost;
+      }
+    }
     return `#${[representative.red, representative.green, representative.blue]
       .map((channel) => channel.toString(16).padStart(2, "0"))
       .join("")}`;

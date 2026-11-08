@@ -52,6 +52,30 @@ test("renderer scripts load together and expose their APIs", () => {
   assert.equal(typeof context.ullLedSelection?.selectLed, "function");
   assert.equal(typeof context.ullSceneData?.sceneFromLighting, "function");
   assert.equal(typeof context.ullSpotifySync?.createSpotifySyncColors, "function");
+  assert.equal(typeof context.ullGithubReleases?.getReleasedInstallers, "function");
+});
+
+test("release notes offer published version downloads and a compact startup update notice", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(html, /id="version-notice"[^>]*role="status"/);
+  assert.match(html, /id="version-notice-update"[^>]*>Update</);
+  assert.match(html, /github-releases\.js/);
+  assert.match(app, /listReleaseDownloads\(\)/);
+  assert.match(app, /compareVersions\(version, state\.version\)/);
+  assert.match(app, /versionComparison > 0 \? "Update" : "Downgrade"/);
+  assert.match(app, /showVersionNotice\(latest\)/);
+  assert.match(preload, /listReleaseDownloads: \(\) => ipcRenderer\.invoke\("updates:release-downloads"\)/);
+  assert.match(preload, /downloadRelease: \(version\) => ipcRenderer\.invoke\("updates:download-release", version\)/);
+  assert.match(main, /ipcMain\.handle\("updates:release-downloads"/);
+  assert.match(main, /ipcMain\.handle\("updates:download-release"/);
+  assert.match(main, /shell\.openExternal\(installer\.url\)/);
+  assert.match(css, /\.version-notice\s*\{[\s\S]*min-height: 62px/);
+  assert.match(css, /\.release-actions\s*\{/);
 });
 
 test("Spotify Sync combines local cover art with live desktop audio analysis", () => {
@@ -292,16 +316,16 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(css, /\.release-entry\[hidden\]\s*\{\s*display:\s*none/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.60", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.61", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 60; version += 1) {
+  for (let version = 0; version <= 61; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.60<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.61<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -719,7 +743,7 @@ test("startup UI appears before the controller scan completes", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const start = app.slice(app.indexOf("async function start()"), app.indexOf("\nfunction maybeResumeScreenSync()"));
 
-  assert.match(start, /state = await window\.ull\.initialState\(\);\s+render\(\);\s+if \(!state\.settings\.onboarded\) openSetup\(\);\s+void scanDevices\(\)\.then\(maybeResumeScreenSync\)/);
+  assert.match(start, /state = await window\.ull\.initialState\(\);\s+render\(\);\s+void loadReleaseDownloads\(\);\s+if \(!state\.settings\.onboarded\) openSetup\(\);\s+void scanDevices\(\)\.then\(maybeResumeScreenSync\)/);
   assert.match(app, /if \(!state\.settings\.onboarded && \$\("#setup-dialog"\)\.open && wizardStep === 0\) \{\s+setWizardStep\(0\);/);
 });
 

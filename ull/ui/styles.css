@@ -1787,6 +1787,22 @@ select:disabled {
   margin-left: 0;
 }
 
+.release-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-3);
+}
+
+.release-download {
+  min-width: 92px;
+}
+
+.release-download-status {
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .release-carousel {
   display: grid;
   gap: var(--space-4);
@@ -2096,6 +2112,91 @@ select:disabled {
 .toast.visible {
   opacity: 1;
   transform: none;
+}
+
+.version-notice {
+  position: fixed;
+  top: 14px;
+  right: 18px;
+  z-index: 101;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(340px, calc(100vw - 28px));
+  min-height: 62px;
+  padding: 10px 12px 12px;
+  overflow: hidden;
+  border: 1px solid var(--hairline-strong);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.28);
+  animation: version-notice-enter 0.18s var(--ease);
+}
+
+.version-notice-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.version-notice-copy strong {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.version-notice-copy span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.version-notice-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.version-notice-actions .primary-btn {
+  min-width: 62px;
+  height: 28px;
+  padding: 0 9px;
+  font-size: 10.5px;
+}
+
+.version-notice-actions .icon-btn {
+  width: 26px;
+  height: 26px;
+  font-size: 15px;
+}
+
+.version-notice-timeout {
+  position: absolute;
+  right: 12px;
+  bottom: 6px;
+  left: 12px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.version-notice-timeout span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  background: rgb(255 255 255 / 0.72);
+  animation: version-notice-expire 5s linear forwards;
+}
+
+@keyframes version-notice-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes version-notice-expire {
+  to { transform: scaleX(0); }
 }
 
 /* --------------------------------------------------------------------------

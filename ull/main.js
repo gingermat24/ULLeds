@@ -38,6 +38,10 @@ const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
 const { normalizeScenes } = require("./scene-data");
 const { acquireSingleInstanceLock } = require("./single-instance");
+const {
+  findReleaseInstaller,
+  getReleasedInstallers
+} = require("./github-releases");
 
 const APP_ID = "com.gingermat.ulleds";
 const DEFAULTS = Object.freeze({
@@ -87,6 +91,8 @@ let updateServerFolder = "";
 let downloadedUpdateVersion = null;
 let updateDownloadVersion = null;
 let updateCheckPromise = null;
+let githubReleaseCache = null;
+let githubReleaseRequest = null;
 let resetPromise = null;
 let screenSyncDiagnostics = null;
 let pendingMovieFormat = null;
@@ -1067,6 +1073,51 @@ ipcMain.handle("updates:choose-folder", async () => {
   }
   setSettings({ updateFolder: result.filePaths[0], updateSource: "local" });
   return { canceled: false, folder: settings.updateFolder };
+});
+async function getGithubReleaseInstallers() {
+  if (githubReleaseCache && githubReleaseCache.expiresAt > Date.now()) {
+    return githubReleaseCache.installers;
+  }
+  if (githubReleaseRequest) return githubReleaseRequest;
+
+  const request = (async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(
+        "https://api.github.com/repos/gingermat24/ULLeds/releases?per_page=100",
+        {
+          headers: {
+            Accept: "application/vnd.github+json",
+            "User-Agent": "ULLeds"
+          },
+          signal: controller.signal
+        }
+      );
+      if (!response.ok) {
+        throw new Error(`GitHub returned HTTP ${response.status}.`);
+      }
+      const installers = getReleasedInstallers(await response.json());
+      githubReleaseCache = { installers, expiresAt: Date.now() + 5 * 60 * 1000 };
+      return installers;
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+  githubReleaseRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (githubReleaseRequest === request) githubReleaseRequest = null;
+  }
+}
+ipcMain.handle("updates:release-downloads", () => getGithubReleaseInstallers());
+ipcMain.handle("updates:download-release", async (_event, version) => {
+  if (typeof version !== "string") throw new TypeError("Release version is invalid.");
+  const installer = findReleaseInstaller(await getGithubReleaseInstallers(), version);
+  if (!installer) throw new Error(`ULLeds ${version} has no published Windows installer.`);
+  await shell.openExternal(installer.url);
+  return { opened: true };
 });
 ipcMain.handle("updates:check", async () => {
   if (!app.isPackaged) {

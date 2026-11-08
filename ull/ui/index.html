@@ -374,6 +374,7 @@
                 <h2 id="release-log-title">What changed</h2>
               </div>
             </div>
+            <div id="release-download-status" class="release-download-status hidden" role="status" aria-live="polite"></div>
             <div class="release-carousel">
               <div class="release-carousel-navigation">
                 <button id="release-newer" class="icon-btn release-arrow" type="button" aria-label="Newer release" aria-controls="release-track" hidden>&lt;</button>
@@ -381,7 +382,12 @@
               </div>
               <div class="release-track" id="release-track" aria-live="polite">
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.60</h3><span class="release-current">Current</span></header>
+              <header><h3>ULLeds 1.0.61</h3><span class="release-current">Current</span></header>
+              <div class="release-category"><strong>Added</strong><ul><li>Added Update and Downgrade buttons for each published Windows release and a compact startup notice when a newer version is available.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Reduced Screen Sync color-sampling work while preserving sampled LED colors and frame behavior.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.60</h3></header>
               <div class="release-category"><strong>Improved</strong><ul><li>Spotify Sync now reacts to live desktop audio, sending flowing cover-art colors that pulse with bass, mids, and treble.</li><li>Kept Spotify Sync running through brief gaps in track artwork and improved track-change detection.</li><li>Matched changelog arrows, progress alignment, and transitions to the existing interface.</li></ul></div>
             </article>
             <article class="card release-entry">
@@ -715,12 +721,24 @@
       </form>
     </dialog>
 
+    <aside id="version-notice" class="version-notice hidden" role="status" aria-live="polite">
+      <div class="version-notice-copy">
+        <strong id="version-notice-title"></strong>
+        <span>Download the latest release installer.</span>
+      </div>
+      <div class="version-notice-actions">
+        <button id="version-notice-update" class="primary-btn" type="button">Update</button>
+        <button id="version-notice-dismiss" class="icon-btn" type="button" aria-label="Dismiss update notice">&times;</button>
+      </div>
+      <div class="version-notice-timeout" aria-hidden="true"><span></span></div>
+    </aside>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="../strip-layout.js"></script>
     <script src="../led-selection.js"></script>
     <script src="../screen-sync.js"></script>
     <script src="../spotify-sync.js"></script>
+    <script src="../github-releases.js"></script>
     <script src="../scene-data.js"></script>
     <script src="../screen-sync-lifecycle.js"></script>
     <script src="app.js"></script>

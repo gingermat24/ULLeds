@@ -27,6 +27,8 @@ let state = {
 };
 
 let toastTimer;
+let versionNoticeTimer;
+let pendingVersionNotice = null;
 let settingsQueue = {};
 let settingsTimer;
 let settingsFlushPromise = null;
@@ -61,7 +63,8 @@ const releaseDates = new Map([
   ["1.0.57", "2026-11-08"],
   ["1.0.58", "2026-11-08"],
   ["1.0.59", "2026-11-08"],
-  ["1.0.60", "2026-11-08"]
+  ["1.0.60", "2026-11-08"],
+  ["1.0.61", "2026-11-08"]
 ]);
 
 const $ = (selector) => document.querySelector(selector);
@@ -116,6 +119,107 @@ function toast(message) {
   element.classList.add("visible");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => element.classList.remove("visible"), 2600);
+}
+
+function dismissVersionNotice() {
+  clearTimeout(versionNoticeTimer);
+  $("#version-notice").classList.add("hidden");
+}
+
+function showVersionNotice(installer) {
+  const setupDialog = $("#setup-dialog");
+  if (setupDialog.open) {
+    pendingVersionNotice = installer;
+    setupDialog.addEventListener("close", () => {
+      if (!pendingVersionNotice) return;
+      const pending = pendingVersionNotice;
+      pendingVersionNotice = null;
+      showVersionNotice(pending);
+    }, { once: true });
+    return;
+  }
+
+  const notice = $("#version-notice");
+  $("#version-notice-title").textContent = `ULLeds ${installer.version} is available`;
+  const updateButton = $("#version-notice-update");
+  updateButton.onclick = () => {
+    void downloadRelease(installer.version, updateButton).then((opened) => {
+      if (opened) dismissVersionNotice();
+    });
+  };
+  notice.classList.remove("hidden");
+  clearTimeout(versionNoticeTimer);
+  versionNoticeTimer = setTimeout(dismissVersionNotice, 5000);
+}
+
+async function downloadRelease(version, button) {
+  if (button) button.disabled = true;
+  try {
+    const result = await window.ull.downloadRelease(version);
+    if (!result.opened) throw new Error("The installer download did not open.");
+    toast(`Opened the ULLeds ${version} installer download.`);
+    return true;
+  } catch (error) {
+    toast(`Could not download ULLeds ${version}: ${error.message}`);
+    return false;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function loadReleaseDownloads() {
+  const status = $("#release-download-status");
+  try {
+    const installers = await window.ull.listReleaseDownloads();
+    if (!Array.isArray(installers)) throw new Error("GitHub returned an invalid release list.");
+    status.classList.add("hidden");
+
+    const installerByVersion = new Map(installers.map((installer) => [installer.version, installer]));
+    const latestVersion = installers[0]?.version;
+    for (const entry of document.querySelectorAll(".release-entry")) {
+      entry.querySelector(".release-actions")?.remove();
+      const header = entry.querySelector("header");
+      const version = header.querySelector("h3").textContent.match(/\d+\.\d+\.\d+/)?.[0];
+      const badge = header.querySelector(".release-current");
+      const badgeText = version === latestVersion
+        ? version === state.version ? "Current" : "Latest"
+        : version === state.version ? "Installed" : "";
+      if (badgeText) {
+        const statusBadge = badge || document.createElement("span");
+        statusBadge.className = "release-current";
+        statusBadge.textContent = badgeText;
+        if (!badge) header.insertBefore(statusBadge, header.querySelector(".release-date"));
+      } else {
+        badge?.remove();
+      }
+
+      const installer = installerByVersion.get(version);
+      if (!installer || !state.version) continue;
+
+      const versionComparison = window.ullGithubReleases.compareVersions(version, state.version);
+      if (versionComparison === 0) continue;
+      const actionLabel = versionComparison > 0 ? "Update" : "Downgrade";
+      const actions = document.createElement("div");
+      actions.className = "release-actions";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary-btn release-download";
+      button.textContent = actionLabel;
+      button.setAttribute("aria-label", `${actionLabel} to ULLeds ${version}`);
+      button.addEventListener("click", () => void downloadRelease(version, button));
+      actions.append(button);
+      entry.append(actions);
+    }
+
+    const latest = installers[0];
+    if (latest && window.ullGithubReleases.compareVersions(latest.version, state.version) > 0) {
+      showVersionNotice(latest);
+    }
+  } catch (error) {
+    console.error("Could not load GitHub release downloads:", error);
+    status.textContent = "Could not load release downloads. Check your connection and try again.";
+    status.classList.remove("hidden");
+  }
 }
 
 function queueSettings(changes, immediate = false) {
@@ -1738,6 +1842,7 @@ function bindEvents() {
   $("#open-setup").addEventListener("click", openSetup);
   $("#reset-all-data").addEventListener("click", openResetConfirmation);
   $("#confirm-reset").addEventListener("click", resetAllData);
+  $("#version-notice-dismiss").addEventListener("click", dismissVersionNotice);
 
   $("#power-toggle").addEventListener("click", () => {
     if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
@@ -1940,6 +2045,7 @@ async function start() {
   try {
     state = await window.ull.initialState();
     render();
+    void loadReleaseDownloads();
     if (!state.settings.onboarded) openSetup();
     void scanDevices().then(maybeResumeScreenSync).catch((error) => {
       console.error("Could not finish ULLeds startup:", error);

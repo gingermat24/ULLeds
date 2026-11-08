@@ -108,6 +108,59 @@ test("screen sync samples one color for each physical LED position", () => {
   assert.throws(() => sampleStripColors(pixels, 15, 12, layout), /image and strip layout/);
 });
 
+test("optimized screen sampling preserves the closest representative color", () => {
+  let seed = 193;
+  for (let frame = 0; frame < 20; frame += 1) {
+    const width = 30;
+    const height = 30;
+    const pixels = new Uint8ClampedArray(width * height * 4);
+    for (let offset = 0; offset < pixels.length; offset += 4) {
+      seed = (seed * 16807) % 2147483647;
+      const red = seed % 256;
+      seed = (seed * 16807) % 2147483647;
+      const green = seed % 256;
+      seed = (seed * 16807) % 2147483647;
+      pixels.set([red, green, seed % 256, 255], offset);
+    }
+
+    const samples = [];
+    for (let y = 1; y <= 3; y += 1) {
+      for (let x = 14; x <= 16; x += 1) {
+        const offset = (y * width + x) * 4;
+        samples.push({
+          red: pixels[offset],
+          green: pixels[offset + 1],
+          blue: pixels[offset + 2],
+          distance: (x - 15) ** 2 + (y - 2) ** 2
+        });
+      }
+    }
+    const expected = samples.reduce((best, candidate) => {
+      const cost = samples.reduce((sum, sample) =>
+        sum +
+          (candidate.red - sample.red) ** 2 +
+          (candidate.green - sample.green) ** 2 +
+          (candidate.blue - sample.blue) ** 2, 0);
+      const bestCost = samples.reduce((sum, sample) =>
+        sum +
+          (best.red - sample.red) ** 2 +
+          (best.green - sample.green) ** 2 +
+          (best.blue - sample.blue) ** 2, 0);
+      return cost < bestCost || (cost === bestCost && candidate.distance < best.distance)
+        ? candidate
+        : best;
+    });
+    const colors = sampleStripColors(pixels, width, height, {
+      ledCount: 1,
+      indices: { top: [0] }
+    });
+    const expectedColor = `#${[expected.red, expected.green, expected.blue]
+      .map((channel) => channel.toString(16).padStart(2, "0"))
+      .join("")}`;
+    assert.equal(colors[0], expectedColor);
+  }
+});
+
 test("screen sync samples a widescreen picture rectangle instead of its letterbox bars", () => {
   const width = 160;
   const height = 90;
