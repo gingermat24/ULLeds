@@ -1,13 +1,5 @@
 "use strict";
 
-const SCENES_ENABLED = false;
-const DEFAULT_SCENES = [
-  { name: "Rose dusk", color: "#e879a8" },
-  { name: "Deep violet", color: "#8d7cff" },
-  { name: "Lagoon", color: "#55c8d2" },
-  { name: "Soft amber", color: "#f0ac65" }
-];
-
 let state = {
   settings: {
     color: "#008100",
@@ -18,7 +10,7 @@ let state = {
     speed: 48,
     palette: ["#e879a8", "#8d7cff", "#55c8d2"],
     ledColors: {},
-    presets: [],
+    scenes: [],
     deviceProfile: null,
     devicePath: "",
     power: true,
@@ -27,6 +19,7 @@ let state = {
     updateSource: "github",
     syncFps: 30,
     syncContentMode: "display",
+    syncAutoDetect: true,
     startWithWindows: true,
     resumeScreenSync: false
   },
@@ -47,6 +40,8 @@ const screenSyncLifecycle = window.ullScreenSyncLifecycle.createScreenSyncLifecy
 let screenSyncGeneration = 0;
 let autoSyncAttempted = false;
 let screenSyncError = "";
+let sceneDialogMode = null;
+let movieDetectionCandidate = null;
 let updateCheckInProgress = false;
 let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
 
@@ -140,8 +135,8 @@ async function flushSettingsQueue() {
         state.device = result;
         renderConnection();
         updatePreview();
-        if (SCENES_ENABLED && Object.hasOwn(pending, "presets")) renderScenes();
-        if (SCENES_ENABLED && Object.hasOwn(pending, "palette")) renderPalette();
+        if (Object.hasOwn(pending, "scenes")) renderScenes();
+        if (Object.hasOwn(pending, "palette")) renderPalette();
       } catch (error) {
         settingsQueue = { ...pending, ...settingsQueue };
         console.error("Could not save ULLeds settings:", error);
@@ -262,6 +257,115 @@ function selectedColor() {
   return state.settings.ledColors?.[first] || state.settings.color;
 }
 
+function openSceneDialog(mode, scene = null) {
+  if (mode === "create" && state.settings.scenes.length >= 30) {
+    return toast("You can save up to 30 lighting setups.");
+  }
+  sceneDialogMode = { mode, id: scene?.id || null };
+  $("#scene-dialog-title").textContent = mode === "rename" ? "Rename this setup" : "Name this setup";
+  $("#scene-dialog-copy").textContent = mode === "rename"
+    ? "Choose a name that will help you find this lighting later."
+    : "This saves your current lighting without changing device or Screen Sync settings.";
+  $("#save-scene-name").textContent = mode === "rename" ? "Save name" : "Save setup";
+  $("#scene-name").value = scene?.name || "";
+  $("#scene-dialog").showModal();
+  $("#scene-name").focus();
+  if (mode === "rename") $("#scene-name").select();
+}
+
+function saveSceneName(event) {
+  event.preventDefault();
+  const isRename = sceneDialogMode?.mode === "rename";
+  const name = $("#scene-name").value.trim();
+  if (!name || name.length > 36) {
+    toast("Enter a setup name from 1 to 36 characters.");
+    $("#scene-name").focus();
+    return;
+  }
+  const scenes = [...state.settings.scenes];
+  if (sceneDialogMode?.mode === "rename") {
+    const sceneIndex = scenes.findIndex((scene) => scene.id === sceneDialogMode.id);
+    if (sceneIndex === -1) return toast("That setup no longer exists.");
+    scenes[sceneIndex] = { ...scenes[sceneIndex], name };
+  } else {
+    if (scenes.length >= 30) return toast("You can save up to 30 lighting setups.");
+    scenes.push(window.ullSceneData.sceneFromLighting(
+      `scene-${crypto.randomUUID()}`,
+      name,
+      state.settings
+    ));
+  }
+  queueSettings({ scenes }, true);
+  $("#scene-dialog").close();
+  sceneDialogMode = null;
+  toast(isRename ? "Setup renamed." : "Setup saved.");
+}
+
+function duplicateScene(scene) {
+  if (state.settings.scenes.length >= 30) return toast("You can save up to 30 lighting setups.");
+  const duplicate = window.ullSceneData.sceneFromLighting(
+    `scene-${crypto.randomUUID()}`,
+    `${scene.name} copy`.slice(0, 36),
+    scene
+  );
+  queueSettings({ scenes: [...state.settings.scenes, duplicate] }, true);
+  toast(`Copied ${scene.name}.`);
+}
+
+function confirmDeleteScene(scene) {
+  $("#delete-scene-name").textContent = `Delete "${scene.name}"? This cannot be undone.`;
+  $("#delete-scene-dialog").showModal();
+  $("#confirm-delete-scene").onclick = () => {
+    const scenes = state.settings.scenes.filter((entry) => entry.id !== scene.id);
+    queueSettings({ scenes }, true);
+    $("#delete-scene-dialog").close();
+    toast(`Deleted ${scene.name}.`);
+  };
+}
+
+async function applyScene(scene) {
+  if (screenSyncSession || screenSyncLifecycle.isStarting) {
+    await stopScreenSync("", true);
+  }
+  selectedLedIndices = null;
+  const lighting = window.ullSceneData.settingsFromScene(scene);
+  const profile = state.device.profile || state.settings.deviceProfile;
+  const ledCount = Number(profile?.ledCount);
+  if (Number.isInteger(ledCount) && ledCount > 0) {
+    lighting.ledColors = Object.fromEntries(
+      Object.entries(lighting.ledColors).filter(([index]) => Number(index) < ledCount)
+    );
+  }
+  queueSettings(lighting, true);
+  toast(`Applied ${scene.name}.`);
+}
+
+function renderMovieDetection(message) {
+  if (!screenSyncSession || !Number.isFinite(message?.aspectRatio) ||
+      message.aspectRatio < 1.78 || message.aspectRatio > 2.6) return;
+  movieDetectionCandidate = {
+    aspectRatio: Math.round(message.aspectRatio * 100) / 100
+  };
+  const ratio = movieDetectionCandidate.aspectRatio;
+  $("#movie-detection-title").textContent = message.title;
+  $("#movie-detection-copy").textContent =
+    `ULLeds found a ${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1 picture. Use that ratio for this sync, or keep detecting.`;
+  $("#movie-detection").classList.remove("hidden");
+}
+
+function dismissMovieDetection() {
+  movieDetectionCandidate = null;
+  $("#movie-detection").classList.add("hidden");
+}
+
+function applyDetectedMovieFormat() {
+  if (!screenSyncSession || !movieDetectionCandidate) return;
+  screenSyncSession.detectedAspectRatio = movieDetectionCandidate.aspectRatio;
+  const ratio = screenSyncSession.detectedAspectRatio;
+  dismissMovieDetection();
+  toast(`Using ${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1 for this Screen Sync session.`);
+}
+
 function applyColor(color, all = false) {
   if (screenSyncSession) stopScreenSync("", true);
   if (all || selectedLedIndices === null) {
@@ -326,6 +430,7 @@ function updatePreview() {
       ? "from saved setup"
       : state.device.connected ? "detected" : "saved"}`
     : "Waiting for controller";
+  if (!screenSyncSession) dismissMovieDetection();
 
   if (selectedLedIndices === null) {
     $("#selection-label").textContent = "All LEDs";
@@ -352,6 +457,8 @@ function updatePreview() {
   if (document.activeElement !== $("#sync-fps-number")) $("#sync-fps-number").value = syncFps;
   $("#sync-fps-value").textContent = `${syncFps} FPS`;
   $("#sync-content-mode").value = settings.syncContentMode || "display";
+  $("#sync-auto-detect").checked = settings.syncAutoDetect !== false;
+  $("#palette-tuning").classList.toggle("hidden", settings.effect !== "palette");
   $("#speed-control").classList.toggle("hidden", settings.effect === "steady");
   $("#power-toggle").setAttribute("aria-checked", String(settings.power));
   $("#power-toggle").setAttribute("aria-label", `LED power: ${settings.power ? "on" : "off"}`);
@@ -390,52 +497,75 @@ function updatePreview() {
 function renderScenes() {
   const root = $("#scene-grid");
   root.replaceChildren();
-  const scenes = [...DEFAULT_SCENES, ...state.settings.presets];
+  const scenes = state.settings.scenes || [];
 
   if (!scenes.length) {
-    const empty = document.createElement("p");
-    empty.textContent = "Save a color to create your first scene.";
-    empty.style.color = "var(--muted)";
+    const empty = document.createElement("div");
+    empty.className = "scene-empty";
+    const heading = document.createElement("h3");
+    heading.textContent = "Save a setup for later";
+    const copy = document.createElement("p");
+    copy.textContent = "Your current color, brightness, effect, speed, palette, and individual LED colors will be saved together.";
+    const save = document.createElement("button");
+    save.className = "secondary-btn";
+    save.type = "button";
+    save.textContent = "Save current setup";
+    save.addEventListener("click", () => openSceneDialog("create"));
+    empty.append(heading, copy, save);
     root.append(empty);
     return;
   }
 
-  scenes.forEach((scene, index) => {
-    const card = document.createElement("div");
-    card.className = "scene-card";
+  scenes.forEach((scene) => {
+    const item = document.createElement("article");
+    item.className = "scene-item";
 
-    const button = document.createElement("button");
-    button.className = "scene-card-apply";
-    button.type = "button";
-    button.setAttribute("aria-label", `Apply ${scene.name} scene`);
+    const ribbon = document.createElement("div");
+    ribbon.className = "scene-ribbon";
+    const previewColors = scene.effect === "palette"
+      ? scene.palette
+      : Object.values(scene.ledColors).slice(0, 8);
+    const colors = previewColors.length ? previewColors : [scene.color];
+    ribbon.style.background = `linear-gradient(90deg, ${colors.map((color, index) =>
+      `${color} ${(index / colors.length) * 100}% ${((index + 1) / colors.length) * 100}%`
+    ).join(", ")})`;
+    ribbon.setAttribute("aria-hidden", "true");
 
-    const color = document.createElement("span");
-    color.className = "scene-card-color";
-    color.style.backgroundColor = scene.color;
-
-    const name = document.createElement("span");
-    name.className = "scene-card-name";
+    const details = document.createElement("div");
+    details.className = "scene-details";
+    const name = document.createElement("h3");
     name.textContent = scene.name;
+    const summary = document.createElement("p");
+    const effectName = {
+      steady: "Solid",
+      breathe: "Breathe",
+      spectrum: "Spectrum",
+      palette: "Palette drift"
+    }[scene.effect];
+    const speed = scene.effect === "steady" ? "" : ` · ${scene.speed}% speed`;
+    const individualColors = Object.keys(scene.ledColors).length;
+    const perLed = individualColors ? ` · ${individualColors} individual LEDs` : "";
+    summary.textContent = `${effectName}${speed} · ${scene.brightness}% brightness${perLed}`;
+    details.append(name, summary);
 
-    button.append(color, name);
-    button.addEventListener("click", () => applyColor(scene.color, true));
-    card.append(button);
+    const actions = document.createElement("div");
+    actions.className = "scene-actions";
+    const addAction = (label, className, handler) => {
+      const button = document.createElement("button");
+      button.className = className;
+      button.type = "button";
+      button.textContent = label;
+      button.setAttribute("aria-label", `${label} ${scene.name}`);
+      button.addEventListener("click", handler);
+      actions.append(button);
+    };
+    addAction("Apply", "primary-btn scene-apply", () => applyScene(scene));
+    addAction("Rename", "ghost-btn scene-action", () => openSceneDialog("rename", scene));
+    addAction("Duplicate", "ghost-btn scene-action", () => duplicateScene(scene));
+    addAction("Delete", "ghost-btn scene-action scene-delete", () => confirmDeleteScene(scene));
 
-    if (index >= DEFAULT_SCENES.length) {
-      const remove = document.createElement("button");
-      remove.className = "scene-card-remove";
-      remove.type = "button";
-      remove.textContent = "×";
-      remove.setAttribute("aria-label", `Remove ${scene.name}`);
-      remove.addEventListener("click", (event) => {
-        event.stopPropagation();
-        const presets = state.settings.presets.filter((_, presetIndex) => presetIndex !== index - DEFAULT_SCENES.length);
-        queueSettings({ presets }, true);
-      });
-      card.append(remove);
-    }
-
-    root.append(card);
+    item.append(ribbon, details, actions);
+    root.append(item);
   });
 }
 
@@ -463,12 +593,10 @@ function render() {
   renderUpdates();
   $("#start-with-windows").checked = state.settings.startWithWindows;
   $("#resume-screen-sync").checked = state.settings.resumeScreenSync;
+  renderScenes();
+  renderPalette();
   renderConnection();
   updatePreview();
-  if (SCENES_ENABLED) {
-    renderScenes();
-    renderPalette();
-  }
 }
 
 function selectPreviewPosition(event) {
@@ -623,6 +751,8 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       stream,
       video,
       context,
+      letterboxTracker: window.ullScreenSync.createLetterboxStability(),
+      detectedAspectRatio: null,
       frame: 0,
       videoFrame: 0,
       lastSample: 0,
@@ -656,12 +786,28 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       try {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        if (state.settings.syncAutoDetect !== false) {
+          const ratio = window.ullScreenSync.detectLetterboxAspectRatio(
+            pixels,
+            canvas.width,
+            canvas.height
+          );
+          const stableRatio = session.letterboxTracker.update(ratio, now);
+          const manualRatio = state.settings.syncContentMode === "cinema235" ? 2.35 : null;
+          if (stableRatio !== null &&
+              (manualRatio === null || Math.abs(manualRatio - stableRatio) > 0.05)) {
+            window.ull.notifyMovieFormat(stableRatio);
+          }
+        } else {
+          session.letterboxTracker.reset();
+        }
         const sampledColors = window.ullScreenSync.sampleStripColors(
           pixels,
           canvas.width,
           canvas.height,
           session.layout,
-          state.settings.syncContentMode === "cinema235" ? 2.35 : null
+          session.detectedAspectRatio ||
+            (state.settings.syncContentMode === "cinema235" ? 2.35 : null)
         );
         session.colors = sampledColors;
 
@@ -764,7 +910,6 @@ async function connectSelectedDevice(devicePath) {
 }
 
 function switchView(name) {
-  if (name === "scenes" && !SCENES_ENABLED) return;
   document.querySelectorAll(".tab").forEach((item) => {
     const active = item.dataset.view === name;
     item.classList.toggle("active", active);
@@ -1123,10 +1268,6 @@ async function resetAllData() {
 }
 
 function bindEvents() {
-  document.querySelectorAll('[data-feature="scenes"]').forEach((element) => {
-    element.classList.toggle("hidden", !SCENES_ENABLED);
-  });
-
   document.querySelectorAll(".tab").forEach((item) => {
     item.addEventListener("click", () => switchView(item.dataset.view));
   });
@@ -1240,6 +1381,16 @@ function bindEvents() {
   $("#sync-content-mode").addEventListener("change", (event) => {
     queueSettings({ syncContentMode: event.target.value }, true);
   });
+  $("#sync-auto-detect").addEventListener("change", (event) => {
+    queueSettings({ syncAutoDetect: event.target.checked }, true);
+    if (!event.target.checked) {
+      screenSyncSession?.letterboxTracker.reset();
+      if (screenSyncSession) screenSyncSession.detectedAspectRatio = null;
+      dismissMovieDetection();
+    }
+  });
+  $("#use-detected-format").addEventListener("click", applyDetectedMovieFormat);
+  $("#keep-detecting").addEventListener("click", dismissMovieDetection);
 
   $("#screen-sync-toggle").addEventListener("click", () => {
     if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
@@ -1254,21 +1405,17 @@ function bindEvents() {
     if (!event.target.checked && screenSyncSession) stopScreenSync();
   });
 
-  if (SCENES_ENABLED) {
-    $("#save-scene").addEventListener("click", () => {
-      if (state.settings.presets.length >= 30) return toast("You can save up to 30 scenes.");
-      const name = window.prompt("Name this scene");
-      if (!name || !name.trim()) return;
-      const presets = [...state.settings.presets, { name: name.trim().slice(0, 36), color: state.settings.color }];
-      queueSettings({ presets }, true);
-      toast("Scene saved.");
-    });
-
-    $("#add-palette-color").addEventListener("click", () => {
-      if (state.settings.palette.length >= 8) return toast("A palette can have up to eight colors.");
-      queueSettings({ palette: [...state.settings.palette, state.settings.color] }, true);
-    });
-  }
+  $("#save-scene").addEventListener("click", () => openSceneDialog("create"));
+  $("#scene-form").addEventListener("submit", saveSceneName);
+  $("#cancel-scene").addEventListener("click", () => {
+    $("#scene-dialog").close();
+    sceneDialogMode = null;
+  });
+  $("#cancel-delete-scene").addEventListener("click", () => $("#delete-scene-dialog").close());
+  $("#add-palette-color").addEventListener("click", () => {
+    if (state.settings.palette.length >= 8) return toast("A palette can have up to eight colors.");
+    queueSettings({ palette: [...state.settings.palette, state.settings.color] }, true);
+  });
 
   document.querySelectorAll('input[name="update-source"]').forEach((input) => {
     input.addEventListener("change", () => selectUpdateSource(input.value));
@@ -1319,6 +1466,7 @@ function bindEvents() {
     if (!device.connected) autoSyncAttempted = false;
     else maybeResumeScreenSync();
   });
+  window.ull.onScreenSyncMovieDetected(renderMovieDetection);
 
   window.ull.onUpdateProgress((progress) => {
     updateState = {

@@ -13,7 +13,7 @@
         <nav class="tabs" role="tablist" aria-label="Sections">
           <span class="tab-indicator" aria-hidden="true"></span>
           <button class="tab active" data-view="light" role="tab" aria-selected="true">Lighting</button>
-          <button class="tab" data-view="scenes" data-feature="scenes" role="tab" aria-selected="false" tabindex="-1">Scenes</button>
+          <button class="tab" data-view="scenes" role="tab" aria-selected="false" tabindex="-1">Scenes</button>
           <button class="tab" data-view="settings" role="tab" aria-selected="false" tabindex="-1">Device</button>
           <button class="tab" data-view="updates" role="tab" aria-selected="false" tabindex="-1">Updates</button>
         </nav>
@@ -116,6 +116,13 @@
                 <input id="speed" type="range" min="1" max="100" value="48">
               </div>
 
+              <details id="palette-tuning" class="color-tuning palette-tuning hidden">
+                <summary>Edit effect palette</summary>
+                <p>These colors are used by Palette drift and are saved with each scene.</p>
+                <div class="palette-swatches" id="palette-swatches"></div>
+                <button id="add-palette-color" class="ghost-btn" type="button">Add palette color</button>
+              </details>
+
               <div class="sync-block">
                 <div>
                   <div class="sync-title">Screen Sync</div>
@@ -127,25 +134,16 @@
           </div>
         </section>
 
-        <section class="view hidden" id="view-scenes" data-feature="scenes" role="tabpanel">
+        <section class="view hidden" id="view-scenes" role="tabpanel">
           <div class="section-header">
             <div>
-              <div class="card-label">SCENES</div>
-              <h2>Saved colors</h2>
+              <div class="card-label">YOUR LIGHTING</div>
+              <h2>Saved setups</h2>
             </div>
-            <button id="save-scene" class="primary-btn" type="button">Save current color</button>
+            <button id="save-scene" class="primary-btn" type="button">Save current setup</button>
           </div>
-
-          <div class="scene-grid" id="scene-grid"></div>
-
-          <div class="card palette-card">
-            <div>
-              <div class="card-label">PALETTE DRIFT</div>
-              <p>Colors used by the Palette effect</p>
-            </div>
-            <div class="palette-swatches" id="palette-swatches"></div>
-            <button id="add-palette-color" class="secondary-btn" type="button">Add color</button>
-          </div>
+          <p class="scene-intro">Each setup saves color, brightness, effect, speed, and per-LED colors. Device calibration stays unchanged.</p>
+          <div class="scene-list" id="scene-grid" aria-live="polite"></div>
         </section>
 
         <section class="view hidden" id="view-settings" role="tabpanel">
@@ -210,6 +208,16 @@
           </div>
 
           <div class="card startup-card">
+            <label class="preference-row" for="sync-auto-detect">
+              <span>
+                <strong>Detect widescreen movies</strong>
+                <small>Look for stable letterbox bars during Screen Sync. ULLeds will ask before using the detected picture ratio.</small>
+              </span>
+              <input id="sync-auto-detect" type="checkbox">
+            </label>
+          </div>
+
+          <div class="card startup-card">
             <label class="preference-row" for="start-with-windows">
               <span>
                 <strong>Start ULLeds with Windows</strong>
@@ -229,7 +237,7 @@
           <div class="card reset-card">
             <div>
               <h3>Reset ULLeds</h3>
-              <p>Clear saved colors, device settings, sync preferences, the update folder, and imported DX Light/QuikLight profiles. ULLeds stays installed, and its browser cache is kept.</p>
+              <p>Clear saved lighting setups, colors, device settings, sync preferences, the update folder, and imported DX Light/QuikLight profiles. ULLeds stays installed, and its browser cache is kept.</p>
             </div>
             <button id="reset-all-data" class="danger-btn" type="button">Reset all data</button>
           </div>
@@ -296,7 +304,11 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.43</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.44</h3><span>Current</span></header>
+              <div class="release-category"><strong>Added</strong><ul><li>Scenes now save, rename, duplicate, and restore complete lighting setups.</li><li>Optional widescreen detection asks before applying a stable detected movie picture ratio.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.43</h3></header>
               <div class="release-category"><strong>Improved</strong><ul><li>Screen Sync can sample inside the picture area of 2.35:1 widescreen movies instead of sampling letterbox bars.</li><li>The 1280-pixel capture cap scales the full display; it does not crop the capture.</li></ul></div>
             </article>
             <article class="card release-entry">
@@ -518,7 +530,7 @@
       <form method="dialog">
         <div class="card-label">RESET ULLeds</div>
         <h2>Clear all saved data?</h2>
-        <p>This resets saved colors, preferences, and the update folder, and removes imported DX Light/QuikLight profiles. The active compatible controller stays connected and selected so ULLeds can continue detecting and controlling it. Browser data and the app installation are kept.</p>
+        <p>This resets saved lighting setups, colors, preferences, and the update folder, and removes imported DX Light/QuikLight profiles. The active compatible controller stays connected and selected so ULLeds can continue detecting and controlling it. Browser data and the app installation are kept.</p>
         <div class="wizard-actions">
           <button id="cancel-reset" class="secondary-btn" type="submit" value="cancel">Keep my data</button>
           <button id="confirm-reset" class="danger-btn" type="button">Delete and reset</button>
@@ -526,11 +538,49 @@
       </form>
     </dialog>
 
+    <dialog id="scene-dialog" class="wizard scene-dialog">
+      <form id="scene-form">
+        <div class="card-label">SAVED SETUP</div>
+        <h2 id="scene-dialog-title">Name this setup</h2>
+        <p id="scene-dialog-copy">Choose a name that will help you find this lighting later.</p>
+        <label class="wizard-field" for="scene-name">Setup name</label>
+        <input id="scene-name" class="scene-name-input" type="text" maxlength="36" required autocomplete="off">
+        <div class="wizard-actions">
+          <button id="cancel-scene" class="secondary-btn" type="button">Cancel</button>
+          <button id="save-scene-name" class="primary-btn" type="submit">Save setup</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="delete-scene-dialog" class="wizard reset-dialog">
+      <form method="dialog">
+        <div class="card-label">SAVED SETUP</div>
+        <h2>Delete this setup?</h2>
+        <p id="delete-scene-name"></p>
+        <div class="wizard-actions">
+          <button id="cancel-delete-scene" class="secondary-btn" type="submit" value="cancel">Keep setup</button>
+          <button id="confirm-delete-scene" class="danger-btn" type="button">Delete setup</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="movie-detection" class="movie-detection hidden" role="status" aria-live="polite">
+      <div>
+        <strong id="movie-detection-title">Widescreen picture detected</strong>
+        <p id="movie-detection-copy"></p>
+      </div>
+      <div class="movie-detection-actions">
+        <button id="use-detected-format" class="primary-btn" type="button">Use for this sync</button>
+        <button id="keep-detecting" class="secondary-btn" type="button">Keep detecting</button>
+      </div>
+    </div>
+
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="../strip-layout.js"></script>
     <script src="../led-selection.js"></script>
     <script src="../screen-sync.js"></script>
+    <script src="../scene-data.js"></script>
     <script src="../screen-sync-lifecycle.js"></script>
     <script src="app.js"></script>
   </body>

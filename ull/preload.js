@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("ull", Object.freeze({
   sendScreenSyncColors: (colors) => ipcRenderer.invoke("screen-sync:colors", colors),
   stopScreenSync: () => ipcRenderer.invoke("screen-sync:stop"),
   screenSyncSource: () => ipcRenderer.invoke("screen-sync:source"),
+  notifyMovieFormat: (aspectRatio) => ipcRenderer.send("screen-sync:movie-detected", aspectRatio),
   chooseUpdateFolder: () => ipcRenderer.invoke("updates:choose-folder"),
   checkUpdates: () => ipcRenderer.invoke("updates:check"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
@@ -30,5 +31,6 @@ contextBridge.exposeInMainWorld("ull", Object.freeze({
   onDeviceScanRequest: (callback) => listen("device:scan-request", callback),
   onSetupRequest: (callback) => listen("app:open-setup", callback),
   onUpdateFolderRequest: (callback) => listen("updates:choose-folder", callback),
-  onUpdateCheckRequest: (callback) => listen("updates:check-request", callback)
+  onUpdateCheckRequest: (callback) => listen("updates:check-request", callback),
+  onScreenSyncMovieDetected: (callback) => listen("screen-sync:movie-detected", callback)
 }));

@@ -50,6 +50,7 @@ test("renderer scripts load together and expose their APIs", () => {
   assert.equal(typeof context.ullScreenSyncLifecycle?.createScreenSyncLifecycle, "function");
   assert.equal(typeof context.ullStripLayout?.allocateEdgeIndices, "function");
   assert.equal(typeof context.ullLedSelection?.selectLed, "function");
+  assert.equal(typeof context.ullSceneData?.sceneFromLighting, "function");
 });
 
 test("update feedback includes an accessible progress bar and reports download size", () => {
@@ -106,7 +107,7 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\)\) return;/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
   assert.match(main, /ipcMain\.handle\("screen-sync:colors", \(_event, colors\) => \{\s+if \(!screenSyncActive \|\| !hidDevice \|\| !settings\.power\) return \{ active: false \};/);
-  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
+  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+pendingMovieFormat = null;\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
   assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \}/);
 });
 
@@ -140,16 +141,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.43", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.44", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 43; version += 1) {
+  for (let version = 0; version <= 44; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.43<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.44<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -163,14 +164,22 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
   assert.doesNotMatch(css, /\.led-pixel(?:\.selected)?:hover\s*\{[^}]*transform:\s*scale/);
 });
 
-test("Scenes is archived behind a disabled feature flag", () => {
+test("Scenes save full lighting setups with explicit management actions", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
-  assert.match(app, /const SCENES_ENABLED = false/);
-  assert.equal((html.match(/data-feature="scenes"/g) || []).length, 2);
-  assert.match(app, /if \(name === "scenes" && !SCENES_ENABLED\) return/);
-  assert.match(app, /if \(SCENES_ENABLED\) \{\s*\$\("#save-scene"\)/);
+  assert.match(html, /id="save-scene"[^>]*>Save current setup/);
+  assert.match(html, /id="scene-form"/);
+  assert.match(html, /id="delete-scene-dialog"/);
+  assert.match(html, /id="palette-tuning"/);
+  assert.match(app, /sceneFromLighting\(/);
+  assert.match(app, /function duplicateScene/);
+  assert.match(app, /function applyScene/);
+  assert.match(app, /settingsFromScene\(scene\)/);
+  assert.match(main, /scenes: \[\]/);
+  assert.match(main, /normalizeScenes\(input\.scenes\)/);
+  assert.doesNotMatch(app, /SCENES_ENABLED|DEFAULT_SCENES/);
 });
 
 test("update installation stops controller work without waiting for HID shutdown", () => {
@@ -276,13 +285,35 @@ test("Screen Sync picture area is persisted and supports cinema widescreen sampl
   const screenSync = fs.readFileSync(path.join(__dirname, "..", "screen-sync.js"), "utf8");
 
   assert.match(html, /id="sync-content-mode"[\s\S]*value="display"[\s\S]*value="cinema235"/);
-  assert.match(html, /ULLeds 1\.0\.43/);
+  assert.match(html, /ULLeds 1\.0\.44/);
   assert.match(app, /syncContentMode: "display"/);
   assert.match(app, /queueSettings\(\{ syncContentMode: event\.target\.value \}, true\)/);
-  assert.match(app, /state\.settings\.syncContentMode === "cinema235" \? 2\.35 : null/);
+  assert.match(app, /session\.detectedAspectRatio \|\|\s+\(state\.settings\.syncContentMode === "cinema235" \? 2\.35 : null\)/);
   assert.match(main, /syncContentMode: "display"/);
   assert.match(main, /Choose a supported Screen Sync picture area/);
   assert.match(screenSync, /contentAspectRatio = null/);
+});
+
+test("widescreen detection is optional, stable, and asks before changing the current sync area", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  const screenSync = fs.readFileSync(path.join(__dirname, "..", "screen-sync.js"), "utf8");
+
+  assert.match(html, /id="sync-auto-detect" type="checkbox"/);
+  assert.match(html, /id="use-detected-format"/);
+  assert.match(html, /id="keep-detecting"/);
+  assert.match(app, /syncAutoDetect: true/);
+  assert.match(app, /detectLetterboxAspectRatio/);
+  assert.match(app, /notifyMovieFormat\(stableRatio\)/);
+  assert.match(app, /function applyDetectedMovieFormat/);
+  assert.match(main, /new Notification\(\{ title: message\.title, body: message\.body \}\)/);
+  assert.match(main, /!settings\.syncAutoDetect/);
+  assert.match(preload, /onScreenSyncMovieDetected/);
+  assert.match(preload, /notifyMovieFormat: \(aspectRatio\)/);
+  assert.match(screenSync, /function detectLetterboxAspectRatio/);
+  assert.match(screenSync, /function createLetterboxStability/);
 });
 
 test("Updates has GitHub Releases selected by default and guarded local updates", () => {

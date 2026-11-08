@@ -21,6 +21,95 @@ function createDesktopCaptureConstraints(sourceId, maxFrameRate) {
   };
 }
 
+function detectLetterboxAspectRatio(pixels, width, height) {
+  if (!pixels || !Number.isInteger(width) || width < 32 ||
+      !Number.isInteger(height) || height < 32 ||
+      pixels.length !== width * height * 4) {
+    throw new TypeError("Screen image dimensions are invalid.");
+  }
+  const isDarkUniformRow = (y) => {
+    let darkest = 255;
+    let brightest = 0;
+    let darkSamples = 0;
+    const sampleCount = 24;
+    for (let sample = 0; sample < sampleCount; sample += 1) {
+      const x = Math.round((sample + 0.5) / sampleCount * (width - 1));
+      const offset = (y * width + x) * 4;
+      if (pixels[offset + 3] < 128) return false;
+      const luminance = Math.round(
+        pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722
+      );
+      darkest = Math.min(darkest, luminance);
+      brightest = Math.max(brightest, luminance);
+      if (luminance <= 24) darkSamples += 1;
+    }
+    return darkSamples >= sampleCount * 0.95 && brightest - darkest <= 24;
+  };
+  const maxBarRows = Math.floor(height * 0.18);
+  let topRows = 0;
+  let bottomRows = 0;
+  while (topRows < maxBarRows && isDarkUniformRow(topRows)) topRows += 1;
+  while (bottomRows < maxBarRows && isDarkUniformRow(height - bottomRows - 1)) bottomRows += 1;
+  const minimumBarRows = Math.max(2, Math.ceil(height * 0.02));
+  if (topRows < minimumBarRows || bottomRows < minimumBarRows ||
+      Math.abs(topRows - bottomRows) > Math.max(2, Math.round(height * 0.015)) ||
+      isDarkUniformRow(topRows) || isDarkUniformRow(height - bottomRows - 1)) {
+    return null;
+  }
+  const aspectRatio = width / (height - topRows - bottomRows);
+  if (aspectRatio < 1.78 || aspectRatio > 2.6) return null;
+  return Math.round(aspectRatio * 100) / 100;
+}
+
+function createLetterboxStability({
+  stableDuration = 1000,
+  disappearanceDuration = 1500,
+  ratioTolerance = 0.05
+} = {}) {
+  if (![stableDuration, disappearanceDuration, ratioTolerance].every(Number.isFinite) ||
+      stableDuration < 0 || disappearanceDuration < 0 || ratioTolerance <= 0) {
+    throw new TypeError("Letterbox detection stability settings are invalid.");
+  }
+  let candidateRatio = null;
+  let candidateSince = 0;
+  let lastReportedRatio = null;
+  let missingSince = null;
+  return Object.freeze({
+    update(ratio, now) {
+      if ((ratio !== null && (!Number.isFinite(ratio) || ratio < 1.78 || ratio > 2.6)) ||
+          !Number.isFinite(now)) {
+        throw new TypeError("Letterbox aspect ratio or timestamp is invalid.");
+      }
+      if (ratio === null) {
+        candidateRatio = null;
+        candidateSince = 0;
+        if (missingSince === null) missingSince = now;
+        if (now - missingSince >= disappearanceDuration) lastReportedRatio = null;
+        return null;
+      }
+      missingSince = null;
+      if (candidateRatio === null || Math.abs(candidateRatio - ratio) > ratioTolerance) {
+        candidateRatio = ratio;
+        candidateSince = now;
+        return null;
+      }
+      if (now - candidateSince < stableDuration ||
+          (lastReportedRatio !== null &&
+            Math.abs(lastReportedRatio - candidateRatio) <= ratioTolerance)) {
+        return null;
+      }
+      lastReportedRatio = candidateRatio;
+      return candidateRatio;
+    },
+    reset() {
+      candidateRatio = null;
+      candidateSince = 0;
+      lastReportedRatio = null;
+      missingSince = null;
+    }
+  });
+}
+
 function sampleStripColors(pixels, width, height, layout, contentAspectRatio = null) {
   if (!pixels || !Number.isInteger(width) || width < 1 ||
       !Number.isInteger(height) || height < 1 ||
@@ -145,6 +234,8 @@ function createLatestFrameSender({ send, isActive, getColors, onError }) {
 
 const screenSync = Object.freeze({
   createDesktopCaptureConstraints,
+  createLetterboxStability,
+  detectLetterboxAspectRatio,
   createLatestFrameSender,
   sampleStripColors
 });

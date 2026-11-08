@@ -10,6 +10,7 @@ const {
   ipcMain,
   Menu,
   nativeImage,
+  Notification,
   screen,
   shell,
   Tray
@@ -33,6 +34,7 @@ const {
 const { createHidOutputQueue } = require("./hid-output");
 const { resetStoredData } = require("./reset-data");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
+const { normalizeScenes } = require("./scene-data");
 const { acquireSingleInstanceLock } = require("./single-instance");
 
 const APP_ID = "com.gingermat.ulleds";
@@ -45,6 +47,7 @@ const DEFAULTS = Object.freeze({
   palette: ["#e879a8", "#8d7cff", "#55c8d2"],
   ledColors: {},
   presets: [],
+  scenes: [],
   deviceProfile: null,
   devicePath: "",
   power: true,
@@ -53,6 +56,7 @@ const DEFAULTS = Object.freeze({
   updateSource: "github",
   syncFps: 30,
   syncContentMode: "display",
+  syncAutoDetect: true,
   startWithWindows: true,
   resumeScreenSync: false
 });
@@ -82,6 +86,7 @@ let updateDownloadVersion = null;
 let updateCheckPromise = null;
 let resetPromise = null;
 let screenSyncDiagnostics = null;
+let pendingMovieFormat = null;
 const startHidden = process.platform === "win32" && process.argv.includes("--hidden");
 const hasSingleInstanceLock = acquireSingleInstanceLock(app, showMainWindow);
 
@@ -177,7 +182,8 @@ function settingsSnapshot() {
     palette: [...settings.palette],
     channelGains: [...settings.channelGains],
     ledColors: { ...settings.ledColors },
-    presets: [...settings.presets]
+    presets: [...settings.presets],
+    scenes: normalizeScenes(settings.scenes)
   };
 }
 
@@ -261,6 +267,7 @@ function validateSettings(input) {
       return { name: preset.name.trim(), color: preset.color };
     });
   }
+  if ("scenes" in input) next.scenes = normalizeScenes(input.scenes);
   if ("deviceProfile" in input) {
     const profile = input.deviceProfile;
     if (profile === null) {
@@ -324,7 +331,7 @@ function validateSettings(input) {
     }
     next.updateSource = input.updateSource;
   }
-  for (const key of ["startWithWindows", "resumeScreenSync"]) {
+  for (const key of ["startWithWindows", "resumeScreenSync", "syncAutoDetect"]) {
     if (key in input) {
       if (typeof input[key] !== "boolean") throw new TypeError(`${key} must be a boolean.`);
       next[key] = input[key];
@@ -664,6 +671,7 @@ function setSettings(input, updateOutput = true) {
   }
   const changes = validateSettings(input);
   settings = { ...settings, ...changes };
+  if (changes.syncAutoDetect === false) pendingMovieFormat = null;
   if (Object.hasOwn(changes, "deviceProfile") && connectedInfo) {
     connectedInfo = {
       ...connectedInfo,
@@ -693,6 +701,15 @@ function showMainWindow() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+  dispatchPendingMovieFormat();
+}
+
+function dispatchPendingMovieFormat() {
+  if (!pendingMovieFormat || !mainWindow || mainWindow.isDestroyed() ||
+      !mainWindow.isVisible() || mainWindow.webContents.isLoading()) return;
+  const message = pendingMovieFormat;
+  pendingMovieFormat = null;
+  mainWindow.webContents.send("screen-sync:movie-detected", message);
 }
 
 function createTray() {
@@ -741,6 +758,7 @@ function createWindow() {
   });
   mainWindow.once("ready-to-show", () => {
     if (!startHidden) mainWindow.show();
+    dispatchPendingMovieFormat();
   });
   mainWindow.on("close", (event) => {
     if (isQuitting) return;
@@ -825,6 +843,7 @@ ipcMain.handle("screen-sync:start", () => {
     ledCount: settings.deviceProfile.ledCount,
     audioTracks: 0
   });
+  pendingMovieFormat = null;
   screenSyncActive = true;
   updateAnimation();
   return { active: true };
@@ -840,6 +859,7 @@ ipcMain.handle("screen-sync:colors", (_event, colors) => {
 });
 ipcMain.handle("screen-sync:stop", async () => {
   screenSyncActive = false;
+  pendingMovieFormat = null;
   try {
     await updateAnimation({ waitForOutput: true });
   } finally {
@@ -856,6 +876,31 @@ ipcMain.handle("screen-sync:source", async () => {
   const source = sources.find((candidate) => candidate.display_id === primaryDisplayId) || sources[0];
   if (!source) throw new Error("No display is available to sync.");
   return { id: source.id };
+});
+ipcMain.on("screen-sync:movie-detected", (event, aspectRatio) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
+      !screenSyncActive || !settings.syncAutoDetect ||
+      !Number.isFinite(aspectRatio) || aspectRatio < 1.78 || aspectRatio > 2.6) {
+    return;
+  }
+  const ratio = Math.round(aspectRatio * 100) / 100;
+  const ratioLabel = `${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1`;
+  const message = {
+    aspectRatio: ratio,
+    title: "Widescreen picture detected",
+    body: `A ${ratioLabel} picture area is visible. Click to choose how Screen Sync uses it.`
+  };
+  pendingMovieFormat = message;
+  if (!mainWindow.isVisible() && Notification.isSupported()) {
+    const notification = new Notification({ title: message.title, body: message.body });
+    notification.on("click", () => {
+      if (pendingMovieFormat !== message || !screenSyncActive || !settings.syncAutoDetect) return;
+      showMainWindow();
+    });
+    notification.show();
+    return;
+  }
+  dispatchPendingMovieFormat();
 });
 ipcMain.handle("updates:choose-folder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {

@@ -4,6 +4,8 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   createDesktopCaptureConstraints,
+  createLetterboxStability,
+  detectLetterboxAspectRatio,
   createLatestFrameSender,
   sampleStripColors
 } = require("../screen-sync");
@@ -95,6 +97,37 @@ test("screen sync samples a widescreen picture rectangle instead of its letterbo
   }, 2.35);
 
   assert.deepEqual(colors, Array(4).fill("#1860b4"));
+});
+
+test("movie-area detection recognizes stable 2.35:1 bars and ignores full-screen content", () => {
+  const width = 320;
+  const height = 180;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      pixels.set(y >= 22 && y < 158 ? [30, 120, 210, 255] : [0, 0, 0, 255],
+        (y * width + x) * 4);
+    }
+  }
+  assert.equal(detectLetterboxAspectRatio(pixels, width, height), 2.35);
+
+  pixels.fill(255);
+  assert.equal(detectLetterboxAspectRatio(pixels, width, height), null);
+  pixels.fill(0);
+  for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255;
+  assert.equal(detectLetterboxAspectRatio(pixels, width, height), null);
+});
+
+test("movie-area detection requires stable bars and only reports a format once", () => {
+  const detector = createLetterboxStability();
+  assert.equal(detector.update(2.35, 0), null);
+  assert.equal(detector.update(2.36, 900), null);
+  assert.equal(detector.update(2.35, 1000), 2.35);
+  assert.equal(detector.update(2.35, 2000), null);
+  assert.equal(detector.update(null, 3000), null);
+  assert.equal(detector.update(null, 4500), null);
+  assert.equal(detector.update(2.35, 4600), null);
+  assert.equal(detector.update(2.35, 5600), 2.35);
 });
 
 test("screen sync preserves different screen colors at individual LED positions", () => {

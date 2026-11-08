@@ -35,14 +35,22 @@ The **Screen Sync speed** control accepts 5–60 FPS and defaults to 30 FPS.
 It sets both the capture target and the sampling/HID update cadence.
 Screen Sync samples newly presented capture frames and sends the newest colors
 as soon as an in-progress controller write finishes.
+**Detect widescreen movies** is enabled by default and can be turned off in
+Device settings. During Screen Sync, ULLeds checks captured frames locally for
+stable, symmetric letterbox bars. It does not record or send screen images.
+When a picture ratio is stable, ULLeds shows a notification; choosing it opens
+the app with options to use that ratio for the current sync session or keep
+detecting. Detection never changes the sampling area without confirmation.
+If you prefer, choose **Cinema widescreen (2.35:1)** manually instead.
 Closing the ULLeds window hides it in the tray. Launching ULLeds again focuses
 the existing window and does not start a second controller session.
 The 1.0.38 diagnostic build writes timestamped Screen Sync session details and
 per-second counts of ULLeds `SC` and `RB` USB writes to
 `%APPDATA%\ULLeds\screen-sync-diagnostics.log`. It does not record screen
 pixels or color values.
-Use **Device → Reset all data** to clear ULLeds settings, colors, device layout,
-update-folder preferences, and imported DX Light/QuikLight strip profile files.
+Use **Device → Reset all data** to clear ULLeds settings, saved lighting setups,
+colors, device layout, update-folder preferences, and imported DX Light/QuikLight
+strip profile files.
 The confirmation dialog lists what will be removed; the app and downloaded
 updater cache remain installed. ULLeds browser caches and session data are also
 left untouched; reset removes the settings file and the two imported legacy
@@ -88,13 +96,18 @@ The app scans for the USB controller with VID `1A86` / PID `FE07` at startup,
 on request, and every five seconds when disconnected. It supports color,
 brightness, hardware-detected LED count, six RGB channel orders, strip layout,
 steady color, breathing, spectrum, and palette-drift effects, plus saved
-per-LED colors. The Scenes tab is currently disabled. Moving effects are sent
-as paced HID frames; connect the controller to apply changes.
+per-LED colors. Palette colors are edited under Lighting when Palette drift is
+selected. Moving effects are sent as paced HID frames; connect the controller
+to apply changes.
 
 The controller accepts addressable color sections. Click one preview LED to
 select it, Ctrl-click to add or remove individual LEDs, or click a side to
 select that side. Color changes apply only to the selection; **Select all**
 returns to whole-strip editing. ULLeds saves per-LED colors between sessions.
+The Scenes page saves up to 30 named lighting setups, including color,
+brightness, effect, speed, palette, and per-LED colors. Applying one restores
+those settings but leaves controller calibration, layout, and Screen Sync
+preferences untouched.
 The preview follows the configured physical strip direction.
 Screen sync captures the primary display when started in the app, samples the
 visible primary-display image near each LED's corresponding edge, and smoothly
