@@ -127,6 +127,35 @@ test("screen sync samples a widescreen picture rectangle instead of its letterbo
   assert.deepEqual(colors, Array(4).fill("#1860b4"));
 });
 
+test("automatic widescreen detection keeps top LEDs inside the picture despite isolated bar noise", () => {
+  const width = 320;
+  const height = 180;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      pixels.set(y >= 22 && y < 158 ? [24, 96, 180, 255] : [0, 0, 0, 255],
+        (y * width + x) * 4);
+    }
+  }
+  for (const sample of [4, 18]) {
+    const x = Math.round((sample + 0.5) / 24 * (width - 1));
+    for (const y of [10, height - 11]) {
+      pixels.set([255, 255, 255, 255], (y * width + x) * 4);
+    }
+  }
+  const detectedRatio = detectLetterboxAspectRatio(pixels, width, height);
+  const layout = {
+    ledCount: 4,
+    indices: { top: [0], right: [1], bottom: [2], left: [3] }
+  };
+  const automaticColors = sampleStripColors(pixels, width, height, layout, detectedRatio);
+  const savedWidescreenColors = sampleStripColors(pixels, width, height, layout, 2.35);
+
+  assert.equal(detectedRatio, 2.35);
+  assert.equal(automaticColors[0], "#1860b4");
+  assert.deepEqual(automaticColors, savedWidescreenColors);
+});
+
 test("movie-area detection recognizes stable 2.35:1 bars and ignores full-screen content", () => {
   const width = 320;
   const height = 180;

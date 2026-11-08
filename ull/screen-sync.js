@@ -36,8 +36,6 @@ function detectLetterboxAspectRatio(pixels, width, height) {
     throw new TypeError("Screen image dimensions are invalid.");
   }
   const isDarkUniformRow = (y) => {
-    let darkest = 255;
-    let brightest = 0;
     let darkSamples = 0;
     const sampleCount = 24;
     for (let sample = 0; sample < sampleCount; sample += 1) {
@@ -47,11 +45,9 @@ function detectLetterboxAspectRatio(pixels, width, height) {
       const luminance = Math.round(
         pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722
       );
-      darkest = Math.min(darkest, luminance);
-      brightest = Math.max(brightest, luminance);
       if (luminance <= 24) darkSamples += 1;
     }
-    return darkSamples >= sampleCount * 0.95 && brightest - darkest <= 24;
+    return darkSamples >= sampleCount * 0.9;
   };
   const maxBarRows = Math.floor(height * 0.18);
   let topRows = 0;

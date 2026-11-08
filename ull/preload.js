@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld("ull", Object.freeze({
   scanDevices: () => ipcRenderer.invoke("device:scan"),
   connectDevice: (devicePath) => ipcRenderer.invoke("device:connect", devicePath),
   disconnectDevice: () => ipcRenderer.invoke("device:disconnect"),
-  startScreenSync: () => ipcRenderer.invoke("screen-sync:start"),
+  startScreenSync: (mode = "screen") => ipcRenderer.invoke("screen-sync:start", mode),
   sendScreenSyncColors: (colors) => ipcRenderer.invoke("screen-sync:colors", colors),
   recordScreenSyncPerformance: (metrics) => ipcRenderer.send("screen-sync:performance", metrics),
   stopScreenSync: () => ipcRenderer.invoke("screen-sync:stop"),
@@ -35,5 +35,9 @@ contextBridge.exposeInMainWorld("ull", Object.freeze({
   onUpdateCheckRequest: (callback) => listen("updates:check-request", callback),
   onMovieFormatApplied: (callback) => listen("screen-sync:movie-format-applied", callback),
   onMovieFormatPrompt: (callback) => listen("movie-format:prompt", callback),
-  chooseMovieFormat: (promptId, choice) => ipcRenderer.send("movie-format:choose", { promptId, choice })
+  chooseMovieFormat: (promptId, choice) => ipcRenderer.send("movie-format:choose", { promptId, choice }),
+  minimizeWindow: () => ipcRenderer.invoke("window:minimize"),
+  toggleMaximizeWindow: () => ipcRenderer.invoke("window:toggle-maximize"),
+  closeWindow: () => ipcRenderer.invoke("window:close"),
+  onWindowMaximized: (callback) => listen("window:maximized", callback)
 }));

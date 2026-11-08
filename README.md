@@ -10,6 +10,8 @@ or choose a color and effect yourself.
 
 - **Match your display:** Screen Sync samples colors around the edges of your
   screen and updates the LEDs as the picture changes.
+- **React to music:** Music Sync responds to Spotify, games, and other audio
+  apps using Windows system audio. It does not need Spotify sign-in.
 - **Watch widescreen movies:** ULLeds can detect stable letterbox bars and ask
   before using the detected picture area. You can turn detection off or choose
   the 2.35:1 picture area yourself.
@@ -44,6 +46,11 @@ than individual app windows, so the part of the display being shown matters.
 Local diagnostics record callback rates and processing times, not screen images
 or sampled colors. They are saved to
 `%APPDATA%\ULLeds\screen-sync-diagnostics.log`.
+
+Music Sync is opt-in and analyzes the Windows system audio mix locally while it
+is active. It does not use a microphone, save audio, or send audio to ULLeds or
+any service. This works with Spotify and other apps without a Spotify account
+connection.
 
 For widescreen content with black bars, optional detection looks for stable
 letterbox bars and shows a compact prompt at the top of the screen. Choose
@@ -81,3 +88,9 @@ npm run dist:win
 
 The installer is created in `dist/`. ULLeds settings are stored under
 `%APPDATA%\ULLeds`.
+
+To publish a Windows release, add the matching in-app changelog entry and
+version, then push a `v<version>` tag. GitHub Actions runs the tests, builds the
+installer, and publishes the installer and update assets. The release notes are
+generated from the in-app changelog so both stay in sync. The bundled
+Cormorant Garamond and Noto Sans font licenses are in `ull/assets/fonts/`.

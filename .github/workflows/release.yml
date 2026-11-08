@@ -1,0 +1,57 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.12
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+      - name: Build the Windows installer
+        run: npm run dist:win
+      - name: Publish installer and matching release notes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $tag = $env:GITHUB_REF_NAME
+          if ($tag -ne "v$version") {
+            throw "Tag $tag does not match package version $version."
+          }
+
+          $notes = node scripts/release-notes.js $version
+          $notesPath = Join-Path $PWD "dist\release-notes.md"
+          [System.IO.File]::WriteAllText(
+            $notesPath,
+            "$notes`n",
+            [System.Text.UTF8Encoding]::new($false)
+          )
+
+          $installer = "dist\ULLeds-Setup-$version-x64.exe"
+          $assets = @(
+            $installer,
+            "$installer.blockmap",
+            "dist\latest.yml",
+            "dist\ulleds-update.json",
+            "dist\ull-update.json"
+          )
+          gh release create $tag `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "ULLeds $version" `
+            --notes-file $notesPath `
+            @assets

@@ -12,6 +12,7 @@ const {
   Menu,
   nativeImage,
   screen,
+  session,
   shell,
   Tray
 } = require("electron");
@@ -112,6 +113,31 @@ function configureLoginItem() {
   app.setLoginItemSettings({
     openAtLogin: settings.startWithWindows,
     args: ["--hidden"]
+  });
+}
+
+function configureSystemAudioCapture() {
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
+    if (!request.userGesture || !request.videoRequested || !request.audioRequested ||
+        !mainWindow || mainWindow.isDestroyed() ||
+        request.frame?.url !== mainWindow.webContents.getURL()) {
+      callback(null);
+      return;
+    }
+
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ["screen"],
+        thumbnailSize: { width: 0, height: 0 }
+      });
+      const primaryDisplayId = String(screen.getPrimaryDisplay().id);
+      const source = sources.find((candidate) => candidate.display_id === primaryDisplayId) || sources[0];
+      if (!source) throw new Error("No display is available for system audio capture.");
+      callback({ video: source, audio: "loopback" });
+    } catch (error) {
+      console.error("Could not provide system audio capture:", error);
+      callback(null);
+    }
   });
 }
 
@@ -806,13 +832,8 @@ function createWindow() {
     show: false,
     title: "ULLeds",
     icon: path.join(__dirname, "assets", "app.ico"),
-    backgroundColor: "#050505",
-    titleBarStyle: "hidden",
-    titleBarOverlay: {
-      color: "#050505",
-      symbolColor: "#F5F5F5",
-      height: 64
-    },
+    backgroundColor: "#0A0A0B",
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -834,12 +855,35 @@ function createWindow() {
     screenSyncActive = false;
     updateAnimation();
   });
+  mainWindow.on("maximize", () => sendWindowState());
+  mainWindow.on("unmaximize", () => sendWindowState());
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) shell.openExternal(url);
     return { action: "deny" };
   });
   mainWindow.loadFile(path.join(__dirname, "ui", "index.html"));
 }
+
+function sendWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("window:maximized", mainWindow.isMaximized());
+}
+
+ipcMain.handle("window:minimize", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.minimize();
+});
+
+ipcMain.handle("window:toggle-maximize", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  else mainWindow.maximize();
+});
+
+ipcMain.handle("window:close", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.close();
+});
 
 ipcMain.handle("settings:reset", async () => {
   if (resetPromise) return resetPromise;
@@ -899,13 +943,14 @@ ipcMain.handle("device:disconnect", () => {
   disconnectDevice();
   return deviceState();
 });
-ipcMain.handle("screen-sync:start", () => {
+ipcMain.handle("screen-sync:start", (_event, mode = "screen") => {
+  if (!["screen", "music"].includes(mode)) throw new TypeError("Screen Sync mode is invalid.");
   if (!hidDevice) throw new Error("Connect the LED controller before starting screen sync.");
   if (!settings.power) throw new Error("Turn the LEDs on before starting screen sync.");
   screenSyncDiagnostics.start({
     fps: settings.syncFps,
     ledCount: settings.deviceProfile.ledCount,
-    audioTracks: 0
+    audioTracks: mode === "music" ? 1 : 0
   });
   dismissMovieFormatPrompt();
   screenSyncActive = true;
@@ -1081,6 +1126,7 @@ autoUpdater.on("error", (error) => {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
+  configureSystemAudioCapture();
   controllerWriteDiagnostics = createControllerWriteDiagnostics(
     path.join(app.getPath("appData"), "ULLeds", "controller-write-diagnostics.log")
   );

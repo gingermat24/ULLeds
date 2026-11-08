@@ -39,8 +39,10 @@ let selectedLedAnchorIndex = null;
 let screenSyncSession = null;
 const screenSyncLifecycle = window.ullScreenSyncLifecycle.createScreenSyncLifecycle();
 let screenSyncGeneration = 0;
+let requestedSyncMode = null;
 let autoSyncAttempted = false;
 let screenSyncError = "";
+let musicSyncError = "";
 let sceneDialogMode = null;
 let updateCheckInProgress = false;
 let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
@@ -341,7 +343,7 @@ async function applyScene(scene) {
 }
 
 function applyDetectedMovieFormat({ aspectRatio }) {
-  if (!screenSyncSession || !Number.isFinite(aspectRatio) ||
+  if (screenSyncSession?.mode !== "screen" || !Number.isFinite(aspectRatio) ||
       aspectRatio < 1.78 || aspectRatio > 2.6) return;
   screenSyncSession.detectedAspectRatio = Math.round(aspectRatio * 100) / 100;
   const ratio = screenSyncSession.detectedAspectRatio;
@@ -446,23 +448,45 @@ function updatePreview() {
   $("#power-toggle").setAttribute("aria-checked", String(settings.power));
   $("#power-toggle").setAttribute("aria-label", `LED power: ${settings.power ? "on" : "off"}`);
   $("#power-state").textContent = settings.power ? "On" : "Off";
-  const syncPending = screenSyncLifecycle.isStarting || (
+  const screenSyncPending = screenSyncLifecycle.isStarting && requestedSyncMode === "screen";
+  const musicSyncPending = screenSyncLifecycle.isStarting && requestedSyncMode === "music";
+  const resumePending = (
     settings.resumeScreenSync && autoSyncAttempted && !screenSyncSession && !screenSyncError
   );
   $("#screen-sync-toggle").textContent = screenSyncLifecycle.isStopping
     ? "Stopping…"
-    : screenSyncSession || screenSyncLifecycle.isStarting
+    : screenSyncSession?.mode === "screen" || screenSyncPending
       ? "Stop"
-      : syncPending ? "Starting…" : "Start";
-  $("#screen-sync-toggle").disabled = screenSyncLifecycle.isStopping;
-  $("#screen-sync-toggle").classList.toggle("syncing", Boolean(screenSyncSession || syncPending));
+      : resumePending ? "Starting…" : "Start";
+  $("#screen-sync-toggle").disabled = screenSyncLifecycle.isStopping ||
+    (screenSyncLifecycle.isStarting && !screenSyncPending);
+  $("#screen-sync-toggle").classList.toggle(
+    "syncing",
+    Boolean(screenSyncSession?.mode === "screen" || screenSyncPending || resumePending)
+  );
   $("#screen-sync-description").textContent = screenSyncSession
-    ? "Matching the primary display"
-    : syncPending
+    ? screenSyncSession.mode === "music" ? "Music Sync is active" : "Matching the primary display"
+    : screenSyncPending
+      ? "Starting display capture…"
+      : resumePending
       ? "Resuming display capture…"
     : screenSyncError || (settings.resumeScreenSync
       ? "Will resume automatically when ULLeds starts"
       : "Match LEDs to your display");
+  $("#music-sync-toggle").textContent = screenSyncLifecycle.isStopping
+    ? "Stopping…"
+    : screenSyncSession?.mode === "music" || musicSyncPending
+      ? "Stop"
+      : "Start";
+  $("#music-sync-toggle").disabled = screenSyncLifecycle.isStopping ||
+    (screenSyncLifecycle.isStarting && !musicSyncPending);
+  $("#music-sync-toggle").classList.toggle(
+    "syncing",
+    Boolean(screenSyncSession?.mode === "music" || musicSyncPending)
+  );
+  $("#music-sync-description").textContent = screenSyncSession?.mode === "music"
+    ? "Reacting to system audio on this PC"
+    : musicSyncError || "React to Spotify and other audio apps";
 
   if (screenSyncSession) {
     const signature = stripLayoutSignature(layout);
@@ -617,25 +641,32 @@ function selectPreviewPosition(event) {
 function stopScreenSync(message = "", clearResumePreference = false) {
   const pending = screenSyncLifecycle.stop(() => {
     screenSyncGeneration += 1;
+    requestedSyncMode = null;
     const session = screenSyncSession;
     screenSyncSession = null;
     screenSyncError = "";
     if (session) {
-      if (session.performanceTimer !== null) clearInterval(session.performanceTimer);
+      if (session.performanceTimer) clearInterval(session.performanceTimer);
       cancelAnimationFrame(session.frame);
-      if (session.videoFrame && typeof session.video.cancelVideoFrameCallback === "function") {
+      if (session.videoFrame && session.video &&
+          typeof session.video.cancelVideoFrameCallback === "function") {
         session.video.cancelVideoFrameCallback(session.videoFrame);
       }
       session.stream.getTracks().forEach((track) => {
         track.onended = null;
         track.stop();
       });
+      if (session.audioContext) {
+        void session.audioContext.close().catch((error) => {
+          console.error("Could not close the Music Sync audio context:", error);
+        });
+      }
     }
   }, async () => {
     try {
       await window.ull.stopScreenSync();
     } catch (error) {
-      toast(`Could not stop screen sync: ${error.message}`);
+      toast(`Could not stop LED sync: ${error.message}`);
     }
   });
   updatePreview();
@@ -652,11 +683,15 @@ function stopScreenSync(message = "", clearResumePreference = false) {
 }
 
 function startScreenSync(options = {}) {
+  requestedSyncMode = "screen";
   const pending = screenSyncLifecycle.start(() => runScreenSyncStart(options));
   updatePreview();
   return pending.catch((error) => {
     toast(`Could not start screen sync: ${error.message}`);
-  }).finally(updatePreview);
+  }).finally(() => {
+    if (requestedSyncMode === "screen") requestedSyncMode = null;
+    updatePreview();
+  });
 }
 
 async function runScreenSyncStart({ automatic = false } = {}) {
@@ -738,6 +773,7 @@ async function runScreenSyncStart({ automatic = false } = {}) {
     state.device = savedSettings;
 
     const session = {
+      mode: "screen",
       stream,
       video,
       context,
@@ -894,6 +930,163 @@ function applyDeviceState(device) {
     state.settings.ledCount = profile.ledCount;
     state.settings.devicePath = device.devicePath;
     if (!hadProfile && profile.color) state.settings.color = profile.color;
+  }
+}
+
+function startMusicSync() {
+  requestedSyncMode = "music";
+  const pending = screenSyncLifecycle.start(runMusicSyncStart);
+  updatePreview();
+  return pending.catch((error) => {
+    musicSyncError = error.message;
+    toast(`Could not start Music Sync: ${error.message}`);
+  }).finally(() => {
+    if (requestedSyncMode === "music") requestedSyncMode = null;
+    updatePreview();
+  });
+}
+
+async function runMusicSyncStart() {
+  const generation = ++screenSyncGeneration;
+  if (!state.device.connected) {
+    musicSyncError = "Connect the LED controller before starting Music Sync.";
+    toast(musicSyncError);
+    return;
+  }
+  if (!navigator.mediaDevices?.getDisplayMedia || !window.AudioContext) {
+    musicSyncError = "System audio capture is not available in this app environment.";
+    toast(musicSyncError);
+    return;
+  }
+
+  const profile = state.device.profile || state.settings.deviceProfile;
+  const ledCount = Number(profile?.ledCount);
+  if (!Number.isInteger(ledCount)) {
+    musicSyncError = "The controller has not reported its LED count.";
+    toast(musicSyncError);
+    return;
+  }
+  const layout = window.ullStripLayout.allocateEdgeIndices(
+    ledCount,
+    clamp(Number(profile?.edgeCount) || 3, 1, 4),
+    profile?.installationMethod ?? 0
+  );
+
+  let stream;
+  let audioContext;
+  let hardwareSyncStarted = false;
+  updatePreview();
+
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+    if (generation !== screenSyncGeneration) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    const audioTrack = stream.getAudioTracks()[0];
+    if (!audioTrack) {
+      throw new Error("Windows did not provide a system audio stream.");
+    }
+    stream.getVideoTracks().forEach((track) => {
+      track.stop();
+      stream.removeTrack(track);
+    });
+
+    audioContext = new AudioContext();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.72;
+    audioContext.createMediaStreamSource(stream).connect(analyser);
+    await audioContext.resume();
+
+    if (!state.settings.power) {
+      const result = await window.ull.updateSettings({ power: true });
+      state.settings = result.settings;
+      state.device = result;
+      render();
+    }
+    await window.ull.startScreenSync("music");
+    hardwareSyncStarted = true;
+    if (generation !== screenSyncGeneration) {
+      stream.getTracks().forEach((track) => track.stop());
+      await audioContext.close();
+      await window.ull.stopScreenSync();
+      return;
+    }
+
+    const session = {
+      mode: "music",
+      stream,
+      audioContext,
+      analyser,
+      frequencies: new Uint8Array(analyser.frequencyBinCount),
+      frame: 0,
+      lastSample: 0,
+      colors: null,
+      layout,
+      layoutSignature: stripLayoutSignature(layout)
+    };
+    screenSyncSession = session;
+    musicSyncError = "";
+    const sendLatestFrame = window.ullScreenSync.createLatestFrameSender({
+      send: (colors) => window.ull.sendScreenSyncColors(colors),
+      isActive: () => screenSyncSession === session,
+      getColors: () => session.colors,
+      onError: (error) => stopScreenSync(`Music Sync stopped: ${error.message}`)
+    });
+    audioTrack.onended = () => {
+      if (screenSyncSession === session) stopScreenSync("Music Sync audio capture ended.");
+    };
+    updatePreview();
+
+    const sampleAudio = (now) => {
+      if (screenSyncSession !== session) return;
+      session.frame = requestAnimationFrame(sampleAudio);
+      const sampleFps = clamp(Number(state.settings.syncFps) || 30, 5, 60);
+      if (!window.ullScreenSync.isSampleFrameDue(session.lastSample, now, sampleFps)) return;
+      session.lastSample = now;
+      analyser.getByteFrequencyData(session.frequencies);
+      session.colors = window.ullMusicSync.createMusicSyncColors(
+        session.frequencies,
+        ledCount
+      );
+      session.pixelElements.forEach((pixel) => {
+        const color = session.colors[Number(pixel.dataset.ledIndex)];
+        if (pixel.dataset.color !== color) {
+          pixel.style.backgroundColor = color;
+          pixel.dataset.color = color;
+        }
+      });
+      void sendLatestFrame();
+    };
+    session.frame = requestAnimationFrame(sampleAudio);
+    toast("Music Sync is active. Audio stays on this PC.");
+  } catch (error) {
+    const sessionOwnsStream = screenSyncSession?.stream === stream;
+    if (!sessionOwnsStream) {
+      stream?.getTracks().forEach((track) => {
+        track.onended = null;
+        track.stop();
+      });
+      if (audioContext) {
+        await audioContext.close().catch((closeError) => {
+          console.error("Could not close the Music Sync audio context:", closeError);
+        });
+      }
+    }
+    if (!sessionOwnsStream && hardwareSyncStarted && !screenSyncLifecycle.isStopping) {
+      try {
+        await window.ull.stopScreenSync();
+      } catch (stopError) {
+        console.error("Could not stop LED sync after Music Sync startup failed:", stopError);
+      }
+    }
+    if (sessionOwnsStream) stopScreenSync();
+    musicSyncError = error.name === "NotAllowedError"
+      ? "System audio capture was canceled or blocked."
+      : error.message;
+    toast(`Could not start Music Sync: ${musicSyncError}`);
+    updatePreview();
   }
 }
 
@@ -1341,6 +1534,15 @@ function bindEvents() {
   });
 
   $("#scan-device").addEventListener("click", scanDevices);
+
+  $("#window-minimize").addEventListener("click", () => window.ull.minimizeWindow());
+  $("#window-maximize").addEventListener("click", () => window.ull.toggleMaximizeWindow());
+  $("#window-close").addEventListener("click", () => window.ull.closeWindow());
+  if (typeof window.ull.onWindowMaximized === "function") {
+    window.ull.onWindowMaximized((isMaximized) => {
+      document.body.classList.toggle("is-maximized", Boolean(isMaximized));
+    });
+  }
   $("#controller-select").addEventListener("change", (event) => {
     void connectSelectedDevice(event.target.value);
   });
@@ -1407,18 +1609,20 @@ function bindEvents() {
   });
   $("#sync-auto-detect").addEventListener("change", (event) => {
     queueSettings({ syncAutoDetect: event.target.checked }, true);
-    if (!event.target.checked) {
+    if (!event.target.checked && screenSyncSession?.mode === "screen") {
       screenSyncSession?.letterboxTracker.reset();
-      if (screenSyncSession) {
-        screenSyncSession.detectedAspectRatio = null;
-        screenSyncSession.movieFormatPromptGate.reset();
-      }
+      screenSyncSession.detectedAspectRatio = null;
+      screenSyncSession.movieFormatPromptGate.reset();
     }
   });
 
   $("#screen-sync-toggle").addEventListener("click", () => {
     if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
     else startScreenSync();
+  });
+  $("#music-sync-toggle").addEventListener("click", () => {
+    if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
+    else startMusicSync();
   });
 
   $("#start-with-windows").addEventListener("change", (event) => {
