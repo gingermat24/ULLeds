@@ -5,6 +5,7 @@ const assert = require("node:assert/strict");
 const {
   createDesktopCaptureConstraints,
   isSampleFrameDue,
+  createMovieFormatPromptGate,
   createLetterboxStability,
   detectLetterboxAspectRatio,
   createLatestFrameSender,
@@ -155,6 +156,19 @@ test("movie-area detection requires stable bars and only reports a format once",
   assert.equal(detector.update(null, 4500), null);
   assert.equal(detector.update(2.35, 4600), null);
   assert.equal(detector.update(2.35, 5600), 2.35);
+});
+
+test("movie format prompt gate suppresses repeat ratios for the whole sync session", () => {
+  const gate = createMovieFormatPromptGate();
+  assert.equal(gate.shouldPrompt(2.35), true);
+  assert.equal(gate.shouldPrompt(2.35), false);
+  assert.equal(gate.shouldPrompt(2.39), false);
+  assert.equal(gate.shouldPrompt(2.44), false);
+  assert.equal(gate.shouldPrompt(2.20), true);
+  assert.equal(gate.shouldPrompt(2.35), false);
+  gate.reset();
+  assert.equal(gate.shouldPrompt(2.35), true);
+  assert.throws(() => gate.shouldPrompt(null), TypeError);
 });
 
 test("movie-area detection reports when bars have stably disappeared", () => {

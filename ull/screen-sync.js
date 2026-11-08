@@ -127,6 +127,28 @@ function createLetterboxStability({
   });
 }
 
+function createMovieFormatPromptGate({ ratioTolerance = 0.1 } = {}) {
+  if (!Number.isFinite(ratioTolerance) || ratioTolerance <= 0) {
+    throw new TypeError("Movie format prompt tolerance is invalid.");
+  }
+  const promptedRatios = [];
+  return Object.freeze({
+    shouldPrompt(ratio) {
+      if (!Number.isFinite(ratio) || ratio < 1.78 || ratio > 2.6) {
+        throw new TypeError("Movie format prompt ratio is invalid.");
+      }
+      if (promptedRatios.some((promptedRatio) => Math.abs(promptedRatio - ratio) <= ratioTolerance)) {
+        return false;
+      }
+      promptedRatios.push(ratio);
+      return true;
+    },
+    reset() {
+      promptedRatios.length = 0;
+    }
+  });
+}
+
 function sampleStripColors(pixels, width, height, layout, contentAspectRatio = null) {
   if (!pixels || !Number.isInteger(width) || width < 1 ||
       !Number.isInteger(height) || height < 1 ||
@@ -252,6 +274,7 @@ function createLatestFrameSender({ send, isActive, getColors, onError }) {
 const screenSync = Object.freeze({
   createDesktopCaptureConstraints,
   isSampleFrameDue,
+  createMovieFormatPromptGate,
   createLetterboxStability,
   detectLetterboxAspectRatio,
   createLatestFrameSender,

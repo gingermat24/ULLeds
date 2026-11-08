@@ -723,8 +723,8 @@ function showMovieFormatPrompt(message) {
   dismissMovieFormatPrompt();
   pendingMovieFormat = message;
   const { bounds } = screen.getPrimaryDisplay();
-  const width = 460;
-  const height = 116;
+  const width = 410;
+  const height = 92;
   const prompt = new BrowserWindow({
     x: Math.round(bounds.x + (bounds.width - width) / 2),
     y: bounds.y + 16,

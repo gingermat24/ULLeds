@@ -736,6 +736,7 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       video,
       context,
       letterboxTracker: window.ullScreenSync.createLetterboxStability(),
+      movieFormatPromptGate: window.ullScreenSync.createMovieFormatPromptGate(),
       detectedAspectRatio: null,
       frame: 0,
       videoFrame: 0,
@@ -811,7 +812,8 @@ async function runScreenSyncStart({ automatic = false } = {}) {
           }
           const manualRatio = state.settings.syncContentMode === "cinema235" ? 2.35 : null;
           if (stableRatio !== null &&
-              (manualRatio === null || Math.abs(manualRatio - stableRatio) > 0.05)) {
+              (manualRatio === null || Math.abs(manualRatio - stableRatio) > 0.05) &&
+              session.movieFormatPromptGate.shouldPrompt(stableRatio)) {
             window.ull.notifyMovieFormat(stableRatio);
           }
         } else {
@@ -1401,7 +1403,10 @@ function bindEvents() {
     queueSettings({ syncAutoDetect: event.target.checked }, true);
     if (!event.target.checked) {
       screenSyncSession?.letterboxTracker.reset();
-      if (screenSyncSession) screenSyncSession.detectedAspectRatio = null;
+      if (screenSyncSession) {
+        screenSyncSession.detectedAspectRatio = null;
+        screenSyncSession.movieFormatPromptGate.reset();
+      }
     }
   });
 
