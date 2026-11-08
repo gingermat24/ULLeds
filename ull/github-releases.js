@@ -46,6 +46,45 @@ function getReleasedInstallers(releases) {
   }).sort((left, right) => compareVersions(right.version, left.version));
 }
 
+function getReleaseTagsFromHtml(html) {
+  if (typeof html !== "string") throw new TypeError("GitHub release page must be HTML text.");
+  return [...new Set(
+    [...html.matchAll(/\/gingermat24\/ULLeds\/releases\/tag\/v(\d+\.\d+\.\d+)(?:["/?#])/g)]
+      .map((match) => `v${match[1]}`)
+  )];
+}
+
+function getReleasePageCountFromHtml(html) {
+  if (typeof html !== "string") throw new TypeError("GitHub release page must be HTML text.");
+  const counts = [...html.matchAll(/\bdata-total-pages="(\d+)"/g)]
+    .map((match) => Number(match[1]));
+  if (counts.length === 0) return 1;
+  if (counts.some((count) => !Number.isInteger(count) || count < 1 || count > 100)) {
+    throw new Error("GitHub returned an invalid release page count.");
+  }
+  return Math.max(...counts);
+}
+
+function getReleaseInstallerFromHtml(html, version) {
+  if (typeof html !== "string" || !VERSION_PATTERN.test(version)) return undefined;
+  const assetName = `ULLeds-Setup-${version}-x64.exe`;
+  const expectedPath = `/gingermat24/ULLeds/releases/download/v${version}/${assetName}`;
+  for (const match of html.matchAll(/<a\b[^>]*\bhref="([^"]+)"[^>]*>/gi)) {
+    const href = match[1].replace(/&amp;/g, "&");
+    let url;
+    try {
+      url = new URL(href, "https://github.com");
+    } catch {
+      continue;
+    }
+    if (url.origin === "https://github.com" &&
+        url.pathname === expectedPath && !url.search && !url.hash) {
+      return { version, url: url.href };
+    }
+  }
+  return undefined;
+}
+
 function findReleaseInstaller(releases, version) {
   if (!VERSION_PATTERN.test(version)) return undefined;
   return releases.find((release) => release.version === version);
@@ -54,7 +93,10 @@ function findReleaseInstaller(releases, version) {
 const githubReleases = Object.freeze({
   compareVersions,
   findReleaseInstaller,
-  getReleasedInstallers
+  getReleasedInstallers,
+  getReleaseInstallerFromHtml,
+  getReleasePageCountFromHtml,
+  getReleaseTagsFromHtml
 });
 if (typeof module !== "undefined" && module.exports) module.exports = githubReleases;
 else globalThis.ullGithubReleases = githubReleases;

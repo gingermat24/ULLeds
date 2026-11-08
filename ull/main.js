@@ -41,7 +41,10 @@ const { acquireSingleInstanceLock } = require("./single-instance");
 const {
   compareVersions,
   findReleaseInstaller,
-  getReleasedInstallers
+  getReleasedInstallers,
+  getReleaseInstallerFromHtml,
+  getReleasePageCountFromHtml,
+  getReleaseTagsFromHtml
 } = require("./github-releases");
 
 const APP_ID = "com.gingermat.ulleds";
@@ -1081,9 +1084,58 @@ async function getGithubReleaseInstallers() {
   }
   if (githubReleaseRequest) return githubReleaseRequest;
 
+  async function fetchReleaseHtml(url) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: "text/html",
+          "User-Agent": "ULLeds"
+        },
+        signal: controller.signal
+      });
+      const finalUrl = new URL(response.url);
+      if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status} for ${url}.`);
+      if (finalUrl.origin !== "https://github.com" ||
+          !finalUrl.pathname.startsWith("/gingermat24/ULLeds/releases")) {
+        throw new Error("GitHub redirected the release request to an unexpected page.");
+      }
+      return await response.text();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function fetchInstallersFromReleasePages() {
+    const releaseUrl = "https://github.com/gingermat24/ULLeds/releases";
+    const firstPage = await fetchReleaseHtml(releaseUrl);
+    const pageCount = getReleasePageCountFromHtml(firstPage);
+    const pages = [firstPage];
+    for (let page = 2; page <= pageCount; page += 1) {
+      pages.push(await fetchReleaseHtml(`${releaseUrl}?page=${page}`));
+    }
+
+    const tags = [...new Set(pages.flatMap(getReleaseTagsFromHtml))];
+    const installers = [];
+    for (let offset = 0; offset < tags.length; offset += 8) {
+      const batch = await Promise.all(tags.slice(offset, offset + 8).map(async (tag) => {
+        const html = await fetchReleaseHtml(
+          `https://github.com/gingermat24/ULLeds/releases/expanded_assets/${tag}`
+        );
+        return getReleaseInstallerFromHtml(html, tag.slice(1));
+      }));
+      installers.push(...batch.filter(Boolean));
+    }
+    if (installers.length === 0) throw new Error("No published Windows installers were found on GitHub.");
+    installers.sort((left, right) => compareVersions(right.version, left.version));
+    return installers;
+  }
+
   const request = (async () => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
+    let apiError;
     try {
       const response = await fetch(
         "https://api.github.com/repos/gingermat24/ULLeds/releases?per_page=100",
@@ -1095,19 +1147,31 @@ async function getGithubReleaseInstallers() {
           signal: controller.signal
         }
       );
-      if (!response.ok) {
-        throw new Error(`GitHub returned HTTP ${response.status}.`);
-      }
+      if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}.`);
       const installers = getReleasedInstallers(await response.json());
-      githubReleaseCache = { installers, expiresAt: Date.now() + 5 * 60 * 1000 };
-      return installers;
+      if (installers.length > 0) return installers;
+      apiError = new Error("GitHub's Releases API returned no Windows installers.");
+    } catch (error) {
+      apiError = error;
     } finally {
       clearTimeout(timeout);
+    }
+
+    try {
+      console.warn("GitHub Releases API unavailable; using public release pages:", apiError.message);
+      return await fetchInstallersFromReleasePages();
+    } catch (error) {
+      throw new Error(
+        `Could not load GitHub releases through the API or release pages: ${error.message}`,
+        { cause: error }
+      );
     }
   })();
   githubReleaseRequest = request;
   try {
-    return await request;
+    const installers = await request;
+    githubReleaseCache = { installers, expiresAt: Date.now() + 60 * 60 * 1000 };
+    return installers;
   } finally {
     if (githubReleaseRequest === request) githubReleaseRequest = null;
   }

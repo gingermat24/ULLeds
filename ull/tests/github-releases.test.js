@@ -5,7 +5,10 @@ const assert = require("node:assert/strict");
 const {
   compareVersions,
   findReleaseInstaller,
-  getReleasedInstallers
+  getReleasedInstallers,
+  getReleaseInstallerFromHtml,
+  getReleasePageCountFromHtml,
+  getReleaseTagsFromHtml
 } = require("../github-releases");
 
 function release(version, overrides = {}) {
@@ -52,4 +55,39 @@ test("release versions compare numerically by component", () => {
   assert.equal(compareVersions("1.2.0", "1.2.1"), -1);
   assert.equal(compareVersions("1.2.3", "1.2.3"), 0);
   assert.throws(() => compareVersions("1.2", "1.2.3"), /X\.Y\.Z/);
+});
+
+test("GitHub release HTML exposes published version tags and pagination", () => {
+  const html = [
+    '<a href="/gingermat24/ULLeds/releases/tag/v1.0.63">Latest</a>',
+    '<a href="/gingermat24/ULLeds/releases/tag/v1.0.62">Previous</a>',
+    '<a href="/gingermat24/ULLeds/releases/tag/v1.0.63">Duplicate</a>',
+    '<a href="/someone/else/releases/tag/v9.9.9">Unrelated</a>',
+    '<div data-total-pages="2"></div>'
+  ].join("");
+
+  assert.deepEqual(getReleaseTagsFromHtml(html), ["v1.0.63", "v1.0.62"]);
+  assert.equal(getReleasePageCountFromHtml(html), 2);
+  assert.equal(getReleasePageCountFromHtml("<html></html>"), 1);
+  assert.throws(() => getReleasePageCountFromHtml('<div data-total-pages="101">'), /page count/);
+});
+
+test("GitHub release asset HTML accepts only the matching official installer", () => {
+  const installer = getReleaseInstallerFromHtml(
+    '<a href="/gingermat24/ULLeds/releases/download/v1.0.63/ULLeds-Setup-1.0.63-x64.exe">Installer</a>' +
+      '<a href="/gingermat24/ULLeds/releases/download/v1.0.63/ULLeds-Setup-1.0.63-x64.exe.blockmap">Blockmap</a>',
+    "1.0.63"
+  );
+  assert.deepEqual(installer, {
+    version: "1.0.63",
+    url: "https://github.com/gingermat24/ULLeds/releases/download/v1.0.63/ULLeds-Setup-1.0.63-x64.exe"
+  });
+  assert.equal(getReleaseInstallerFromHtml(
+    '<a href="https://example.com/ULLeds-Setup-1.0.63-x64.exe">Installer</a>',
+    "1.0.63"
+  ), undefined);
+  assert.equal(getReleaseInstallerFromHtml(
+    '<a href="/gingermat24/ULLeds/releases/download/v1.0.63/ULLeds-Setup-1.0.62-x64.exe">Installer</a>',
+    "1.0.63"
+  ), undefined);
 });
