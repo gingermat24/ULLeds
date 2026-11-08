@@ -46,8 +46,9 @@ For widescreen content with black bars, optional detection looks for stable
 letterbox bars and shows a compact prompt at the top of the screen. Choose
 **Use detected** within five seconds to change the picture area for that sync
 session; otherwise the prompt closes and the current format stays unchanged.
-You can also disable detection or select **Cinema widescreen (2.35:1)** in
-Device settings.
+When the bars disappear for a short, stable period, Screen Sync returns to your
+saved picture area. You can also disable detection or select
+**Cinema widescreen (2.35:1)** in Device settings.
 
 ## After installation
 

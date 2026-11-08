@@ -74,6 +74,7 @@ function createLetterboxStability({
   let candidateSince = 0;
   let lastReportedRatio = null;
   let missingSince = null;
+  let missingStable = false;
   return Object.freeze({
     update(ratio, now) {
       if ((ratio !== null && (!Number.isFinite(ratio) || ratio < 1.78 || ratio > 2.6)) ||
@@ -84,10 +85,14 @@ function createLetterboxStability({
         candidateRatio = null;
         candidateSince = 0;
         if (missingSince === null) missingSince = now;
-        if (now - missingSince >= disappearanceDuration) lastReportedRatio = null;
+        if (now - missingSince >= disappearanceDuration && lastReportedRatio !== null) {
+          lastReportedRatio = null;
+          missingStable = true;
+        }
         return null;
       }
       missingSince = null;
+      missingStable = false;
       if (candidateRatio === null || Math.abs(candidateRatio - ratio) > ratioTolerance) {
         candidateRatio = ratio;
         candidateSince = now;
@@ -101,11 +106,15 @@ function createLetterboxStability({
       lastReportedRatio = candidateRatio;
       return candidateRatio;
     },
+    isMissingStable() {
+      return missingStable;
+    },
     reset() {
       candidateRatio = null;
       candidateSince = 0;
       lastReportedRatio = null;
       missingSince = null;
+      missingStable = false;
     }
   });
 }

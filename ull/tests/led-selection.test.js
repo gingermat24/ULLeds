@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { colorChanges, selectLed } = require("../led-selection");
+const { colorChanges, selectLed, selectLedRange } = require("../led-selection");
 
 test("clicking selects one LED and additive clicks toggle additional LEDs", () => {
   const first = selectLed(null, 4);
@@ -10,6 +10,12 @@ test("clicking selects one LED and additive clicks toggle additional LEDs", () =
   assert.deepEqual([...first], [4]);
   assert.deepEqual([...multiple], [9]);
   assert.throws(() => selectLed(null, 253), RangeError);
+});
+
+test("Shift selection includes every LED between the anchor and clicked LED", () => {
+  assert.deepEqual([...selectLedRange(3, 7)], [3, 4, 5, 6, 7]);
+  assert.deepEqual([...selectLedRange(7, 3)], [3, 4, 5, 6, 7]);
+  assert.throws(() => selectLedRange(0, 253), RangeError);
 });
 
 test("a color change updates only selected LED indices", () => {

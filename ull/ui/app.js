@@ -35,6 +35,7 @@ let detectedDevices = [];
 let deviceConnecting = false;
 let connectingDevicePath = "";
 let selectedLedIndices = null;
+let selectedLedAnchorIndex = null;
 let screenSyncSession = null;
 const screenSyncLifecycle = window.ullScreenSyncLifecycle.createScreenSyncLifecycle();
 let screenSyncGeneration = 0;
@@ -320,6 +321,7 @@ async function applyScene(scene) {
     await stopScreenSync("", true);
   }
   selectedLedIndices = null;
+  selectedLedAnchorIndex = null;
   const lighting = window.ullSceneData.settingsFromScene(scene);
   const profile = state.device.profile || state.settings.deviceProfile;
   const ledCount = Number(profile?.ledCount);
@@ -372,6 +374,9 @@ function updatePreview() {
 
   if (selectedLedIndices && count) {
     selectedLedIndices = new Set([...selectedLedIndices].filter((index) => index < count));
+  }
+  if (selectedLedAnchorIndex !== null && selectedLedAnchorIndex >= count) {
+    selectedLedAnchorIndex = null;
   }
 
   const position = profile?.position || "monitor-back";
@@ -578,11 +583,16 @@ function selectPreviewPosition(event) {
 
   if (pixel) {
     const index = Number(pixel.dataset.ledIndex);
-    selectedLedIndices = window.ullLedSelection.selectLed(
-      selectedLedIndices,
-      index,
-      event.ctrlKey || event.metaKey
-    );
+    if (event.shiftKey && selectedLedAnchorIndex !== null) {
+      selectedLedIndices = window.ullLedSelection.selectLedRange(selectedLedAnchorIndex, index);
+    } else {
+      selectedLedIndices = window.ullLedSelection.selectLed(
+        selectedLedIndices,
+        index,
+        event.ctrlKey || event.metaKey
+      );
+    }
+    selectedLedAnchorIndex = index;
   } else {
     const profile = state.device.profile || state.settings.deviceProfile;
     const count = Number(profile?.ledCount);
@@ -593,6 +603,7 @@ function selectPreviewPosition(event) {
       profile?.installationMethod ?? 0
     );
     selectedLedIndices = new Set(layout.indices[edge.dataset.edge] || []);
+    selectedLedAnchorIndex = null;
   }
   updatePreview();
 }
@@ -765,6 +776,11 @@ async function runScreenSyncStart({ automatic = false } = {}) {
             canvas.height
           );
           const stableRatio = session.letterboxTracker.update(ratio, now);
+          if (session.detectedAspectRatio !== null &&
+              session.letterboxTracker.isMissingStable()) {
+            session.detectedAspectRatio = null;
+            toast("Widescreen ended; Screen Sync returned to your saved picture area.");
+          }
           const manualRatio = state.settings.syncContentMode === "cinema235" ? 2.35 : null;
           if (stableRatio !== null &&
               (manualRatio === null || Math.abs(manualRatio - stableRatio) > 0.05)) {
@@ -1219,6 +1235,7 @@ async function resetAllData() {
     state.settings = result.settings;
     state.device = result.device;
     selectedLedIndices = null;
+    selectedLedAnchorIndex = null;
     screenSyncError = "";
     $("#reset-dialog").close();
     render();
@@ -1276,6 +1293,7 @@ function bindEvents() {
 
   $("#select-all").addEventListener("click", () => {
     selectedLedIndices = null;
+    selectedLedAnchorIndex = null;
     updatePreview();
   });
 

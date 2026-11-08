@@ -11,6 +11,17 @@ function selectLed(selection, index, additive = false) {
   return next;
 }
 
+function selectLedRange(anchorIndex, index) {
+  for (const value of [anchorIndex, index]) {
+    if (!Number.isInteger(value) || value < 0 || value > 252) {
+      throw new RangeError("LED index must be between 0 and 252.");
+    }
+  }
+  const first = Math.min(anchorIndex, index);
+  const last = Math.max(anchorIndex, index);
+  return new Set(Array.from({ length: last - first + 1 }, (_, offset) => first + offset));
+}
+
 function colorChanges(currentColor, currentLedColors, selection, color) {
   if (selection === null) return { color, ledColors: {} };
   const ledColors = { ...currentLedColors };
@@ -18,6 +29,6 @@ function colorChanges(currentColor, currentLedColors, selection, color) {
   return { ledColors };
 }
 
-const ledSelection = Object.freeze({ selectLed, colorChanges });
+const ledSelection = Object.freeze({ selectLed, selectLedRange, colorChanges });
 if (typeof module !== "undefined" && module.exports) module.exports = ledSelection;
 else globalThis.ullLedSelection = ledSelection;

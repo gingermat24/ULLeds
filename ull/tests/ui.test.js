@@ -150,16 +150,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.49", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.50", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 49; version += 1) {
+  for (let version = 0; version <= 50; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.49<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.50<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -170,7 +170,18 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
   assert.match(css, /--led-rail-size:\s*clamp\(10px,\s*1\.5cqi,\s*18px\)/);
   assert.match(css, /\.led-edge\s*\{[^}]*gap:\s*clamp\(2px,\s*0\.28cqi,\s*4px\)/s);
   assert.match(css, /\.led-pixel\.selected\s*\{[^}]*outline:\s*2px solid #fff;[^}]*outline-offset:\s*-2px/s);
+  assert.match(css, /\.led-pixel:focus-visible:not\(\.selected\)\s*\{[^}]*outline:\s*2px solid var\(--accent\)/s);
+  assert.match(css, /:focus-visible:not\(\.led-pixel\)/);
   assert.doesNotMatch(css, /\.led-pixel(?:\.selected)?:hover\s*\{[^}]*transform:\s*scale/);
+});
+
+test("Shift-click selects an inclusive LED range and selected focus keeps its selection mark", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const selection = fs.readFileSync(path.join(__dirname, "..", "led-selection.js"), "utf8");
+
+  assert.match(app, /event\.shiftKey && selectedLedAnchorIndex !== null/);
+  assert.match(app, /selectLedRange\(selectedLedAnchorIndex, index\)/);
+  assert.match(selection, /function selectLedRange\(anchorIndex, index\)/);
 });
 
 test("Scenes save full lighting setups with explicit management actions", () => {
@@ -327,13 +338,18 @@ test("widescreen detection is optional, stable, and asks before changing the cur
   assert.match(main, /choice\.choice === "use"[\s\S]*screen-sync:movie-format-applied/);
   assert.doesNotMatch(main, /Notification\(/);
   assert.match(main, /!settings\.syncAutoDetect/);
+  assert.match(app, /letterboxTracker\.isMissingStable\(\)[\s\S]*session\.detectedAspectRatio = null/);
+  assert.match(promptHtml, /href="styles\.css"/);
+  assert.match(promptHtml, /class="secondary-btn"/);
+  assert.match(promptHtml, /class="primary-btn"/);
   assert.match(preload, /onMovieFormatPrompt/);
   assert.match(preload, /chooseMovieFormat/);
   assert.match(preload, /onMovieFormatApplied/);
   assert.match(preload, /notifyMovieFormat: \(aspectRatio\)/);
   assert.match(promptHtml, /id="use-format"/);
   assert.match(promptHtml, /id="keep-current"/);
-  assert.match(promptCss, /background: rgb\(18 19 22 \/ 91%\)/);
+  assert.match(promptCss, /background: rgb\(0 0 0 \/ 92%\)/);
+  assert.match(promptCss, /border: 1px solid var\(--line-strong\)/);
   assert.match(promptCss, /animation: expire 5s linear forwards/);
   assert.match(promptApp, /choose\("use"\)/);
   assert.match(promptApp, /choose\("keep"\)/);

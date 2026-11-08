@@ -130,6 +130,20 @@ test("movie-area detection requires stable bars and only reports a format once",
   assert.equal(detector.update(2.35, 5600), 2.35);
 });
 
+test("movie-area detection reports when bars have stably disappeared", () => {
+  const detector = createLetterboxStability({ stableDuration: 0, disappearanceDuration: 1500 });
+  assert.equal(detector.update(2.35, 0), null);
+  assert.equal(detector.update(2.35, 1), 2.35);
+  assert.equal(detector.isMissingStable(), false);
+  assert.equal(detector.update(null, 100), null);
+  assert.equal(detector.update(null, 1599), null);
+  assert.equal(detector.isMissingStable(), false);
+  assert.equal(detector.update(null, 1600), null);
+  assert.equal(detector.isMissingStable(), true);
+  assert.equal(detector.update(2.35, 1700), null);
+  assert.equal(detector.isMissingStable(), false);
+});
+
 test("screen sync preserves different screen colors at individual LED positions", () => {
   const width = 80;
   const height = 45;
