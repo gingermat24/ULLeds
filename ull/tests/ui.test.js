@@ -51,26 +51,28 @@ test("renderer scripts load together and expose their APIs", () => {
   assert.equal(typeof context.ullStripLayout?.allocateEdgeIndices, "function");
   assert.equal(typeof context.ullLedSelection?.selectLed, "function");
   assert.equal(typeof context.ullSceneData?.sceneFromLighting, "function");
-  assert.equal(typeof context.ullMusicSync?.createMusicSyncColors, "function");
+  assert.equal(typeof context.ullSpotifySync?.createSpotifySyncColors, "function");
 });
 
-test("Music Sync uses opt-in local system audio and never requests microphone input", () => {
+test("Spotify Sync reads local cover art and sends one artwork-derived color per LED", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
 
-  assert.match(html, /id="music-sync-toggle"/);
-  assert.match(html, /id="music-sync-description"/);
-  assert.match(html, /Audio is analyzed on this PC only\. ULLeds does not record or upload it\./);
-  assert.match(app, /getDisplayMedia\(\{ audio: true, video: true \}\)/);
-  assert.match(app, /createMusicSyncColors/);
-  assert.match(main, /setDisplayMediaRequestHandler/);
-  assert.match(main, /request\.userGesture[\s\S]*request\.audioRequested/);
-  assert.match(main, /audio: "loopback"/);
-  assert.match(main, /audioTracks: mode === "music" \? 1 : 0/);
+  assert.match(html, /Spotify Sync/);
+  assert.match(html, /id="spotify-sync-toggle"/);
+  assert.match(html, /id="spotify-sync-description"/);
+  assert.match(html, /does not sign in to Spotify, record audio, or upload artwork/);
+  assert.match(app, /window\.ull\.getSpotifyArtwork\(\)/);
+  assert.match(app, /createSpotifySyncColors\([\s\S]*session\.layout\.ledCount/);
+  assert.match(app, /window\.ull\.startScreenSync\("spotify"\)/);
+  assert.match(main, /ipcMain\.handle\("spotify-sync:artwork", \(\) => readSpotifyArtwork\(\)\)/);
+  assert.match(main, /execFile\(helperPath/);
+  assert.match(main, /spotify-media\.exe/);
+  assert.match(preload, /getSpotifyArtwork: \(\) => ipcRenderer\.invoke\("spotify-sync:artwork"\)/);
   assert.match(preload, /startScreenSync: \(mode = "screen"\) => ipcRenderer\.invoke\("screen-sync:start", mode\)/);
-  assert.doesNotMatch(app, /getUserMedia\(\s*\{\s*audio:\s*true/);
+  assert.doesNotMatch(app, /getDisplayMedia|AudioContext|createMusicSyncColors/);
 });
 
 test("update feedback includes an accessible progress bar and reports download size", () => {
@@ -180,7 +182,7 @@ test("lighting layout fills the window and the monitor preview matches the displ
   assert.match(controlsCard, /justify-content: flex-start;/);
   assert.match(css, /\.preview-card \{[^}]*min-height: max\(440px, calc\(100dvh - 128px\)\);/s);
   assert.match(css, /\.monitor \{[^}]*aspect-ratio: var\(--monitor-aspect-ratio, 16 \/ 9\);/s);
-  assert.match(css, /\.monitor \{[^}]*width: min\(100%, 780px, calc\(\(100dvh - 330px\) \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
+  assert.match(css, /\.monitor \{[^}]*width: min\(100%, calc\(\(100dvh - 330px\) \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
   assert.match(css, /font-size: 14px/);
   assert.match(css, /--control-h: 36px/);
   assert.match(app, /function updateMonitorAspectRatio\(\) \{\s+const \{ width, height \} = window\.screen;\s+if \(!Number\.isFinite\(width\) \|\| !Number\.isFinite\(height\) \|\| width <= 0 \|\| height <= 0\) return;\s+document\.documentElement\.style\.setProperty\("--monitor-aspect-ratio", String\(width \/ height\)\);/);
@@ -230,16 +232,56 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 99px;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.58", () => {
+test("Device settings are grouped by controller, sync, startup, and reset", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const sectionOrder = [
+    "settings-controller-title",
+    "settings-sync-title",
+    "settings-startup-title",
+    "settings-reset-title"
+  ].map((id) => html.indexOf(`id="${id}"`));
+
+  assert.ok(sectionOrder.every((index) => index >= 0));
+  assert.deepEqual(sectionOrder, [...sectionOrder].sort((a, b) => a - b));
+  assert.match(html, /aria-labelledby="settings-controller-title"[\s\S]*id="controller-select"/);
+  assert.match(html, /aria-labelledby="settings-sync-title"[\s\S]*id="sync-fps-range"/);
+  assert.match(html, /aria-labelledby="settings-startup-title"[\s\S]*id="start-with-windows"/);
+  assert.match(html, /aria-labelledby="settings-reset-title"[\s\S]*id="reset-all-data"/);
+  assert.match(css, /\.settings-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
+});
+
+test("release carousel has dated entries, accessible navigation, and progress markers", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(html, /id="release-track"[^>]*aria-live="polite"/);
+  assert.match(html, /id="release-older"[^>]*aria-label="Older release"/);
+  assert.match(html, /id="release-newer"[^>]*aria-label="Newer release"/);
+  assert.match(html, /id="release-progress-markers"[^>]*role="group"/);
+  assert.match(html, /id="release-position"[^>]*>1\/60<\/output>/);
+  assert.match(app, /releaseDates = new Map/);
+  assert.match(app, /\["1\.0\.58", "2026-11-08"\]/);
+  assert.match(app, /\["1\.0\.59", "2026-11-08"\]/);
+  assert.match(app, /dateLabel\.textContent = "Date unavailable"/);
+  assert.match(app, /olderButton\.hidden = currentIndex === entries\.length - 1/);
+  assert.match(app, /newerButton\.hidden = currentIndex === 0/);
+  assert.match(app, /position\.textContent = `\$\{currentIndex \+ 1\}\/\$\{entries\.length\}`/);
+  assert.match(css, /\.release-progress-marker\[aria-current="step"\]/);
+  assert.match(css, /\.release-entry\[hidden\]\s*\{\s*display:\s*none/);
+});
+
+test("release notes have separate entries for every version from 1.0.0 through 1.0.59", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 58; version += 1) {
+  for (let version = 0; version <= 59; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
-  const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
+  const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.58<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.59<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -254,6 +296,14 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
   assert.match(css, /\.led-pixel:focus-visible:not\(\.selected\)\s*\{[^}]*outline:\s*1\.5px solid #fff/s);
   assert.match(css, /:focus-visible:not\(\.led-pixel\)/);
   assert.doesNotMatch(css, /\.led-pixel(?:\.selected)?:hover\s*\{[^}]*transform:\s*scale/);
+});
+
+test("monitor preview grows with the available window space", () => {
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const monitorRule = css.match(/\.monitor\s*\{([^}]+)\}/)?.[1] || "";
+
+  assert.match(monitorRule, /width:\s*min\(100%,\s*calc\(/);
+  assert.doesNotMatch(monitorRule, /780px/);
 });
 
 test("dropdowns and text fields use a single border for visible keyboard focus", () => {

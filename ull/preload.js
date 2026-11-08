@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("ull", Object.freeze({
   connectDevice: (devicePath) => ipcRenderer.invoke("device:connect", devicePath),
   disconnectDevice: () => ipcRenderer.invoke("device:disconnect"),
   startScreenSync: (mode = "screen") => ipcRenderer.invoke("screen-sync:start", mode),
+  getSpotifyArtwork: () => ipcRenderer.invoke("spotify-sync:artwork"),
   sendScreenSyncColors: (colors) => ipcRenderer.invoke("screen-sync:colors", colors),
   recordScreenSyncPerformance: (metrics) => ipcRenderer.send("screen-sync:performance", metrics),
   stopScreenSync: () => ipcRenderer.invoke("screen-sync:stop"),

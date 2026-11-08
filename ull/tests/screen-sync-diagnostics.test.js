@@ -13,7 +13,7 @@ test("Screen Sync diagnostics count HID commands without recording sampled color
   const logPath = path.join(directory, "screen-sync-diagnostics.log");
   const diagnostics = createScreenSyncDiagnostics(logPath, () => {});
 
-  diagnostics.start({ fps: 30, ledCount: 75, audioTracks: 0 });
+  diagnostics.start({ fps: 30, ledCount: 75 });
   diagnostics.recordHidWrite("SC", "queued");
   diagnostics.recordHidWrite("SC", "written");
   diagnostics.recordHidWrite("RB", "queued");
@@ -32,7 +32,12 @@ test("Screen Sync diagnostics count HID commands without recording sampled color
     .split("\n")
     .map((line) => JSON.parse(line));
   assert.equal(entries[0].event, "session-start");
-  assert.equal(entries[0].audioTracks, 0);
+  assert.deepEqual(entries[0], {
+    timestamp: entries[0].timestamp,
+    event: "session-start",
+    fps: 30,
+    ledCount: 75
+  });
   assert.deepEqual(entries[1], {
     timestamp: entries[1].timestamp,
     event: "renderer-performance",
@@ -58,7 +63,7 @@ test("Screen Sync diagnostics reject invalid renderer performance metrics", asyn
     path.join(directory, "screen-sync-diagnostics.log"),
     () => {}
   );
-  diagnostics.start({ fps: 30, ledCount: 75, audioTracks: 0 });
+  diagnostics.start({ fps: 30, ledCount: 75 });
   assert.throws(() => diagnostics.recordRendererPerformance(null), TypeError);
   assert.throws(() => diagnostics.recordRendererPerformance({
     windowMs: 1000,

@@ -23,7 +23,7 @@ function createScreenSyncDiagnostics(filePath, onError = console.error) {
     counts = createCounts();
   }
 
-  function start({ fps, ledCount, audioTracks }) {
+  function start({ fps, ledCount }) {
     if (stream) throw new Error("Screen Sync diagnostics are already active.");
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     const output = fs.createWriteStream(filePath, { flags: "w" });
@@ -37,7 +37,7 @@ function createScreenSyncDiagnostics(filePath, onError = console.error) {
     });
     stream = output;
     counts = createCounts();
-    writeEntry({ event: "session-start", fps, ledCount, audioTracks });
+    writeEntry({ event: "session-start", fps, ledCount });
     summaryTimer = setInterval(writeSummary, 1000);
     summaryTimer.unref();
   }

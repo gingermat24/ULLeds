@@ -150,7 +150,7 @@
               <div class="sync-section">
                 <div class="sync-heading">
                   <div class="card-label">Sync</div>
-                  <p>Follow your screen or your music.</p>
+                  <p>Follow your screen or your Spotify artwork.</p>
                 </div>
 
                 <div class="sync-block">
@@ -163,12 +163,12 @@
 
                 <div class="sync-block">
                   <div>
-                    <div class="sync-title">Music Sync</div>
-                    <div class="sync-desc" id="music-sync-description">React to Spotify and other audio apps</div>
+                    <div class="sync-title">Spotify Sync</div>
+                    <div class="sync-desc" id="spotify-sync-description">Use colors from the currently playing track</div>
                   </div>
-                  <button id="music-sync-toggle" class="secondary-btn" type="button">Start</button>
+                  <button id="spotify-sync-toggle" class="secondary-btn" type="button">Start</button>
                 </div>
-                <p class="music-sync-privacy">Audio is analyzed on this PC only. ULLeds does not record or upload it.</p>
+                <p class="spotify-sync-privacy">Spotify cover art is read locally through Windows media controls. ULLeds does not sign in to Spotify, record audio, or upload artwork.</p>
               </div>
             </div>
           </div>
@@ -196,96 +196,121 @@
           </div>
 
           <div class="settings-grid">
-            <div class="settings-column">
-              <div class="card controller-picker">
-                <label for="controller-select">USB controller</label>
-                <select id="controller-select" aria-label="Select USB LED controller">
-                  <option value="">Scanning for compatible controllers…</option>
-                </select>
-                <p>Choose any connected ULLeds-compatible controller. Arbitrary HID devices are not driven. Use the scan button in the header to refresh this list.</p>
+            <section class="settings-section" aria-labelledby="settings-controller-title">
+              <div class="settings-section-heading">
+                <h3 id="settings-controller-title">Controller</h3>
+                <p>Choose your USB controller and review its active profile.</p>
               </div>
-
-              <div class="card details-card">
-                <div class="detail-row">
-                  <span>Controller</span>
-                  <strong id="settings-device">—</strong>
+              <div class="settings-cards settings-controller-cards">
+                <div class="card controller-picker">
+                  <label for="controller-select">USB controller</label>
+                  <select id="controller-select" aria-label="Select USB LED controller">
+                    <option value="">Scanning for compatible controllers…</option>
+                  </select>
+                  <p>Choose any connected ULLeds-compatible controller. Arbitrary HID devices are not driven. Use the scan button in the header to refresh this list.</p>
                 </div>
-                <div class="detail-row">
-                  <span>LED count</span>
-                  <strong id="settings-count">—</strong>
-                </div>
-                <div class="detail-row">
-                  <span>Color order</span>
-                  <strong id="settings-order">—</strong>
-                </div>
-                <div class="detail-row">
-                  <span>Layout</span>
-                  <strong id="settings-layout">—</strong>
-                </div>
-              </div>
-
-              <div class="card startup-card">
-                <label class="preference-row" for="start-with-windows">
-                  <span>
-                    <strong>Start ULLeds with Windows</strong>
-                    <small>Restore your saved LED color after you sign in.</small>
-                  </span>
-                  <input id="start-with-windows" type="checkbox">
-                </label>
-                <label class="preference-row" for="resume-screen-sync">
-                  <span>
-                    <strong>Resume Screen Sync at startup</strong>
-                    <small>Automatically sync the primary display when ULLeds starts.</small>
-                  </span>
-                  <input id="resume-screen-sync" type="checkbox">
-                </label>
-              </div>
-            </div>
-
-            <div class="settings-column">
-              <div class="card sync-fps-card">
-                <div class="sync-fps-heading">
-                  <div>
-                    <h3>Screen Sync speed</h3>
-                    <p>Choose how often ULLeds captures and updates your LEDs.</p>
+                <div class="card details-card">
+                  <div class="detail-row">
+                    <span>Controller</span>
+                    <strong id="settings-device">—</strong>
                   </div>
-                  <output id="sync-fps-value" for="sync-fps-range sync-fps-number">30 FPS</output>
+                  <div class="detail-row">
+                    <span>LED count</span>
+                    <strong id="settings-count">—</strong>
+                  </div>
+                  <div class="detail-row">
+                    <span>Color order</span>
+                    <strong id="settings-order">—</strong>
+                  </div>
+                  <div class="detail-row">
+                    <span>Layout</span>
+                    <strong id="settings-layout">—</strong>
+                  </div>
                 </div>
-                <div class="fps-control-row">
-                  <input id="sync-fps-range" type="range" min="5" max="60" step="1" value="30" aria-label="Screen Sync frames per second">
-                  <label class="fps-number-label" for="sync-fps-number">FPS</label>
-                  <input id="sync-fps-number" class="fps-number" type="number" min="5" max="60" step="1" value="30">
+              </div>
+            </section>
+
+            <section class="settings-section" aria-labelledby="settings-sync-title">
+              <div class="settings-section-heading">
+                <h3 id="settings-sync-title">Screen Sync</h3>
+                <p>Set what part of the display to sample and how quickly it updates.</p>
+              </div>
+              <div class="settings-cards settings-sync-cards">
+                <div class="card sync-area-card">
+                  <label for="sync-content-mode">Picture area</label>
+                  <p>Choose the area your movie fills. Widescreen mode samples the picture, away from 2.35:1 letterbox bars.</p>
+                  <select id="sync-content-mode">
+                    <option value="display">Full display</option>
+                    <option value="cinema235">Cinema widescreen (2.35:1)</option>
+                  </select>
                 </div>
-                <small>Higher rates update more often and may use more CPU. Default: 30 FPS.</small>
+                <div class="card sync-fps-card">
+                  <div class="sync-fps-heading">
+                    <div>
+                      <h3>Sync speed</h3>
+                      <p>Choose how often ULLeds captures and updates your LEDs.</p>
+                    </div>
+                    <output id="sync-fps-value" for="sync-fps-range sync-fps-number">30 FPS</output>
+                  </div>
+                  <div class="fps-control-row">
+                    <input id="sync-fps-range" type="range" min="5" max="60" step="1" value="30" aria-label="Screen Sync frames per second">
+                    <label class="fps-number-label" for="sync-fps-number">FPS</label>
+                    <input id="sync-fps-number" class="fps-number" type="number" min="5" max="60" step="1" value="30">
+                  </div>
+                  <small>Higher rates update more often and may use more CPU. Default: 30 FPS.</small>
+                </div>
+                <div class="card startup-card">
+                  <label class="preference-row" for="sync-auto-detect">
+                    <span>
+                      <strong>Detect widescreen movies</strong>
+                      <small>Look for stable letterbox bars during Screen Sync. ULLeds will ask before using the detected picture ratio.</small>
+                    </span>
+                    <input id="sync-auto-detect" type="checkbox">
+                  </label>
+                </div>
               </div>
+            </section>
 
-              <div class="card sync-area-card">
-                <label for="sync-content-mode">Screen Sync picture area</label>
-                <p>Choose the area your movie fills. Widescreen mode samples the picture, away from 2.35:1 letterbox bars.</p>
-                <select id="sync-content-mode">
-                  <option value="display">Full display</option>
-                  <option value="cinema235">Cinema widescreen (2.35:1)</option>
-                </select>
+            <section class="settings-section" aria-labelledby="settings-startup-title">
+              <div class="settings-section-heading">
+                <h3 id="settings-startup-title">Startup</h3>
+                <p>Choose what ULLeds should do when you sign in.</p>
               </div>
-
-              <div class="card startup-card">
-                <label class="preference-row" for="sync-auto-detect">
-                  <span>
-                    <strong>Detect widescreen movies</strong>
-                    <small>Look for stable letterbox bars during Screen Sync. ULLeds will ask before using the detected picture ratio.</small>
-                  </span>
-                  <input id="sync-auto-detect" type="checkbox">
-                </label>
+              <div class="settings-cards">
+                <div class="card startup-card">
+                  <label class="preference-row" for="start-with-windows">
+                    <span>
+                      <strong>Start ULLeds with Windows</strong>
+                      <small>Restore your saved LED color after you sign in.</small>
+                    </span>
+                    <input id="start-with-windows" type="checkbox">
+                  </label>
+                  <label class="preference-row" for="resume-screen-sync">
+                    <span>
+                      <strong>Resume Screen Sync at startup</strong>
+                      <small>Automatically sync the primary display when ULLeds starts.</small>
+                    </span>
+                    <input id="resume-screen-sync" type="checkbox">
+                  </label>
+                </div>
               </div>
+            </section>
 
-              <div class="card reset-card">
+            <section class="settings-section settings-danger-section" aria-labelledby="settings-reset-title">
+              <div class="settings-section-heading">
+                <h3 id="settings-reset-title">Reset</h3>
+                <p>Clear saved data while keeping ULLeds installed.</p>
+              </div>
+              <div class="settings-cards">
+                <div class="card reset-card">
                 <div>
                   <h3>Reset ULLeds</h3>
                   <p>Clear saved lighting setups, colors, device settings, sync preferences, the update folder, and imported lighting profiles. ULLeds stays installed, and its browser cache is kept.</p>
                 </div>
                 <button id="reset-all-data" class="danger-btn" type="button">Reset all data</button>
+                </div>
               </div>
-            </div>
+            </section>
           </div>
         </section>
 
@@ -349,8 +374,20 @@
                 <h2 id="release-log-title">What changed</h2>
               </div>
             </div>
+            <div class="release-carousel">
+              <div class="release-carousel-navigation">
+                <button id="release-older" class="secondary-btn" type="button" aria-label="Older release" aria-controls="release-track">&lt;</button>
+                <button id="release-newer" class="secondary-btn" type="button" aria-label="Newer release" aria-controls="release-track" hidden>&gt;</button>
+              </div>
+              <div class="release-track" id="release-track" aria-live="polite">
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.58</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.59</h3><span class="release-current">Current</span></header>
+              <div class="release-category"><strong>Added</strong><ul><li>Added Spotify Sync, using locally read cover art to spread each track's dominant colors across the LED strip.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Fixed the monitor preview width so it grows with the app window.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Reorganized Device settings into Controller, Screen Sync, Startup, and Reset groups.</li><li>Replaced the long changelog with a dated release carousel, navigation arrows, and progress markers.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.58</h3></header>
               <div class="release-category"><strong>Added</strong><ul><li>Added Music Sync for Spotify and other audio apps using local system-audio analysis, with no Spotify login or audio recording.</li></ul></div>
               <div class="release-category"><strong>Fixed</strong><ul><li>Kept top LEDs sampling picture colors when small bright overlays cross widescreen letterbox bars.</li></ul></div>
               <div class="release-category"><strong>Improved</strong><ul><li>Refreshed the Lighting interface with streamlined controls, bundled Cormorant Garamond titles, Noto Sans body text, and a shared spacing scale.</li><li>Automated Windows release builds and uploads from version tags, with GitHub notes generated from this changelog.</li></ul></div>
@@ -607,6 +644,12 @@
               <header><h3>ULLeds 1.0.0</h3></header>
               <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
             </article>
+              </div>
+              <div class="release-progress">
+                <div class="release-progress-markers" id="release-progress-markers" role="group" aria-label="Choose a release"></div>
+                <output class="release-position" id="release-position" aria-live="polite">1/60</output>
+              </div>
+            </div>
           </section>
         </section>
       </main>
@@ -673,7 +716,7 @@
     <script src="../strip-layout.js"></script>
     <script src="../led-selection.js"></script>
     <script src="../screen-sync.js"></script>
-    <script src="../music-sync.js"></script>
+    <script src="../spotify-sync.js"></script>
     <script src="../scene-data.js"></script>
     <script src="../screen-sync-lifecycle.js"></script>
     <script src="app.js"></script>

@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFile } = require("node:child_process");
 const { performance } = require("node:perf_hooks");
 const {
   app,
@@ -12,7 +13,6 @@ const {
   Menu,
   nativeImage,
   screen,
-  session,
   shell,
   Tray
 } = require("electron");
@@ -108,36 +108,44 @@ function defaultSettings() {
   return { ...DEFAULTS, palette: [...DEFAULTS.palette], ledColors: {}, presets: [] };
 }
 
+function readSpotifyArtwork() {
+  if (process.platform !== "win32") {
+    return Promise.reject(new Error("Spotify Sync is available on Windows only."));
+  }
+  const helperPath = app.isPackaged
+    ? path.join(process.resourcesPath, "app.asar.unpacked", "ull", "spotify-media.exe")
+    : path.join(__dirname, "spotify-media.exe");
+  return new Promise((resolve, reject) => {
+    execFile(helperPath, [], {
+      windowsHide: true,
+      timeout: 10000,
+      maxBuffer: 3 * 1024 * 1024
+    }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || `Could not read Spotify cover art: ${error.message}`));
+        return;
+      }
+      const output = stdout.trim();
+      if (output === "NONE") {
+        resolve(null);
+        return;
+      }
+      const [contentType, data, ...extra] = output.split(/\r?\n/);
+      if (!["image/jpeg", "image/png", "image/webp", "image/bmp"].includes(contentType) ||
+          !data || extra.length > 0 || !/^[\da-z+/]+={0,2}$/i.test(data)) {
+        reject(new Error("Windows returned invalid Spotify cover art."));
+        return;
+      }
+      resolve({ contentType, data });
+    });
+  });
+}
+
 function configureLoginItem() {
   if (process.platform !== "win32" || !app.isPackaged) return;
   app.setLoginItemSettings({
     openAtLogin: settings.startWithWindows,
     args: ["--hidden"]
-  });
-}
-
-function configureSystemAudioCapture() {
-  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
-    if (!request.userGesture || !request.videoRequested || !request.audioRequested ||
-        !mainWindow || mainWindow.isDestroyed() ||
-        request.frame?.url !== mainWindow.webContents.getURL()) {
-      callback(null);
-      return;
-    }
-
-    try {
-      const sources = await desktopCapturer.getSources({
-        types: ["screen"],
-        thumbnailSize: { width: 0, height: 0 }
-      });
-      const primaryDisplayId = String(screen.getPrimaryDisplay().id);
-      const source = sources.find((candidate) => candidate.display_id === primaryDisplayId) || sources[0];
-      if (!source) throw new Error("No display is available for system audio capture.");
-      callback({ video: source, audio: "loopback" });
-    } catch (error) {
-      console.error("Could not provide system audio capture:", error);
-      callback(null);
-    }
   });
 }
 
@@ -944,19 +952,19 @@ ipcMain.handle("device:disconnect", () => {
   return deviceState();
 });
 ipcMain.handle("screen-sync:start", (_event, mode = "screen") => {
-  if (!["screen", "music"].includes(mode)) throw new TypeError("Screen Sync mode is invalid.");
+  if (!["screen", "spotify"].includes(mode)) throw new TypeError("Screen Sync mode is invalid.");
   if (!hidDevice) throw new Error("Connect the LED controller before starting screen sync.");
   if (!settings.power) throw new Error("Turn the LEDs on before starting screen sync.");
   screenSyncDiagnostics.start({
     fps: settings.syncFps,
-    ledCount: settings.deviceProfile.ledCount,
-    audioTracks: mode === "music" ? 1 : 0
+    ledCount: settings.deviceProfile.ledCount
   });
   dismissMovieFormatPrompt();
   screenSyncActive = true;
   updateAnimation();
   return { active: true };
 });
+ipcMain.handle("spotify-sync:artwork", () => readSpotifyArtwork());
 ipcMain.handle("screen-sync:colors", (_event, colors) => {
   if (!screenSyncActive || !hidDevice || !settings.power) return { active: false };
   const ledCount = settings.deviceProfile?.ledCount;
@@ -1126,7 +1134,6 @@ autoUpdater.on("error", (error) => {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
-  configureSystemAudioCapture();
   controllerWriteDiagnostics = createControllerWriteDiagnostics(
     path.join(app.getPath("appData"), "ULLeds", "controller-write-diagnostics.log")
   );
