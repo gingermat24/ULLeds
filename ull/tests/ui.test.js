@@ -139,9 +139,10 @@ test("topbar uses compact status, shared page padding, and matching title-bar co
 test("lighting layout fills the window and the monitor preview matches the display ratio", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const controlsCard = css.match(/\.controls-card\s*\{([^}]*)\}/)?.[1] || "";
 
   assert.match(css, /\.light-grid \{[^}]*align-items: stretch;/s);
-  assert.match(css, /\.controls-card \{[^}]*justify-content: space-between;/s);
+  assert.match(controlsCard, /justify-content: flex-start;/);
   assert.match(css, /\.preview-card \{[^}]*min-height: max\(400px, calc\(100dvh - 114px\)\);/s);
   assert.match(css, /\.monitor \{[^}]*aspect-ratio: var\(--monitor-aspect-ratio, 16 \/ 9\);/s);
   assert.match(css, /\.monitor \{[^}]*width: min\(100%, calc\(\(100dvh - 360px\) \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
@@ -186,16 +187,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 99px;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.56", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.57", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 56; version += 1) {
+  for (let version = 0; version <= 57; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.56<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.57<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 

@@ -573,7 +573,7 @@ h3 {
 .controls-card {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 20px;
 }
 
@@ -1771,10 +1771,6 @@ select:disabled {
 @media (max-width: 980px) {
   .light-grid {
     grid-template-columns: 1fr;
-  }
-
-  .controls-card {
-    justify-content: flex-start;
   }
 
   .preview-card {
