@@ -17,9 +17,9 @@
           <button class="tab" data-view="updates" role="tab" aria-selected="false" tabindex="-1">Updates</button>
         </nav>
 
-        <div class="device-status" id="device-status">
+        <div class="device-status" id="device-status" role="status" aria-live="polite">
           <span class="status-dot"></span>
-          <span id="device-label">Finding your LEDs</span>
+          <span id="device-label">Finding LEDs</span>
           <button id="scan-device" class="icon-btn" type="button" title="Scan again" aria-label="Scan for controllers again">↻</button>
         </div>
       </header>
@@ -236,7 +236,7 @@
           <div class="card reset-card">
             <div>
               <h3>Reset ULLeds</h3>
-              <p>Clear saved lighting setups, colors, device settings, sync preferences, the update folder, and imported DX Light/QuikLight profiles. ULLeds stays installed, and its browser cache is kept.</p>
+              <p>Clear saved lighting setups, colors, device settings, sync preferences, the update folder, and imported lighting profiles. ULLeds stays installed, and its browser cache is kept.</p>
             </div>
             <button id="reset-all-data" class="danger-btn" type="button">Reset all data</button>
           </div>
@@ -303,7 +303,11 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.46</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.47</h3><span>Current</span></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Made the connection status compact and unified the page spacing.</li><li>Matched the Windows title bar to the app header.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.46</h3></header>
               <div class="release-category"><strong>Fixed</strong><ul><li>Aligned the connection status with the full-height Windows title-bar controls and kept the scrollbar below the header.</li></ul></div>
             </article>
             <article class="card release-entry">
@@ -421,7 +425,7 @@
             </article>
             <article class="card release-entry">
               <header><h3>ULLeds 1.0.20</h3></header>
-              <div class="release-category"><strong>New</strong><ul><li>Added a confirmation flow to reset saved settings and imported DX Light/QuikLight profiles.</li></ul></div>
+              <div class="release-category"><strong>New</strong><ul><li>Added a confirmation flow to reset saved settings and imported lighting profiles.</li></ul></div>
               <div class="release-category"><strong>Fixed</strong><ul><li>Reset preserves Electron browser data and only removes ULLeds settings and selected legacy profiles.</li></ul></div>
             </article>
             <article class="card release-entry">
@@ -537,7 +541,7 @@
       <form method="dialog">
         <div class="card-label">RESET ULLeds</div>
         <h2>Clear all saved data?</h2>
-        <p>This resets saved lighting setups, colors, preferences, and the update folder, and removes imported DX Light/QuikLight profiles. The active compatible controller stays connected and selected so ULLeds can continue detecting and controlling it. Browser data and the app installation are kept.</p>
+        <p>This resets saved lighting setups, colors, preferences, and the update folder, and removes imported lighting profiles. The active compatible controller stays connected and selected so ULLeds can continue detecting and controlling it. Browser data and the app installation are kept.</p>
         <div class="wizard-actions">
           <button id="cancel-reset" class="secondary-btn" type="submit" value="cancel">Keep my data</button>
           <button id="confirm-reset" class="danger-btn" type="button">Delete and reset</button>

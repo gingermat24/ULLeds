@@ -31,10 +31,9 @@ the setup wizard helps you arrange the strip to match your monitor.
 
 ## Download and updates
 
-The next update will be ULLeds' first GitHub Release and a test of the download
-and in-app update process. When it is published, the Windows installer will be
-available on the [Releases page](https://github.com/gingermat24/ULLeds/releases).
-Until then, GitHub-based downloads and updates are not available.
+Download the latest Windows installer from the
+[GitHub Releases page](https://github.com/gingermat24/ULLeds/releases). GitHub
+in-app updates are not active yet, so new versions must be installed manually.
 
 ## Screen Sync and privacy
 
@@ -48,8 +47,6 @@ If you prefer, disable detection or select **Cinema widescreen (2.35:1)** in
 Device settings.
 
 ## After installation
-
-Once an installer is available:
 
 1. Install ULLeds and connect your compatible LED controller.
 2. Open ULLeds and follow the setup wizard to match the strip layout to your

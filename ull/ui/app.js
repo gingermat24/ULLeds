@@ -147,10 +147,16 @@ function renderConnection() {
   indicator.classList.toggle("connected", state.device.connected);
   indicator.classList.toggle("has-error", Boolean(state.device.error));
 
-  label.textContent = state.device.connected
+  const connectionDetails = state.device.connected
     ? deviceLabel(state.device.name, "LED controller connected")
     : state.device.error || "No LED controller connected";
-  label.title = label.textContent;
+  label.textContent = state.device.connected
+    ? "Connected"
+    : state.device.error
+      ? "Connection issue"
+      : "Not connected";
+  label.title = connectionDetails;
+  indicator.title = connectionDetails;
   renderDeviceSelector();
 
   $("#settings-device").textContent = state.device.connected

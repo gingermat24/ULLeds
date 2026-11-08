@@ -27,7 +27,7 @@
   --control-radius: 0;
   --control-border: var(--line-strong);
   --control-surface: var(--panel-2);
-  --pad-x: clamp(16px, 2.4vw, 36px);
+  --page-gutter: clamp(20px, 2.4vw, 36px);
   --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   --mono: var(--sans);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
@@ -84,7 +84,7 @@ main {
   min-height: 0;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: 30px var(--pad-x) 56px;
+  padding: 30px var(--page-gutter) 56px;
 }
 
 /* --------------------------------------------------------------------------
@@ -97,11 +97,11 @@ main {
   top: 0;
   z-index: 40;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
   gap: 20px;
   height: 64px;
-  padding: 0 calc(var(--pad-x) + max(148px, 100% - env(titlebar-area-width, 100%))) 0 var(--pad-x);
+  padding: 0 calc(var(--page-gutter) + max(148px, 100% - env(titlebar-area-width, 100%))) 0 var(--page-gutter);
   background: #050505;
   border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
@@ -156,17 +156,16 @@ main {
   grid-column: 2;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  justify-self: stretch;
-  width: 100%;
-  height: 38px;
-  padding: 0 7px 0 11px;
-  color: #b0b0b0;
+  justify-self: end;
+  gap: 8px;
+  width: max-content;
+  max-width: min(220px, 100%);
+  height: 40px;
+  padding: 0 2px 0 8px;
+  color: #c2c2c2;
   font-size: 12px;
-  background: #0a0a0a;
-  border: 1px solid var(--line);
-  border-radius: 2px;
+  background: transparent;
+  border: 0;
 }
 
 #device-label {
@@ -175,6 +174,7 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-transform: none;
 }
 
 .status-dot {
@@ -190,9 +190,9 @@ main {
 .icon-btn {
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
   border-radius: 0;
   border: 0;
   background: transparent;
@@ -201,7 +201,7 @@ main {
   line-height: 1;
   transition: color 0.18s, background 0.18s;
 }
-.icon-btn:hover { color: var(--text); background: #141414; }
+.icon-btn:hover { color: var(--text); background: #101010; }
 .icon-btn:active { transform: scale(0.9); }
 
 /* --------------------------------------------------------------------------
@@ -1360,11 +1360,11 @@ select:disabled { opacity: 0.5; cursor: default; }
   main { padding-bottom: 28px; }
   .topbar { gap: 4px; }
   .device-status {
-    width: 100%;
-    gap: 7px;
-    padding: 0 6px 0 9px;
-    height: 36px;
-    font-size: 9px;
+    max-width: 180px;
+    gap: 6px;
+    padding: 0 2px 0 6px;
+    height: 40px;
+    font-size: 11px;
   }
   .tab { padding: 0 4px; font-size: 12px; }
   .tab::after { right: 4px; left: 4px; }
@@ -1413,7 +1413,7 @@ select:disabled { opacity: 0.5; cursor: default; }
 }
 
 @media (min-width: 1440px) {
-  :root { --pad-x: clamp(40px, 3vw, 72px); }
+  :root { --page-gutter: clamp(32px, 2.4vw, 48px); }
   .card { padding: clamp(28px, 1.9vw, 40px); }
   h2 { font-size: clamp(26px, 1.5vw, 32px); }
   .card-label { font-size: clamp(10px, 0.62vw, 12px); }

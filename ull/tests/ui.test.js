@@ -111,25 +111,27 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \}/);
 });
 
-test("topbar aligns status and tabs in equal rows beside full-height window controls", () => {
+test("topbar uses compact status, shared page padding, and matching title-bar colors", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
-  assert.match(css, /\.topbar \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\);[^}]*height: 64px;/s);
+  assert.match(css, /\.topbar \{[^}]*grid-template-columns: minmax\(0, 1fr\) max-content;[^}]*height: 64px;/s);
   assert.match(css, /\.tabs \{[^}]*grid-column: 1;[^}]*width: 100%;/s);
   assert.match(css, /\.tab::after \{[^}]*background: var\(--accent\);/s);
   assert.match(css, /\.topbar button, \.tabs, \.device-status \{ -webkit-app-region: no-drag; \}/);
-  assert.match(css, /\.device-status \{[^}]*grid-column: 2;[^}]*width: 100%;/s);
+  assert.match(css, /\.device-status \{[^}]*grid-column: 2;[^}]*width: max-content;[^}]*background: transparent;/s);
   assert.match(css, /#device-label \{\s+flex: 0 1 auto;\s+min-width: 0;\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
   assert.match(css, /main \{\s+flex: 1 1 auto;\s+min-height: 0;\s+overflow-y: auto;\s+scrollbar-gutter: stable;/);
   assert.match(css, /\.app \{\s+display: flex;\s+flex-direction: column;[\s\S]*height: 100dvh;/);
-  assert.match(css, /\.topbar \{[^}]*padding: 0 calc\(var\(--pad-x\) \+ max\(148px, 100% - env\(titlebar-area-width, 100%\)\)\) 0 var\(--pad-x\);/s);
+  assert.match(css, /--page-gutter: clamp\(20px, 2\.4vw, 36px\)/);
+  assert.match(css, /\.topbar \{[^}]*padding: 0 calc\(var\(--page-gutter\) \+ max\(148px, 100% - env\(titlebar-area-width, 100%\)\)\) 0 var\(--page-gutter\);/s);
   assert.match(css, /@media \(max-width: 820px\) \{[\s\S]*\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\);\s+grid-template-rows: 64px 46px;[\s\S]*\.tabs \{\s+grid-column: 1;\s+grid-row: 2;[\s\S]*\.device-status \{ grid-column: 1; grid-row: 1;/);
-  assert.match(main, /titleBarOverlay: \{\s+color: "#000000",\s+symbolColor: "#F5F5F5",\s+height: 64/);
+  assert.match(main, /backgroundColor: "#050505",[\s\S]*titleBarOverlay: \{\s+color: "#050505",\s+symbolColor: "#F5F5F5",\s+height: 64/);
   assert.doesNotMatch(html, /class="tab-indicator"/);
   assert.doesNotMatch(app, /positionTabIndicator|tab-indicator/);
+  assert.match(app, /label\.textContent = state\.device\.connected\s+\? "Connected"\s+: state\.device\.error\s+\? "Connection issue"\s+: "Not connected"/);
 });
 
 test("settings changes stay ordered and sliders flush their final value", () => {
@@ -148,16 +150,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.46", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.47", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 46; version += 1) {
+  for (let version = 0; version <= 47; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.46<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.47<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -397,7 +399,8 @@ test("full reset is confirmed, clears app and imported profile data, and preserv
 
   assert.match(html, /id="reset-all-data"/);
   assert.match(html, /id="reset-dialog"/);
-  assert.match(html, /DX Light\/QuikLight/);
+  assert.match(html, /imported lighting profiles/);
+  assert.doesNotMatch(html, /DX Light|DX-Light|QuikLight/);
   assert.match(html, /active compatible controller stays connected and selected/);
   assert.match(app, /window\.ull\.resetData\(\)/);
   assert.match(app, /settingsQueue = \{\}/);
@@ -446,7 +449,7 @@ test("the Windows title bar blends into the app and the native menu bar is remov
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.match(main, /titleBarStyle: "hidden"/);
-  assert.match(main, /titleBarOverlay: \{\s+color: "#000000",\s+symbolColor: "#F5F5F5",\s+height: 64\s+\}/);
+  assert.match(main, /titleBarOverlay: \{\s+color: "#050505",\s+symbolColor: "#F5F5F5",\s+height: 64\s+\}/);
   assert.match(main, /Menu\.setApplicationMenu\(null\)/);
   assert.doesNotMatch(main, /createApplicationMenu/);
   assert.match(css, /\.topbar \{[^}]*[-]webkit-app-region: drag;/s);

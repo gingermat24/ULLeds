@@ -741,10 +741,10 @@ function createWindow() {
     show: false,
     title: "ULLeds",
     icon: path.join(__dirname, "assets", "app.ico"),
-    backgroundColor: "#000000",
+    backgroundColor: "#050505",
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      color: "#000000",
+      color: "#050505",
       symbolColor: "#F5F5F5",
       height: 64
     },
