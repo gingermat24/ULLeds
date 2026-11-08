@@ -150,16 +150,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.47", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.48", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 47; version += 1) {
+  for (let version = 0; version <= 48; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.47<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.48<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -325,20 +325,32 @@ test("widescreen detection is optional, stable, and asks before changing the cur
   assert.match(screenSync, /function createLetterboxStability/);
 });
 
-test("Updates has GitHub Releases selected by default and guarded local updates", () => {
+test("Updates checks GitHub Releases by default and retains local-folder updates", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "package.json"), "utf8"));
 
   assert.match(html, /data-view="updates"/);
   assert.match(html, /id="update-source-github"[^>]*value="github"/);
   assert.match(html, /id="update-source-local"[^>]*value="local"/);
-  assert.match(html, /GitHub Releases is the planned default/);
+  assert.match(html, /Check for updates/);
+  assert.match(html, /Checks the public ULLeds GitHub Releases/);
   assert.match(html, /What changed/);
   assert.match(app, /updateSource: "github"/);
-  assert.match(app, /GitHub Releases updates are coming soon/);
+  assert.match(app, /window\.ull\.checkUpdates\(\)/);
+  assert.match(main, /autoUpdater\.setFeedURL\(\{\s+provider: "github",\s+owner: "gingermat24",\s+repo: "ULLeds",\s+releaseType: "release"\s+\}\)/);
+  assert.match(main, /autoUpdater\.setFeedURL\(\{ provider: "generic", url: updateServer\.url \}\)/);
+  assert.match(main, /controller-write-diagnostics\.log/);
+  assert.match(html, /controller-write-diagnostics\.log/);
   assert.match(main, /updateSource: "github"/);
-  assert.match(main, /settings\.updateSource !== "local"/);
+  assert.equal(packageJson.build.publish.length, 1);
+  assert.deepEqual(packageJson.build.publish[0], {
+    provider: "github",
+    owner: "gingermat24",
+    repo: "ULLeds",
+    releaseType: "release"
+  });
 });
 
 test("the icon build consumes the user PNG and responsive motion preferences are global", () => {

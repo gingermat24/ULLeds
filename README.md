@@ -32,8 +32,9 @@ the setup wizard helps you arrange the strip to match your monitor.
 ## Download and updates
 
 Download the latest Windows installer from the
-[GitHub Releases page](https://github.com/gingermat24/ULLeds/releases). GitHub
-in-app updates are not active yet, so new versions must be installed manually.
+[GitHub Releases page](https://github.com/gingermat24/ULLeds/releases). Starting
+with version 1.0.48, ULLeds can check for and install updates from GitHub
+Releases in the app. Earlier versions must be updated manually.
 
 ## Screen Sync and privacy
 

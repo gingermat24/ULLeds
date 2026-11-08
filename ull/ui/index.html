@@ -253,13 +253,13 @@
 
           <div class="card update-card">
             <h3>Update source</h3>
-            <p>GitHub Releases is the planned default. Until it is available, choose a local update folder.</p>
+            <p>Check GitHub Releases for a newer version or use a local update folder.</p>
             <div class="update-sources" role="radiogroup" aria-label="Update source">
               <label class="update-source-option" for="update-source-github">
                 <input id="update-source-github" type="radio" name="update-source" value="github">
                 <span>
                   <strong>GitHub Releases</strong>
-                  <small>Coming soon · selected by default</small>
+                  <small>Checks for the latest public release</small>
                 </span>
               </label>
               <label class="update-source-option" for="update-source-local">
@@ -270,12 +270,12 @@
                 </span>
               </label>
             </div>
-            <p id="github-update-note" class="source-note">GitHub updates are not active yet. No account or network source is contacted.</p>
+            <p id="github-update-note" class="source-note">Checks the public ULLeds GitHub Releases and downloads verified updates.</p>
+            <div class="btn-row">
+              <button id="check-updates" class="primary-btn" type="button">Check for updates</button>
+            </div>
             <div id="local-update-controls" class="local-update-controls hidden">
-              <div class="btn-row">
-                <button id="choose-update-folder" class="secondary-btn" type="button">Choose folder</button>
-                <button id="check-updates" class="primary-btn" type="button" disabled>Check for updates</button>
-              </div>
+              <button id="choose-update-folder" class="secondary-btn" type="button">Choose folder</button>
               <p class="folder-path" id="update-folder-label">No folder selected</p>
             </div>
             <div class="update-message hidden" id="update-message" role="status" aria-live="polite">
@@ -303,7 +303,11 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.47</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.48</h3><span>Current</span></header>
+              <div class="release-category"><strong>Added</strong><ul><li>Added update checks and verified downloads from GitHub Releases. Updates can be installed from the app after this version is installed.</li><li>Temporarily records aggregate controller response timings in %APPDATA%\ULLeds\controller-write-diagnostics.log to investigate control delays; the log contains no colors or screen content.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.47</h3></header>
               <div class="release-category"><strong>Improved</strong><ul><li>Made the connection status compact and unified the page spacing.</li><li>Matched the Windows title bar to the app header.</li></ul></div>
             </article>
             <article class="card release-entry">

@@ -69,14 +69,15 @@ device. Quitting does not send an off frame, so the controller retains its last
 output. A controller scan runs at startup, on request, and every five seconds
 while no controller is connected.
 
-## Local updates
+## Updates
 
 `npm run dist:win` creates an NSIS installer, its `.blockmap`, and a
-`latest.yml` manifest. The user chooses a local update folder; ULLeds serves it
-over loopback HTTP to `electron-updater`, which verifies the installer digest,
-supports ranged differential downloads, and applies the update after restart.
-Preserving the previous installer and its blockmap in the folder allows the
-downloader to compare old and new installer blocks. User settings remain under
+`latest.yml` manifest. Packaged builds check the public ULLeds GitHub Releases
+feed by default; `electron-updater` verifies the installer digest, supports
+ranged differential downloads, and applies the update after restart. A local
+folder remains available as an alternate source over loopback HTTP. Preserving
+the previous installer and its blockmap in that folder allows the downloader
+to compare old and new installer blocks. User settings remain under
 `%APPDATA%\ULLeds` and are not replaced with the application files.
 
 The package allowlist includes the ULLeds app and its package metadata only;

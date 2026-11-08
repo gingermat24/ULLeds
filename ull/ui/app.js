@@ -924,7 +924,7 @@ function renderUpdates() {
   $("#update-folder-label").textContent = state.settings.updateFolder || "No folder selected";
   $("#local-update-controls").classList.toggle("hidden", !localSelected);
   $("#github-update-note").classList.toggle("hidden", localSelected);
-  $("#check-updates").disabled = !localSelected || !state.settings.updateFolder || updateCheckInProgress;
+  $("#check-updates").disabled = updateCheckInProgress;
 }
 
 function selectUpdateSource(source) {
@@ -932,7 +932,7 @@ function selectUpdateSource(source) {
   queueSettings({ updateSource: source }, true);
   renderUpdates();
   if (source === "github") {
-    showUpdateMessage("GitHub Releases updates are coming soon. Choose a local folder to update now.");
+    showUpdateMessage("Updates will be checked against the public ULLeds GitHub Releases.");
   } else if (state.settings.updateFolder) {
     showUpdateMessage(`Local update folder: ${state.settings.updateFolder}`);
   } else {
@@ -1010,11 +1010,8 @@ async function chooseUpdateFolder() {
 }
 
 async function checkUpdates() {
-  if (state.settings.updateSource !== "local") {
-    showUpdateMessage("GitHub Releases updates are coming soon. Choose a local folder to update now.");
-    return;
-  }
-  if (!state.settings.updateFolder) {
+  const source = state.settings.updateSource === "local" ? "local" : "github";
+  if (source === "local" && !state.settings.updateFolder) {
     showUpdateMessage("Choose the folder containing the ULLeds update package.");
     return;
   }
@@ -1024,7 +1021,9 @@ async function checkUpdates() {
   checkButton.disabled = true;
   checkButton.textContent = "Checking…";
   updateState = { phase: "checking", percent: null, transferred: 0, total: 0 };
-  showUpdateMessage("Checking the local update folder…");
+  showUpdateMessage(source === "local"
+    ? "Checking the local update folder…"
+    : "Checking GitHub Releases…");
   try {
     const result = await window.ull.checkUpdates();
     if (result.available) {

@@ -47,3 +47,23 @@ test("HID write errors reject the frame and do not block later frames", async ()
   await assert.rejects(queue.enqueue(device, [Buffer.from([1])]), /USB write failed/);
   assert.deepEqual(await queue.enqueue(device, [Buffer.from([2])]), { written: true });
 });
+
+test("HID writes report queue wait and device-write timing without exposing report bytes", async () => {
+  const timings = [];
+  const queue = createHidOutputQueue((timing) => timings.push(timing));
+  const device = {
+    async write() {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  };
+
+  await queue.enqueue(device, [Buffer.from([1, 2, 3])], () => true, "RB");
+
+  assert.equal(timings.length, 1);
+  assert.equal(timings[0].command, "RB");
+  assert.equal(timings[0].status, "written");
+  assert.equal(timings[0].reportCount, 1);
+  assert.ok(timings[0].queueMs >= 0);
+  assert.ok(timings[0].writeMs >= 5);
+  assert.equal(Object.hasOwn(timings[0], "reports"), false);
+});

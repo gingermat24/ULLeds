@@ -2,6 +2,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { performance } = require("node:perf_hooks");
 const {
   app,
   BrowserWindow,
@@ -34,6 +35,7 @@ const {
 const { createHidOutputQueue } = require("./hid-output");
 const { resetStoredData } = require("./reset-data");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
+const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
 const { normalizeScenes } = require("./scene-data");
 const { acquireSingleInstanceLock } = require("./single-instance");
 
@@ -75,7 +77,8 @@ let settings = defaultSettings();
 let connectedInfo = null;
 let animationTimer = null;
 let animationWriting = false;
-const hidOutputQueue = createHidOutputQueue();
+let controllerWriteDiagnostics = null;
+const hidOutputQueue = createHidOutputQueue((timing) => controllerWriteDiagnostics?.recordWrite(timing));
 let watcherTimer = null;
 let screenSyncActive = false;
 let commandId = 1;
@@ -394,8 +397,8 @@ function writeColor(color, effectBrightness = 1) {
   return writeColors(colors, effectBrightness);
 }
 
-function enqueueHidReports(device, reports) {
-  return hidOutputQueue.enqueue(device, reports, () => hidDevice === device);
+function enqueueHidReports(device, reports, command = "RB") {
+  return hidOutputQueue.enqueue(device, reports, () => hidDevice === device, command);
 }
 
 async function writeColors(colors, effectBrightness = 1) {
@@ -450,7 +453,7 @@ async function writeScreenSyncColors(colors) {
   commandId = messageId;
   screenSyncDiagnostics?.recordHidWrite("SC", "queued");
   try {
-    const result = await enqueueHidReports(device, buildHidReports(packet));
+    const result = await enqueueHidReports(device, buildHidReports(packet), "SC");
     screenSyncDiagnostics?.recordHidWrite("SC", result.written ? "written" : "superseded");
   } catch (error) {
     screenSyncDiagnostics?.recordHidWrite("SC", "failed");
@@ -683,7 +686,9 @@ function setSettings(input, updateOutput = true) {
         : null
     };
   }
+  const saveStartedAt = performance.now();
   saveSettings();
+  controllerWriteDiagnostics?.recordSettingsSave(performance.now() - saveStartedAt);
   if (Object.hasOwn(changes, "startWithWindows")) configureLoginItem();
   if (updateOutput && hidDevice &&
       ["color", "brightness", "channelGains", "effect", "speed", "palette", "ledColors", "power"]
@@ -917,13 +922,10 @@ ipcMain.handle("updates:choose-folder", async () => {
   return { canceled: false, folder: settings.updateFolder };
 });
 ipcMain.handle("updates:check", async () => {
-  if (settings.updateSource !== "local") {
-    return { available: false, error: "GitHub Releases updates are coming soon. Select a local folder for now." };
-  }
   if (!app.isPackaged) {
-    return { available: false, error: "Differential updates are available in the installed app." };
+    return { available: false, error: "Updates are available from the installed app." };
   }
-  if (!settings.updateFolder) {
+  if (settings.updateSource === "local" && !settings.updateFolder) {
     return { available: false, error: "Choose the folder containing the ULLeds update first." };
   }
   if (downloadedUpdateVersion) {
@@ -936,12 +938,21 @@ ipcMain.handle("updates:check", async () => {
 
   updateCheckPromise = (async () => {
     try {
-      if (!updateServer || updateServerFolder !== settings.updateFolder) {
-        if (updateServer) await updateServer.close();
-        updateServer = await createLocalUpdateServer(settings.updateFolder);
-        updateServerFolder = settings.updateFolder;
+      if (settings.updateSource === "local") {
+        if (!updateServer || updateServerFolder !== settings.updateFolder) {
+          if (updateServer) await updateServer.close();
+          updateServer = await createLocalUpdateServer(settings.updateFolder);
+          updateServerFolder = settings.updateFolder;
+        }
+        autoUpdater.setFeedURL({ provider: "generic", url: updateServer.url });
+      } else {
+        autoUpdater.setFeedURL({
+          provider: "github",
+          owner: "gingermat24",
+          repo: "ULLeds",
+          releaseType: "release"
+        });
       }
-      autoUpdater.setFeedURL({ provider: "generic", url: updateServer.url });
       const result = await autoUpdater.checkForUpdates();
       if (!result) return { available: false, error: "The update service did not return a result." };
       if (!result.isUpdateAvailable) {
@@ -996,6 +1007,15 @@ autoUpdater.on("error", (error) => {
 
 app.whenReady().then(async () => {
   if (!hasSingleInstanceLock) return;
+  controllerWriteDiagnostics = createControllerWriteDiagnostics(
+    path.join(app.getPath("appData"), "ULLeds", "controller-write-diagnostics.log")
+  );
+  try {
+    controllerWriteDiagnostics.start();
+  } catch (error) {
+    controllerWriteDiagnostics = null;
+    console.error("Could not start controller timing diagnostics:", error);
+  }
   screenSyncDiagnostics = createScreenSyncDiagnostics(
     path.join(app.getPath("appData"), "ULLeds", "screen-sync-diagnostics.log")
   );
@@ -1032,6 +1052,9 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  void controllerWriteDiagnostics?.stop().catch((error) => {
+    console.error("Could not finalize controller timing diagnostics:", error);
+  });
   if (watcherTimer) clearInterval(watcherTimer);
   screenSyncActive = false;
   disconnectDevice();
