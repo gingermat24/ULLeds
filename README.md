@@ -39,8 +39,9 @@ Download the latest Windows installer from the
 with version 1.0.48, ULLeds can check for and install updates from GitHub
 Releases in the app. The release-notes carousel also offers the matching
 Windows installer for each published version, labeled **Update** or
-**Downgrade**; selecting one opens that installer's download in your browser.
-Earlier versions must be updated manually.
+**Downgrade**. Selecting one downloads and verifies that release through the
+in-app updater; restart ULLeds from the update prompt to install it. Earlier
+versions must be updated manually.
 
 ## Screen Sync and privacy
 

@@ -64,7 +64,8 @@ const releaseDates = new Map([
   ["1.0.58", "2026-11-08"],
   ["1.0.59", "2026-11-08"],
   ["1.0.60", "2026-11-08"],
-  ["1.0.61", "2026-11-08"]
+  ["1.0.61", "2026-11-08"],
+  ["1.0.62", "2026-11-08"]
 ]);
 
 const $ = (selector) => document.querySelector(selector);
@@ -143,8 +144,8 @@ function showVersionNotice(installer) {
   $("#version-notice-title").textContent = `ULLeds ${installer.version} is available`;
   const updateButton = $("#version-notice-update");
   updateButton.onclick = () => {
-    void downloadRelease(installer.version, updateButton).then((opened) => {
-      if (opened) dismissVersionNotice();
+    void startReleaseUpdate(installer.version, updateButton).then((started) => {
+      if (started) dismissVersionNotice();
     });
   };
   notice.classList.remove("hidden");
@@ -152,18 +153,40 @@ function showVersionNotice(installer) {
   versionNoticeTimer = setTimeout(dismissVersionNotice, 5000);
 }
 
-async function downloadRelease(version, button) {
+async function startReleaseUpdate(version, button) {
+  if (updateCheckInProgress) return false;
+  updateCheckInProgress = true;
+  switchView("updates");
   if (button) button.disabled = true;
+  updateState = { phase: "checking", percent: null, transferred: 0, total: 0 };
+  showUpdateMessage(`Preparing ULLeds ${version}…`);
   try {
-    const result = await window.ull.downloadRelease(version);
-    if (!result.opened) throw new Error("The installer download did not open.");
-    toast(`Opened the ULLeds ${version} installer download.`);
-    return true;
+    const result = await window.ull.installRelease(version);
+    if (result.available) {
+      if (result.downloaded || updateState.phase === "ready") {
+        updateState = { phase: "ready", percent: null, transferred: 0, total: 0 };
+        showUpdateMessage(`ULLeds ${result.version} is ready. Your saved settings will be kept.`, false, true);
+      } else {
+        updateState = { phase: "downloading", percent: null, transferred: 0, total: 0 };
+        showUpdateMessage(`Downloading ULLeds ${result.version}…`);
+      }
+      return true;
+    }
+
+    updateState = { phase: result.upToDate ? "idle" : "error", percent: null, transferred: 0, total: 0 };
+    showUpdateMessage(
+      result.error || `ULLeds ${result.version} is already installed.`,
+      Boolean(result.error)
+    );
+    return false;
   } catch (error) {
-    toast(`Could not download ULLeds ${version}: ${error.message}`);
+    updateState = { phase: "error", percent: null, transferred: 0, total: 0 };
+    showUpdateMessage(`Could not prepare ULLeds ${version}: ${error.message}`, true);
     return false;
   } finally {
+    updateCheckInProgress = false;
     if (button) button.disabled = false;
+    renderUpdates();
   }
 }
 
@@ -206,7 +229,7 @@ async function loadReleaseDownloads() {
       button.className = "secondary-btn release-download";
       button.textContent = actionLabel;
       button.setAttribute("aria-label", `${actionLabel} to ULLeds ${version}`);
-      button.addEventListener("click", () => void downloadRelease(version, button));
+      button.addEventListener("click", () => void startReleaseUpdate(version, button));
       actions.append(button);
       entry.append(actions);
     }

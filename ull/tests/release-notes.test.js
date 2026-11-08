@@ -10,20 +10,19 @@ const html = fs.readFileSync(path.join(__dirname, "..", "ui", "index.html"), "ut
 
 test("GitHub release text is generated from every in-app changelog entry", () => {
   const entries = extractReleaseNotes(html);
-  assert.equal(entries.length, 62);
-  for (let version = 0; version <= 61; version += 1) {
+  assert.equal(entries.length, 63);
+  for (let version = 0; version <= 62; version += 1) {
     assert.ok(entries.some((entry) => entry.version === `1.0.${version}`));
   }
 });
 
 test("release note output preserves categories and user-facing items", () => {
-  const notes = formatReleaseNotes(html, "1.0.61");
-  assert.match(notes, /^## ULLeds 1\.0\.61/m);
-  assert.match(notes, /Update and Downgrade buttons/);
-  assert.match(notes, /compact startup notice/);
-  assert.match(notes, /Reduced Screen Sync color-sampling work/);
-  assert.match(notes, /### Added/);
-  assert.match(notes, /### Improved/);
+  const notes = formatReleaseNotes(html, "1.0.62");
+  assert.match(notes, /^## ULLeds 1\.0\.62/m);
+  assert.match(notes, /Update and Downgrade now use ULLeds' in-app updater/);
+  assert.match(notes, /download progress/);
+  assert.match(notes, /verified restart-to-install flow/);
+  assert.match(notes, /### Fixed/);
   assert.doesNotMatch(notes, /UI tests/);
 });
 

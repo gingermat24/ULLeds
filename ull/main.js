@@ -39,6 +39,7 @@ const { createControllerWriteDiagnostics } = require("./controller-write-diagnos
 const { normalizeScenes } = require("./scene-data");
 const { acquireSingleInstanceLock } = require("./single-instance");
 const {
+  compareVersions,
   findReleaseInstaller,
   getReleasedInstallers
 } = require("./github-releases");
@@ -1112,12 +1113,81 @@ async function getGithubReleaseInstallers() {
   }
 }
 ipcMain.handle("updates:release-downloads", () => getGithubReleaseInstallers());
-ipcMain.handle("updates:download-release", async (_event, version) => {
-  if (typeof version !== "string") throw new TypeError("Release version is invalid.");
-  const installer = findReleaseInstaller(await getGithubReleaseInstallers(), version);
-  if (!installer) throw new Error(`ULLeds ${version} has no published Windows installer.`);
-  await shell.openExternal(installer.url);
-  return { opened: true };
+ipcMain.handle("updates:install-release", async (_event, version) => {
+  if (!app.isPackaged) {
+    return { available: false, error: "Updates are available from the installed app." };
+  }
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version)) {
+    return { available: false, error: "Release version is invalid." };
+  }
+
+  const versionComparison = compareVersions(version, app.getVersion());
+  if (versionComparison === 0) {
+    return { available: false, upToDate: true, version: app.getVersion() };
+  }
+  if (downloadedUpdateVersion || updateDownloadVersion) {
+    const activeVersion = downloadedUpdateVersion || updateDownloadVersion;
+    if (activeVersion !== version) {
+      return {
+        available: false,
+        error: `ULLeds ${activeVersion} is already being prepared. Finish or restart that update first.`
+      };
+    }
+    return {
+      available: true,
+      downloaded: Boolean(downloadedUpdateVersion),
+      downloading: Boolean(updateDownloadVersion),
+      version
+    };
+  }
+  if (updateCheckPromise) {
+    return { available: false, error: "Another update check is already in progress." };
+  }
+
+  updateCheckPromise = (async () => {
+    try {
+      const installer = findReleaseInstaller(await getGithubReleaseInstallers(), version);
+      if (!installer) {
+        return { available: false, error: `ULLeds ${version} has no published Windows installer.` };
+      }
+
+      autoUpdater.allowDowngrade = versionComparison < 0;
+      autoUpdater.setFeedURL({
+        provider: "generic",
+        url: new URL(".", installer.url).href
+      });
+      const result = await autoUpdater.checkForUpdates();
+      if (!result) return { available: false, error: "The update service did not return a result." };
+      if (!result.isUpdateAvailable) {
+        autoUpdater.allowDowngrade = false;
+        return { available: false, upToDate: true, version: app.getVersion() };
+      }
+      if (result.updateInfo.version !== version) {
+        result.cancellationToken?.cancel();
+        autoUpdater.allowDowngrade = false;
+        return {
+          available: false,
+          error: `GitHub returned ULLeds ${result.updateInfo.version} instead of the selected ${version}.`
+        };
+      }
+
+      updateDownloadVersion = version;
+      result.downloadPromise?.catch((error) => {
+        if (updateDownloadVersion === version) updateDownloadVersion = null;
+        autoUpdater.allowDowngrade = false;
+        console.error(`ULLeds ${version} update download failed:`, error);
+      });
+      return { available: true, downloading: true, version };
+    } catch (error) {
+      autoUpdater.allowDowngrade = false;
+      return { available: false, error: `Could not check or download ULLeds ${version}: ${error.message}` };
+    }
+  })();
+  try {
+    return await updateCheckPromise;
+  } finally {
+    updateCheckPromise = null;
+  }
 });
 ipcMain.handle("updates:check", async () => {
   if (!app.isPackaged) {
@@ -1136,6 +1206,7 @@ ipcMain.handle("updates:check", async () => {
 
   updateCheckPromise = (async () => {
     try {
+      autoUpdater.allowDowngrade = false;
       if (settings.updateSource === "local") {
         if (!updateServer || updateServerFolder !== settings.updateFolder) {
           if (updateServer) await updateServer.close();
@@ -1192,12 +1263,14 @@ autoUpdater.on("download-progress", (progress) => {
 autoUpdater.on("update-downloaded", (update) => {
   downloadedUpdateVersion = update.version;
   updateDownloadVersion = null;
+  autoUpdater.allowDowngrade = false;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("updates:downloaded", { version: update.version });
   }
 });
 autoUpdater.on("error", (error) => {
   updateDownloadVersion = null;
+  autoUpdater.allowDowngrade = false;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("updates:error", { message: error.message });
   }

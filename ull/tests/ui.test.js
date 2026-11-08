@@ -69,11 +69,19 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(app, /compareVersions\(version, state\.version\)/);
   assert.match(app, /versionComparison > 0 \? "Update" : "Downgrade"/);
   assert.match(app, /showVersionNotice\(latest\)/);
+  assert.match(app, /startReleaseUpdate\(installer\.version, updateButton\)/);
+  assert.match(app, /window\.ull\.installRelease\(version\)/);
+  assert.match(app, /updateCheckInProgress = true;\s+switchView\("updates"\)/);
+  assert.match(app, /Downloading ULLeds \$\{result\.version\}/);
+  assert.match(app, /showUpdateMessage\(`ULLeds \$\{result\.version\} is ready\./);
   assert.match(preload, /listReleaseDownloads: \(\) => ipcRenderer\.invoke\("updates:release-downloads"\)/);
-  assert.match(preload, /downloadRelease: \(version\) => ipcRenderer\.invoke\("updates:download-release", version\)/);
+  assert.match(preload, /installRelease: \(version\) => ipcRenderer\.invoke\("updates:install-release", version\)/);
   assert.match(main, /ipcMain\.handle\("updates:release-downloads"/);
-  assert.match(main, /ipcMain\.handle\("updates:download-release"/);
-  assert.match(main, /shell\.openExternal\(installer\.url\)/);
+  assert.match(main, /ipcMain\.handle\("updates:install-release"/);
+  assert.match(main, /autoUpdater\.setFeedURL\(\{\s+provider: "generic",\s+url: new URL\("\.", installer\.url\)\.href\s+\}\)/);
+  assert.match(main, /autoUpdater\.allowDowngrade = versionComparison < 0/);
+  assert.match(main, /result\.updateInfo\.version !== version/);
+  assert.doesNotMatch(main, /updates:download-release|shell\.openExternal\(installer\.url\)/);
   assert.match(css, /\.version-notice\s*\{[\s\S]*min-height: 62px/);
   assert.match(css, /\.release-actions\s*\{/);
 });
@@ -316,16 +324,16 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(css, /\.release-entry\[hidden\]\s*\{\s*display:\s*none/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.61", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.62", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 61; version += 1) {
+  for (let version = 0; version <= 62; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.61<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.62<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
