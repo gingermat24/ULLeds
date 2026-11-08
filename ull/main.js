@@ -869,6 +869,26 @@ function createWindow() {
     if (url.startsWith("https://")) shell.openExternal(url);
     return { action: "deny" };
   });
+  mainWindow.webContents.session.setDisplayMediaRequestHandler(async (request, callback) => {
+    if (!request.audioRequested || !request.videoRequested ||
+        request.frame?.url !== mainWindow?.webContents.getURL()) {
+      callback({});
+      return;
+    }
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ["screen"],
+        thumbnailSize: { width: 0, height: 0 }
+      });
+      const primaryDisplayId = String(screen.getPrimaryDisplay().id);
+      const source = sources.find((candidate) => candidate.display_id === primaryDisplayId) || sources[0];
+      if (!source) throw new Error("No display is available for desktop audio capture.");
+      callback({ video: source, audio: "loopback" });
+    } catch (error) {
+      console.error("Could not provide Spotify desktop audio capture:", error);
+      callback({});
+    }
+  });
   mainWindow.loadFile(path.join(__dirname, "ui", "index.html"));
 }
 

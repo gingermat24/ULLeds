@@ -1798,11 +1798,12 @@ select:disabled {
   gap: var(--space-2);
 }
 
-.release-carousel-navigation button {
-  width: 36px;
-  min-width: 36px;
+.release-carousel-navigation .release-arrow {
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
   padding: 0;
-  font-size: 20px;
+  font-size: 17px;
   line-height: 1;
 }
 
@@ -1821,35 +1822,57 @@ select:disabled {
 }
 
 .release-progress-markers {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(var(--release-count, 1), minmax(0, 1fr));
   flex: 1;
   align-items: center;
-  gap: 2px;
+  justify-items: center;
   min-width: 0;
 }
 
 .release-progress-marker {
-  flex: 1;
-  min-width: 1px;
-  max-width: 9px;
-  height: 4px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  height: 20px;
   padding: 0;
   border: 0;
-  border-radius: 99px;
-  background: var(--hairline-strong);
+  border-radius: var(--radius-xs);
+  background: transparent;
   cursor: pointer;
 }
 
-.release-progress-marker[aria-current="step"] {
-  flex: 2.5;
-  max-width: 20px;
+.release-progress-marker::before {
+  content: "";
+  width: 3px;
   height: 3px;
+  border-radius: 99px;
+  background: var(--hairline-strong);
+  transition: width 0.2s var(--ease), background-color 0.18s ease, border-radius 0.2s var(--ease);
+}
+
+.release-progress-marker[aria-current="step"] {
+  z-index: 1;
+}
+
+.release-progress-marker[aria-current="step"]::before {
+  width: min(14px, 100%);
+  height: 3px;
+  border-radius: var(--radius-xs);
   background: var(--text);
 }
 
 .release-progress-marker:focus-visible {
   outline: 2px solid var(--text);
-  outline-offset: 3px;
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .release-progress-marker::before {
+    transition: none;
+  }
 }
 
 .release-position {

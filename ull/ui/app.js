@@ -60,7 +60,8 @@ const releaseDates = new Map([
   ["1.0.56", "2026-11-08"],
   ["1.0.57", "2026-11-08"],
   ["1.0.58", "2026-11-08"],
-  ["1.0.59", "2026-11-08"]
+  ["1.0.59", "2026-11-08"],
+  ["1.0.60", "2026-11-08"]
 ]);
 
 const $ = (selector) => document.querySelector(selector);
@@ -665,6 +666,7 @@ function stopScreenSync(message = "", clearResumePreference = false) {
       if (session.performanceTimer) clearInterval(session.performanceTimer);
       if (session.pollTimer) clearTimeout(session.pollTimer);
       if (session.frame) cancelAnimationFrame(session.frame);
+      if (session.audioFrame) cancelAnimationFrame(session.audioFrame);
       if (session.videoFrame && session.video &&
           typeof session.video.cancelVideoFrameCallback === "function") {
         session.video.cancelVideoFrameCallback(session.videoFrame);
@@ -673,6 +675,12 @@ function stopScreenSync(message = "", clearResumePreference = false) {
         track.onended = null;
         track.stop();
       });
+      session.audioStream?.getTracks().forEach((track) => track.stop());
+      if (session.audioContext && session.audioContext.state !== "closed") {
+        void session.audioContext.close().catch((error) =>
+          console.error("Could not close the Spotify audio analyzer:", error)
+        );
+      }
     }
   }, async () => {
     try {
@@ -945,19 +953,6 @@ function applyDeviceState(device) {
   }
 }
 
-function startSpotifySync() {
-  requestedSyncMode = "spotify";
-  const pending = screenSyncLifecycle.start(runSpotifySyncStart);
-  updatePreview();
-  return pending.catch((error) => {
-    spotifySyncError = error.message;
-    toast(`Could not start Spotify Sync: ${error.message}`);
-  }).finally(() => {
-    if (requestedSyncMode === "spotify") requestedSyncMode = null;
-    updatePreview();
-  });
-}
-
 async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
   if (!artwork?.contentType || !artwork.data) {
     throw new Error("Spotify has no cover art available for the current track.");
@@ -973,11 +968,22 @@ async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) throw new Error("Could not read Spotify cover art.");
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  session.colors = window.ullSpotifySync.createSpotifySyncColors(
+  session.palette = window.ullSpotifySync.createSpotifySyncColors(
     context.getImageData(0, 0, canvas.width, canvas.height).data,
-    session.layout.ledCount
+    5
   );
   session.artworkData = artwork.data;
+  renderSpotifyAudioFrame(session, performance.now(), sendLatestFrame);
+}
+
+function renderSpotifyAudioFrame(session, now, sendLatestFrame) {
+  if (screenSyncSession !== session || !session.palette) return;
+  session.colors = window.ullSpotifySync.createSpotifyReactiveColors(
+    session.palette,
+    session.audioLevels,
+    session.layout.ledCount,
+    Math.max(0, now - session.startedAt) / 1000
+  );
   session.pixelElements.forEach((pixel) => {
     const color = session.colors[Number(pixel.dataset.ledIndex)];
     if (pixel.dataset.color !== color) {
@@ -985,7 +991,21 @@ async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
       pixel.dataset.color = color;
     }
   });
-  await sendLatestFrame();
+  void sendLatestFrame();
+}
+
+function sampleSpotifyAudio(session, now, sendLatestFrame) {
+  if (screenSyncSession !== session) return;
+  session.analyser.getFloatFrequencyData(session.frequencyData);
+  session.audioLevels = window.ullSpotifySync.analyzeSpotifySpectrum(
+    session.frequencyData,
+    session.audioContext.sampleRate,
+    session.analyser.fftSize
+  );
+  renderSpotifyAudioFrame(session, now, sendLatestFrame);
+  session.audioFrame = requestAnimationFrame((nextFrame) =>
+    sampleSpotifyAudio(session, nextFrame, sendLatestFrame)
+  );
 }
 
 async function pollSpotifyArtwork(session, sendLatestFrame) {
@@ -993,23 +1013,24 @@ async function pollSpotifyArtwork(session, sendLatestFrame) {
   try {
     const artwork = await window.ull.getSpotifyArtwork();
     if (screenSyncSession !== session) return;
-    if (!artwork) throw new Error("Spotify is not playing a track.");
-    if (artwork.data !== session.artworkData) {
+    if (artwork && artwork.data !== session.artworkData) {
       await applySpotifyArtwork(session, artwork, sendLatestFrame);
     }
-    session.pollTimer = window.setTimeout(
-      () => void pollSpotifyArtwork(session, sendLatestFrame),
-      2000
-    );
   } catch (error) {
     if (screenSyncSession === session) {
-      spotifySyncError = error.message;
-      stopScreenSync(`Spotify Sync stopped: ${error.message}`);
+      console.error("Could not refresh Spotify cover art:", error);
+    }
+  } finally {
+    if (screenSyncSession === session) {
+      session.pollTimer = window.setTimeout(
+        () => void pollSpotifyArtwork(session, sendLatestFrame),
+        1500
+      );
     }
   }
 }
 
-async function runSpotifySyncStart() {
+async function runSpotifySyncStart(audioCapture, audioContext, audioReady) {
   const generation = ++screenSyncGeneration;
   if (!state.device.connected) throw new Error("Connect the LED controller before starting Spotify Sync.");
   if (typeof window.ull.getSpotifyArtwork !== "function") {
@@ -1028,15 +1049,32 @@ async function runSpotifySyncStart() {
   );
 
   let session;
+  let audioStream;
   let hardwareSyncStarted = false;
   updatePreview();
 
   try {
-    const artwork = await window.ull.getSpotifyArtwork();
+    const [artwork, stream] = await Promise.all([
+      window.ull.getSpotifyArtwork(),
+      audioCapture,
+      audioReady
+    ]);
+    audioStream = stream;
     if (!artwork) {
       throw new Error("Start a track in the Spotify desktop app before enabling Spotify Sync.");
     }
-    if (generation !== screenSyncGeneration) return;
+    if (!stream.getAudioTracks().length) {
+      throw new Error("Windows did not provide desktop audio. Check the system audio capture permission.");
+    }
+    if (generation !== screenSyncGeneration) {
+      stream.getTracks().forEach((track) => track.stop());
+      await audioContext.close();
+      return;
+    }
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.72;
+    audioContext.createMediaStreamSource(stream).connect(analyser);
 
     if (!state.settings.power) {
       const result = await window.ull.updateSettings({ power: true });
@@ -1055,6 +1093,14 @@ async function runSpotifySyncStart() {
       mode: "spotify",
       pollTimer: null,
       colors: null,
+      palette: null,
+      audioLevels: { bass: 0, mid: 0, treble: 0, energy: 0 },
+      audioStream,
+      audioContext,
+      analyser,
+      frequencyData: new Float32Array(analyser.frequencyBinCount),
+      audioFrame: 0,
+      startedAt: performance.now(),
       layout,
       layoutSignature: stripLayoutSignature(layout)
     };
@@ -1068,11 +1114,14 @@ async function runSpotifySyncStart() {
     });
     updatePreview();
     await applySpotifyArtwork(session, artwork, sendLatestFrame);
+    session.audioFrame = requestAnimationFrame((now) =>
+      sampleSpotifyAudio(session, now, sendLatestFrame)
+    );
     session.pollTimer = window.setTimeout(
       () => void pollSpotifyArtwork(session, sendLatestFrame),
-      2000
+      1500
     );
-    toast("Spotify Sync is active. Cover art is read locally.");
+    toast("Spotify Sync is active. Music response uses local desktop audio.");
   } catch (error) {
     if (screenSyncSession === session) {
       await stopScreenSync();
@@ -1083,8 +1132,67 @@ async function runSpotifySyncStart() {
         console.error("Could not stop LED sync after Spotify Sync startup failed:", stopError);
       }
     }
+    if (screenSyncSession !== session) {
+      audioStream?.getTracks().forEach((track) => track.stop());
+      if (audioContext && audioContext.state !== "closed") {
+        await audioContext.close();
+      }
+    }
     throw error;
   }
+}
+
+function startSpotifySync() {
+  if (!state.device.connected) {
+    toast("Connect the LED controller before starting Spotify Sync.");
+    return Promise.resolve(false);
+  }
+  if (screenSyncLifecycle.isStarting || screenSyncLifecycle.isStopping) return Promise.resolve(false);
+  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") {
+    toast("Desktop audio capture is not available in this app environment.");
+    return Promise.resolve(false);
+  }
+
+  let audioCapture;
+  let audioContext;
+  let audioReady;
+  try {
+    audioCapture = navigator.mediaDevices.getDisplayMedia({
+      audio: true,
+      video: { frameRate: 1 }
+    });
+    audioContext = new AudioContext();
+    audioReady = audioContext.resume();
+  } catch (error) {
+    void audioCapture?.then((stream) => stream.getTracks().forEach((track) => track.stop()));
+    void audioReady?.catch(() => {});
+    if (audioContext && audioContext.state !== "closed") {
+      void audioContext.close().catch((closeError) =>
+        console.error("Could not close the Spotify audio analyzer:", closeError)
+      );
+    }
+    toast(`Could not start desktop audio capture: ${error.message}`);
+    return Promise.resolve(false);
+  }
+  requestedSyncMode = "spotify";
+  const pending = screenSyncLifecycle.start(() => runSpotifySyncStart(audioCapture, audioContext, audioReady));
+  updatePreview();
+  return pending.catch((error) => {
+    void audioCapture.then(
+      (stream) => stream.getTracks().forEach((track) => track.stop()),
+      () => {}
+    );
+    if (audioContext.state !== "closed") {
+      void audioContext.close().catch((closeError) =>
+        console.error("Could not close the Spotify audio analyzer:", closeError)
+      );
+    }
+    spotifySyncError = error.message;
+    toast(`Could not start Spotify Sync: ${error.message}`);
+  }).finally(() => {
+    if (requestedSyncMode === "spotify") requestedSyncMode = null;
+    updatePreview();
+  });
 }
 
 async function scanDevices() {
@@ -1164,6 +1272,8 @@ function setupReleaseCarousel() {
   const newerButton = $("#release-newer");
   const position = $("#release-position");
   let currentIndex = 0;
+  let previousIndex = null;
+  markers.style.setProperty("--release-count", String(entries.length));
 
   function showRelease(index) {
     currentIndex = clamp(index, 0, entries.length - 1);
@@ -1173,9 +1283,21 @@ function setupReleaseCarousel() {
       marker.setAttribute("aria-current", entryIndex === currentIndex ? "step" : "false");
       marker.tabIndex = entryIndex === currentIndex ? 0 : -1;
     });
+    if (previousIndex !== null && previousIndex !== currentIndex &&
+        !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const direction = currentIndex > previousIndex ? 1 : -1;
+      entries[currentIndex].animate(
+        [
+          { opacity: 0, transform: `translateX(${direction * 8}px)` },
+          { opacity: 1, transform: "translateX(0)" }
+        ],
+        { duration: 200, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
+      );
+    }
     olderButton.hidden = currentIndex === entries.length - 1;
     newerButton.hidden = currentIndex === 0;
     position.textContent = `${currentIndex + 1}/${entries.length}`;
+    previousIndex = currentIndex;
   }
 
   entries.forEach((entry, index) => {
@@ -1218,8 +1340,8 @@ function setupReleaseCarousel() {
     markers.append(marker);
   });
 
-  olderButton.addEventListener("click", () => showRelease(currentIndex + 1));
   newerButton.addEventListener("click", () => showRelease(currentIndex - 1));
+  olderButton.addEventListener("click", () => showRelease(currentIndex + 1));
   showRelease(currentIndex);
 }
 

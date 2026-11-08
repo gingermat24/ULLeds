@@ -54,7 +54,7 @@ test("renderer scripts load together and expose their APIs", () => {
   assert.equal(typeof context.ullSpotifySync?.createSpotifySyncColors, "function");
 });
 
-test("Spotify Sync reads local cover art and sends one artwork-derived color per LED", () => {
+test("Spotify Sync combines local cover art with live desktop audio analysis", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
@@ -63,16 +63,26 @@ test("Spotify Sync reads local cover art and sends one artwork-derived color per
   assert.match(html, /Spotify Sync/);
   assert.match(html, /id="spotify-sync-toggle"/);
   assert.match(html, /id="spotify-sync-description"/);
-  assert.match(html, /does not sign in to Spotify, record audio, or upload artwork/);
+  assert.match(html, /analyzes system output while active \(not only Spotify\) and does not record or upload audio or artwork/);
   assert.match(app, /window\.ull\.getSpotifyArtwork\(\)/);
-  assert.match(app, /createSpotifySyncColors\([\s\S]*session\.layout\.ledCount/);
+  assert.match(app, /createSpotifySyncColors\([\s\S]*\n\s+5\s*\)/);
+  assert.match(app, /getDisplayMedia\(\{\s+audio: true,\s+video: \{ frameRate: 1 \}/);
+  assert.match(app, /new AudioContext\(\)/);
+  assert.match(app, /analyser\.getFloatFrequencyData/);
+  assert.match(app, /analyzeSpotifySpectrum/);
+  assert.match(app, /createSpotifyReactiveColors/);
+  assert.match(app, /session\.audioFrame = requestAnimationFrame/);
+  assert.match(app, /window\.ull\.getSpotifyArtwork\(\),\s+audioCapture,\s+audioReady/);
+  assert.match(app, /if \(artwork && artwork\.data !== session\.artworkData\)/);
   assert.match(app, /window\.ull\.startScreenSync\("spotify"\)/);
   assert.match(main, /ipcMain\.handle\("spotify-sync:artwork", \(\) => readSpotifyArtwork\(\)\)/);
+  assert.match(main, /setDisplayMediaRequestHandler\(async \(request, callback\)/);
+  assert.match(main, /callback\(\{ video: source, audio: "loopback" \}\)/);
   assert.match(main, /execFile\(helperPath/);
   assert.match(main, /spotify-media\.exe/);
   assert.match(preload, /getSpotifyArtwork: \(\) => ipcRenderer\.invoke\("spotify-sync:artwork"\)/);
   assert.match(preload, /startScreenSync: \(mode = "screen"\) => ipcRenderer\.invoke\("screen-sync:start", mode\)/);
-  assert.doesNotMatch(app, /getDisplayMedia|AudioContext|createMusicSyncColors/);
+  assert.match(app, /audioStream\?\.getTracks\(\)\.forEach\(\(track\) => track\.stop\(\)\)/);
 });
 
 test("update feedback includes an accessible progress bar and reports download size", () => {
@@ -257,31 +267,41 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.match(html, /id="release-track"[^>]*aria-live="polite"/);
-  assert.match(html, /id="release-older"[^>]*aria-label="Older release"/);
-  assert.match(html, /id="release-newer"[^>]*aria-label="Newer release"/);
+  assert.match(html, /id="release-newer" class="icon-btn release-arrow"[^>]*aria-label="Newer release"[^>]*>&lt;<\/button>/);
+  assert.match(html, /id="release-older" class="icon-btn release-arrow"[^>]*aria-label="Older release"[^>]*>&gt;<\/button>/);
   assert.match(html, /id="release-progress-markers"[^>]*role="group"/);
-  assert.match(html, /id="release-position"[^>]*>1\/60<\/output>/);
+  assert.match(html, /id="release-position"[^>]*>1\/61<\/output>/);
   assert.match(app, /releaseDates = new Map/);
   assert.match(app, /\["1\.0\.58", "2026-11-08"\]/);
   assert.match(app, /\["1\.0\.59", "2026-11-08"\]/);
+  assert.match(app, /\["1\.0\.60", "2026-11-08"\]/);
   assert.match(app, /dateLabel\.textContent = "Date unavailable"/);
+  assert.match(app, /newerButton\.addEventListener\("click", \(\) => showRelease\(currentIndex - 1\)\)/);
+  assert.match(app, /olderButton\.addEventListener\("click", \(\) => showRelease\(currentIndex \+ 1\)\)/);
   assert.match(app, /olderButton\.hidden = currentIndex === entries\.length - 1/);
   assert.match(app, /newerButton\.hidden = currentIndex === 0/);
   assert.match(app, /position\.textContent = `\$\{currentIndex \+ 1\}\/\$\{entries\.length\}`/);
+  assert.match(app, /entries\[currentIndex\]\.animate\(/);
+  assert.match(app, /prefers-reduced-motion: reduce/);
+  assert.match(css, /\.release-carousel-navigation \.release-arrow\s*\{[^}]*width:\s*26px/);
+  assert.match(css, /\.icon-btn\s*\{[^}]*border-radius:\s*var\(--radius-xs\);[^}]*background:\s*transparent/s);
   assert.match(css, /\.release-progress-marker\[aria-current="step"\]/);
+  assert.match(css, /\.release-progress-markers\s*\{[^}]*grid-template-columns:\s*repeat\(var\(--release-count,\s*1\),\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /\.release-progress-marker::before\s*\{[^}]*transition:\s*width 0\.2s var\(--ease\)/s);
+  assert.match(css, /\.icon-btn:hover\s*\{[^}]*background:\s*rgb\(255 255 255 \/ 0\.07\)/s);
   assert.match(css, /\.release-entry\[hidden\]\s*\{\s*display:\s*none/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.59", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.60", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 59; version += 1) {
+  for (let version = 0; version <= 60; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.59<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.60<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 

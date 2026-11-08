@@ -22,8 +22,6 @@ jobs:
       - name: Run tests
         run: npm test
       - name: Build the Windows installer
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist:win
       - name: Publish installer and matching release notes
         shell: pwsh

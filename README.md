@@ -10,9 +10,9 @@ or choose a color and effect yourself.
 
 - **Match your display:** Screen Sync samples colors around the edges of your
   screen and updates the LEDs as the picture changes.
-- **Match Spotify artwork:** Spotify Sync reads the currently playing track's
-  cover art through Windows media controls and spreads its dominant colors over
-  the strip. It does not need Spotify sign-in or audio capture.
+- **React to music:** Spotify Sync reads the current track's cover art and
+  analyzes desktop audio locally to pulse and move those colors with the music.
+  It does not need Spotify sign-in, and audio is not recorded or uploaded.
 - **Watch widescreen movies:** ULLeds can detect stable letterbox bars and ask
   before using the detected picture area. You can turn detection off or choose
   the 2.35:1 picture area yourself.
@@ -48,8 +48,10 @@ Local diagnostics record callback rates and processing times, not screen images
 or sampled colors. They are saved to
 `%APPDATA%\ULLeds\screen-sync-diagnostics.log`.
 
-Spotify Sync reads the current track's cover art locally from Windows media
-controls. It does not sign in to Spotify, capture audio, or upload artwork.
+Spotify Sync reads cover art locally from Windows media controls and analyzes
+the desktop audio mix while active to animate the LEDs. Audio capture is not
+limited to Spotify; it includes system output. ULLeds does not record or upload
+audio or artwork.
 
 For widescreen content with black bars, optional detection looks for stable
 letterbox bars and shows a compact prompt at the top of the screen. Choose
