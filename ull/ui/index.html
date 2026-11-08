@@ -303,7 +303,11 @@
               </div>
             </div>
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.48</h3><span>Current</span></header>
+              <header><h3>ULLeds 1.0.49</h3><span>Current</span></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Widescreen detection now uses a compact, always-on-top prompt over fullscreen windows.</li><li>The prompt closes after five seconds without changing the current Screen Sync format; only choosing Use detected applies it.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.48</h3></header>
               <div class="release-category"><strong>Added</strong><ul><li>Added update checks and verified downloads from GitHub Releases. Updates can be installed from the app after this version is installed.</li><li>Temporarily records aggregate controller response timings in %APPDATA%\ULLeds\controller-write-diagnostics.log to investigate control delays; the log contains no colors or screen content.</li></ul></div>
             </article>
             <article class="card release-entry">
@@ -578,17 +582,6 @@
         </div>
       </form>
     </dialog>
-
-    <div id="movie-detection" class="movie-detection hidden" role="status" aria-live="polite">
-      <div>
-        <strong id="movie-detection-title">Widescreen picture detected</strong>
-        <p id="movie-detection-copy"></p>
-      </div>
-      <div class="movie-detection-actions">
-        <button id="use-detected-format" class="primary-btn" type="button">Use for this sync</button>
-        <button id="keep-detecting" class="secondary-btn" type="button">Keep detecting</button>
-      </div>
-    </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 

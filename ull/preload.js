@@ -32,5 +32,7 @@ contextBridge.exposeInMainWorld("ull", Object.freeze({
   onSetupRequest: (callback) => listen("app:open-setup", callback),
   onUpdateFolderRequest: (callback) => listen("updates:choose-folder", callback),
   onUpdateCheckRequest: (callback) => listen("updates:check-request", callback),
-  onScreenSyncMovieDetected: (callback) => listen("screen-sync:movie-detected", callback)
+  onMovieFormatApplied: (callback) => listen("screen-sync:movie-format-applied", callback),
+  onMovieFormatPrompt: (callback) => listen("movie-format:prompt", callback),
+  chooseMovieFormat: (promptId, choice) => ipcRenderer.send("movie-format:choose", { promptId, choice })
 }));

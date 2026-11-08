@@ -41,7 +41,6 @@ let screenSyncGeneration = 0;
 let autoSyncAttempted = false;
 let screenSyncError = "";
 let sceneDialogMode = null;
-let movieDetectionCandidate = null;
 let updateCheckInProgress = false;
 let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
 
@@ -333,29 +332,11 @@ async function applyScene(scene) {
   toast(`Applied ${scene.name}.`);
 }
 
-function renderMovieDetection(message) {
-  if (!screenSyncSession || !Number.isFinite(message?.aspectRatio) ||
-      message.aspectRatio < 1.78 || message.aspectRatio > 2.6) return;
-  movieDetectionCandidate = {
-    aspectRatio: Math.round(message.aspectRatio * 100) / 100
-  };
-  const ratio = movieDetectionCandidate.aspectRatio;
-  $("#movie-detection-title").textContent = message.title;
-  $("#movie-detection-copy").textContent =
-    `ULLeds found a ${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1 picture. Use that ratio for this sync, or keep detecting.`;
-  $("#movie-detection").classList.remove("hidden");
-}
-
-function dismissMovieDetection() {
-  movieDetectionCandidate = null;
-  $("#movie-detection").classList.add("hidden");
-}
-
-function applyDetectedMovieFormat() {
-  if (!screenSyncSession || !movieDetectionCandidate) return;
-  screenSyncSession.detectedAspectRatio = movieDetectionCandidate.aspectRatio;
+function applyDetectedMovieFormat({ aspectRatio }) {
+  if (!screenSyncSession || !Number.isFinite(aspectRatio) ||
+      aspectRatio < 1.78 || aspectRatio > 2.6) return;
+  screenSyncSession.detectedAspectRatio = Math.round(aspectRatio * 100) / 100;
   const ratio = screenSyncSession.detectedAspectRatio;
-  dismissMovieDetection();
   toast(`Using ${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1 for this Screen Sync session.`);
 }
 
@@ -423,8 +404,6 @@ function updatePreview() {
       ? "from saved setup"
       : state.device.connected ? "detected" : "saved"}`
     : "Waiting for controller";
-  if (!screenSyncSession) dismissMovieDetection();
-
   if (selectedLedIndices === null) {
     $("#selection-label").textContent = "All LEDs";
   } else if (selectedLedIndices.size === 0) {
@@ -1370,11 +1349,8 @@ function bindEvents() {
     if (!event.target.checked) {
       screenSyncSession?.letterboxTracker.reset();
       if (screenSyncSession) screenSyncSession.detectedAspectRatio = null;
-      dismissMovieDetection();
     }
   });
-  $("#use-detected-format").addEventListener("click", applyDetectedMovieFormat);
-  $("#keep-detecting").addEventListener("click", dismissMovieDetection);
 
   $("#screen-sync-toggle").addEventListener("click", () => {
     if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
@@ -1450,7 +1426,7 @@ function bindEvents() {
     if (!device.connected) autoSyncAttempted = false;
     else maybeResumeScreenSync();
   });
-  window.ull.onScreenSyncMovieDetected(renderMovieDetection);
+  window.ull.onMovieFormatApplied(applyDetectedMovieFormat);
 
   window.ull.onUpdateProgress((progress) => {
     updateState = {

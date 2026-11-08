@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <title>Widescreen picture detected</title>
+    <link rel="stylesheet" href="movie-format-prompt.css">
+  </head>
+  <body>
+    <main class="prompt" role="status" aria-live="polite">
+      <div class="copy">
+        <h1>Widescreen picture detected</h1>
+        <p id="prompt-copy">Use the detected picture area for Screen Sync?</p>
+      </div>
+      <div class="actions">
+        <button id="keep-current" class="secondary" type="button">Keep current</button>
+        <button id="use-format" class="primary" type="button">Use detected</button>
+      </div>
+      <div class="timeout" aria-hidden="true"><span></span></div>
+    </main>
+    <script src="movie-format-prompt.js"></script>
+  </body>
+</html>

@@ -11,7 +11,6 @@ const {
   ipcMain,
   Menu,
   nativeImage,
-  Notification,
   screen,
   shell,
   Tray
@@ -90,6 +89,9 @@ let updateCheckPromise = null;
 let resetPromise = null;
 let screenSyncDiagnostics = null;
 let pendingMovieFormat = null;
+let movieFormatPromptWindow = null;
+let movieFormatPromptTimer = null;
+let movieFormatPromptSequence = 0;
 const startHidden = process.platform === "win32" && process.argv.includes("--hidden");
 const hasSingleInstanceLock = acquireSingleInstanceLock(app, showMainWindow);
 
@@ -674,7 +676,7 @@ function setSettings(input, updateOutput = true) {
   }
   const changes = validateSettings(input);
   settings = { ...settings, ...changes };
-  if (changes.syncAutoDetect === false) pendingMovieFormat = null;
+  if (changes.syncAutoDetect === false) dismissMovieFormatPrompt();
   if (Object.hasOwn(changes, "deviceProfile") && connectedInfo) {
     connectedInfo = {
       ...connectedInfo,
@@ -706,15 +708,73 @@ function showMainWindow() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
-  dispatchPendingMovieFormat();
 }
 
-function dispatchPendingMovieFormat() {
-  if (!pendingMovieFormat || !mainWindow || mainWindow.isDestroyed() ||
-      !mainWindow.isVisible() || mainWindow.webContents.isLoading()) return;
-  const message = pendingMovieFormat;
+function dismissMovieFormatPrompt() {
+  if (movieFormatPromptTimer) clearTimeout(movieFormatPromptTimer);
+  movieFormatPromptTimer = null;
   pendingMovieFormat = null;
-  mainWindow.webContents.send("screen-sync:movie-detected", message);
+  const prompt = movieFormatPromptWindow;
+  movieFormatPromptWindow = null;
+  if (prompt && !prompt.isDestroyed()) prompt.close();
+}
+
+function showMovieFormatPrompt(message) {
+  dismissMovieFormatPrompt();
+  pendingMovieFormat = message;
+  const { bounds } = screen.getPrimaryDisplay();
+  const width = 460;
+  const height = 116;
+  const prompt = new BrowserWindow({
+    x: Math.round(bounds.x + (bounds.width - width) / 2),
+    y: bounds.y + 16,
+    width,
+    height,
+    show: false,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    focusable: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  movieFormatPromptWindow = prompt;
+  prompt.setAlwaysOnTop(true, "screen-saver");
+  prompt.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  prompt.setMenuBarVisibility(false);
+  prompt.on("closed", () => {
+    if (movieFormatPromptWindow === prompt) {
+      movieFormatPromptWindow = null;
+      if (movieFormatPromptTimer) clearTimeout(movieFormatPromptTimer);
+      movieFormatPromptTimer = null;
+      pendingMovieFormat = null;
+    }
+  });
+  prompt.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  prompt.once("ready-to-show", () => {
+    if (pendingMovieFormat?.promptId !== message.promptId || prompt.isDestroyed()) return;
+    prompt.webContents.send("movie-format:prompt", message);
+    prompt.showInactive();
+    movieFormatPromptTimer = setTimeout(() => {
+      if (pendingMovieFormat?.promptId === message.promptId) dismissMovieFormatPrompt();
+    }, 5000);
+    movieFormatPromptTimer.unref();
+  });
+  prompt.loadFile(path.join(__dirname, "ui", "movie-format-prompt.html")).catch((error) => {
+    console.error("Could not show the widescreen detection prompt:", error);
+    if (movieFormatPromptWindow === prompt) dismissMovieFormatPrompt();
+  });
 }
 
 function createTray() {
@@ -763,7 +823,6 @@ function createWindow() {
   });
   mainWindow.once("ready-to-show", () => {
     if (!startHidden) mainWindow.show();
-    dispatchPendingMovieFormat();
   });
   mainWindow.on("close", (event) => {
     if (isQuitting) return;
@@ -848,7 +907,7 @@ ipcMain.handle("screen-sync:start", () => {
     ledCount: settings.deviceProfile.ledCount,
     audioTracks: 0
   });
-  pendingMovieFormat = null;
+  dismissMovieFormatPrompt();
   screenSyncActive = true;
   updateAnimation();
   return { active: true };
@@ -864,7 +923,7 @@ ipcMain.handle("screen-sync:colors", (_event, colors) => {
 });
 ipcMain.handle("screen-sync:stop", async () => {
   screenSyncActive = false;
-  pendingMovieFormat = null;
+  dismissMovieFormatPrompt();
   try {
     await updateAnimation({ waitForOutput: true });
   } finally {
@@ -891,21 +950,28 @@ ipcMain.on("screen-sync:movie-detected", (event, aspectRatio) => {
   const ratio = Math.round(aspectRatio * 100) / 100;
   const ratioLabel = `${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1`;
   const message = {
+    promptId: String(++movieFormatPromptSequence),
     aspectRatio: ratio,
     title: "Widescreen picture detected",
-    body: `A ${ratioLabel} picture area is visible. Click to choose how Screen Sync uses it.`
+    body: `Use the ${ratioLabel} picture area for Screen Sync?`
   };
-  pendingMovieFormat = message;
-  if (!mainWindow.isVisible() && Notification.isSupported()) {
-    const notification = new Notification({ title: message.title, body: message.body });
-    notification.on("click", () => {
-      if (pendingMovieFormat !== message || !screenSyncActive || !settings.syncAutoDetect) return;
-      showMainWindow();
-    });
-    notification.show();
+  showMovieFormatPrompt(message);
+});
+ipcMain.on("movie-format:choose", (event, choice) => {
+  const prompt = movieFormatPromptWindow;
+  const message = pendingMovieFormat;
+  if (!prompt || prompt.isDestroyed() || event.sender !== prompt.webContents ||
+      !message || typeof choice?.promptId !== "string" ||
+      choice.promptId !== message.promptId || !["use", "keep"].includes(choice.choice) ||
+      !screenSyncActive || !settings.syncAutoDetect) {
     return;
   }
-  dispatchPendingMovieFormat();
+  if (choice.choice === "use" && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("screen-sync:movie-format-applied", {
+      aspectRatio: message.aspectRatio
+    });
+  }
+  dismissMovieFormatPrompt();
 });
 ipcMain.handle("updates:choose-folder", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -1052,6 +1118,7 @@ app.whenReady().then(async () => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  dismissMovieFormatPrompt();
   void controllerWriteDiagnostics?.stop().catch((error) => {
     console.error("Could not finalize controller timing diagnostics:", error);
   });

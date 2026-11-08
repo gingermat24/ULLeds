@@ -107,7 +107,7 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\)\) return;/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
   assert.match(main, /ipcMain\.handle\("screen-sync:colors", \(_event, colors\) => \{\s+if \(!screenSyncActive \|\| !hidDevice \|\| !settings\.power\) return \{ active: false \};/);
-  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+pendingMovieFormat = null;\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
+  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+dismissMovieFormatPrompt\(\);\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
   assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \}/);
 });
 
@@ -150,16 +150,16 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 0;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.48", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.49", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 48; version += 1) {
+  for (let version = 0; version <= 49; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.48<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.49<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -309,18 +309,34 @@ test("widescreen detection is optional, stable, and asks before changing the cur
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
   const screenSync = fs.readFileSync(path.join(__dirname, "..", "screen-sync.js"), "utf8");
+  const promptHtml = fs.readFileSync(path.join(uiDirectory, "movie-format-prompt.html"), "utf8");
+  const promptCss = fs.readFileSync(path.join(uiDirectory, "movie-format-prompt.css"), "utf8");
+  const promptApp = fs.readFileSync(path.join(uiDirectory, "movie-format-prompt.js"), "utf8");
 
   assert.match(html, /id="sync-auto-detect" type="checkbox"/);
-  assert.match(html, /id="use-detected-format"/);
-  assert.match(html, /id="keep-detecting"/);
+  assert.doesNotMatch(html, /movie-detection|use-detected-format|keep-detecting/);
   assert.match(app, /syncAutoDetect: true/);
   assert.match(app, /detectLetterboxAspectRatio/);
   assert.match(app, /notifyMovieFormat\(stableRatio\)/);
   assert.match(app, /function applyDetectedMovieFormat/);
-  assert.match(main, /new Notification\(\{ title: message\.title, body: message\.body \}\)/);
+  assert.match(main, /width = 460;\s+const height = 116/);
+  assert.match(main, /prompt\.setAlwaysOnTop\(true, "screen-saver"\)/);
+  assert.match(main, /setVisibleOnAllWorkspaces\(true, \{ visibleOnFullScreen: true \}\)/);
+  assert.match(main, /prompt\.showInactive\(\)/);
+  assert.match(main, /setTimeout\(\(\) => \{\s+if \(pendingMovieFormat\?\.promptId === message\.promptId\) dismissMovieFormatPrompt\(\);\s+\}, 5000\)/);
+  assert.match(main, /choice\.choice === "use"[\s\S]*screen-sync:movie-format-applied/);
+  assert.doesNotMatch(main, /Notification\(/);
   assert.match(main, /!settings\.syncAutoDetect/);
-  assert.match(preload, /onScreenSyncMovieDetected/);
+  assert.match(preload, /onMovieFormatPrompt/);
+  assert.match(preload, /chooseMovieFormat/);
+  assert.match(preload, /onMovieFormatApplied/);
   assert.match(preload, /notifyMovieFormat: \(aspectRatio\)/);
+  assert.match(promptHtml, /id="use-format"/);
+  assert.match(promptHtml, /id="keep-current"/);
+  assert.match(promptCss, /background: rgb\(18 19 22 \/ 91%\)/);
+  assert.match(promptCss, /animation: expire 5s linear forwards/);
+  assert.match(promptApp, /choose\("use"\)/);
+  assert.match(promptApp, /choose\("keep"\)/);
   assert.match(screenSync, /function detectLetterboxAspectRatio/);
   assert.match(screenSync, /function createLetterboxStability/);
 });

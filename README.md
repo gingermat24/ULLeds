@@ -43,8 +43,10 @@ does not record or upload screen images. It samples the display edges rather
 than individual app windows, so the part of the display being shown matters.
 
 For widescreen content with black bars, optional detection looks for stable
-letterbox bars and asks before changing the picture area for that sync session.
-If you prefer, disable detection or select **Cinema widescreen (2.35:1)** in
+letterbox bars and shows a compact prompt at the top of the screen. Choose
+**Use detected** within five seconds to change the picture area for that sync
+session; otherwise the prompt closes and the current format stays unchanged.
+You can also disable detection or select **Cinema widescreen (2.35:1)** in
 Device settings.
 
 ## After installation
