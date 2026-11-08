@@ -118,17 +118,17 @@ test("topbar uses compact status, shared page padding, and matching title-bar co
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
-  assert.match(css, /\.topbar \{[^}]*grid-template-columns: minmax\(0, 1fr\) max-content;[^}]*height: 60px;/s);
+  assert.match(css, /\.topbar \{[^}]*grid-template-columns: minmax\(0, 1fr\) max-content;[^}]*height: 52px;/s);
   assert.match(css, /\.tabs \{[^}]*grid-column: 1;[^}]*width: 100%;/s);
-  assert.match(css, /\.tab\.active \{[^}]*background: rgb\(255 255 255 \/ 0\.1\);/s);
-  assert.match(css, /\.topbar button, \.tabs, \.device-status \{ -webkit-app-region: no-drag; \}/);
+  assert.match(css, /\.tab\.active::after \{[^}]*background: #fff;[^}]*opacity: 1;/s);
+  assert.match(css, /\.topbar button,\s+\.tabs,\s+\.device-status \{\s+-webkit-app-region: no-drag;/);
   assert.match(css, /\.device-status \{[^}]*grid-column: 2;[^}]*width: max-content;[^}]*background: transparent;/s);
   assert.match(css, /#device-label \{\s+flex: 0 1 auto;\s+min-width: 0;\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
   assert.match(css, /main \{\s+flex: 1 1 auto;\s+min-height: 0;\s+overflow-y: auto;\s+scrollbar-gutter: stable;/);
   assert.match(css, /\.app \{\s+display: flex;\s+flex-direction: column;[\s\S]*height: 100dvh;/);
-  assert.match(css, /--page-gutter: clamp\(22px, 3\.2vw, 52px\)/);
+  assert.match(css, /--page-gutter: clamp\(20px, 2\.8vw, 44px\)/);
   assert.match(css, /\.topbar \{[^}]*padding: 0 calc\(var\(--page-gutter\) \+ max\(148px, 100% - env\(titlebar-area-width, 100%\)\)\) 0 var\(--page-gutter\);/s);
-  assert.match(css, /@media \(max-width: 820px\) \{[\s\S]*\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\);\s+grid-template-rows: 64px 46px;[\s\S]*\.tabs \{\s+grid-column: 1;\s+grid-row: 2;[\s\S]*\.device-status \{ grid-column: 1; grid-row: 1;/);
+  assert.match(css, /@media \(max-width: 820px\) \{[\s\S]*\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\);\s+grid-template-rows: 52px 42px;[\s\S]*\.tabs \{\s+grid-column: 1;\s+grid-row: 2;[\s\S]*\.device-status \{\s+grid-column: 1;\s+grid-row: 1;/);
   assert.match(main, /backgroundColor: "#050505",[\s\S]*titleBarOverlay: \{\s+color: "#050505",\s+symbolColor: "#F5F5F5",\s+height: 64/);
   assert.doesNotMatch(html, /class="tab-indicator"/);
   assert.doesNotMatch(app, /positionTabIndicator|tab-indicator/);
@@ -147,20 +147,20 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(app, /document\.addEventListener\("change", \(event\) => \{\s+if \(event\.target instanceof HTMLInputElement && event\.target\.type === "range"\)/);
   assert.doesNotMatch(app, /settingsRevision/);
   assert.match(css, /\.preference-row input\[type="checkbox"\]::after \{[^}]*top: 50%;[^}]*transform: translateY\(-50%\);/s);
-  assert.match(css, /\.preference-row input\[type="checkbox"\]:checked::after \{[^}]*transform: translate\(20px, -50%\);/s);
+  assert.match(css, /\.preference-row input\[type="checkbox"\]:checked::after \{[^}]*transform: translate\(18px, -50%\);/s);
   assert.match(css, /\.preference-row input\[type="checkbox"\] \{[\s\S]*border-radius: 99px;/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.53", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.54", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 53; version += 1) {
+  for (let version = 0; version <= 54; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span>Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.53<\/h3><span>Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.54<\/h3><span>Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -168,10 +168,10 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.match(css, /\.preview-card\s*\{[^}]*container-type:\s*inline-size/s);
-  assert.match(css, /--led-rail-size:\s*clamp\(10px,\s*1\.5cqi,\s*18px\)/);
-  assert.match(css, /\.led-edge\s*\{[^}]*gap:\s*clamp\(2px,\s*0\.28cqi,\s*4px\)/s);
-  assert.match(css, /\.led-pixel\.selected\s*\{[^}]*outline:\s*2px solid #fff;[^}]*outline-offset:\s*-2px/s);
-  assert.match(css, /\.led-pixel:focus-visible:not\(\.selected\)\s*\{[^}]*outline:\s*2px solid #fff/s);
+  assert.match(css, /--led-rail-size:\s*clamp\(9px,\s*1\.4cqi,\s*16px\)/);
+  assert.match(css, /\.led-edge\s*\{[^}]*gap:\s*clamp\(2px,\s*0\.25cqi,\s*3px\)/s);
+  assert.match(css, /\.led-pixel\.selected\s*\{[^}]*outline:\s*1\.5px solid #fff;[^}]*outline-offset:\s*-1\.5px/s);
+  assert.match(css, /\.led-pixel:focus-visible:not\(\.selected\)\s*\{[^}]*outline:\s*1\.5px solid #fff/s);
   assert.match(css, /:focus-visible:not\(\.led-pixel\)/);
   assert.doesNotMatch(css, /\.led-pixel(?:\.selected)?:hover\s*\{[^}]*transform:\s*scale/);
 });
@@ -181,7 +181,7 @@ test("dropdowns and text fields use a single border for visible keyboard focus",
 
   assert.match(css, /:is\(button, input, summary, \.led-edge\):focus-visible:not\(\.led-pixel\)/);
   assert.match(css, /:focus-visible:not\(\.led-pixel\):not\(select\):not\(\.hex-input\):not\(\.fps-number\):not\(\.scene-name-input\)/);
-  assert.match(css, /:is\(select, \.hex-input, \.fps-number, \.scene-name-input\):focus-visible\s*\{[^}]*outline:\s*none;[^}]*border-color:\s*rgb\(255 255 255 \/ 0\.48\)/s);
+  assert.match(css, /:is\(select, \.hex-input, \.fps-number, \.scene-name-input\):focus-visible\s*\{[^}]*outline:\s*none;[^}]*border-color:\s*var\(--hairline-focus\)/s);
 });
 
 test("Shift-click selects an inclusive LED range and selected focus keeps its selection mark", () => {
@@ -495,15 +495,14 @@ test("the Device page can list and switch between detected compatible controller
   assert.match(html, /Arbitrary HID devices are not driven/);
 });
 
-test("the interface uses a single typeface and no top-left branding", () => {
+test("the interface uses deliberate sans and monospace typography without top-left branding", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.doesNotMatch(html, /class="brand|brand-name|brand-dot/);
   assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), />\s*ULLeds\s*</);
   assert.match(css, /--sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;/);
-  assert.match(css, /--mono: var\(--sans\);/);
-  assert.doesNotMatch(css, /ui-monospace|Consolas|SF Mono|Cascadia Mono|monospace/);
+  assert.match(css, /--mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;/);
 });
 
 test("the Windows title bar blends into the app and the native menu bar is removed", () => {
