@@ -337,10 +337,10 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(html, /id="release-newer" class="icon-btn release-arrow"[^>]*aria-label="Newer release"[^>]*>&lt;<\/button>/);
   assert.match(html, /id="release-older" class="icon-btn release-arrow"[^>]*aria-label="Older release"[^>]*>&gt;<\/button>/);
   assert.match(html, /id="release-progress-markers"[^>]*role="group"/);
-  assert.match(html, /id="release-position"[^>]*>1\/69<\/output>/);
+  assert.match(html, /id="release-position"[^>]*>1\/68<\/output>/);
   assert.match(app, /releaseDates = new Map/);
   assert.match(app, /\["1\.0\.68", "2026-11-09"\]/);
-  assert.match(app, /\["1\.0\.67", "2026-11-09"\]/);
+  assert.doesNotMatch(app, /\["1\.0\.67"/);
   assert.match(app, /\["1\.0\.66", "2026-11-09"\]/);
   assert.match(app, /\["1\.0\.65", "2026-11-08"\]/);
   assert.match(app, /\["1\.0\.64", "2026-11-08"\]/);
@@ -366,16 +366,19 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(css, /\.release-entry\[hidden\]\s*\{\s*display:\s*none/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.68", () => {
+test("release notes have one combined entry for 1.0.68 instead of duplicate version 1.0.67", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 68; version += 1) {
+  for (let version = 0; version <= 66; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
+  assert.equal(releaseVersions.filter((entry) => entry === "1.0.67").length, 0);
+  assert.equal(releaseVersions.filter((entry) => entry === "1.0.68").length, 1);
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
   assert.match(html, /<header><h3>ULLeds 1\.0\.68<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /Reduced idle controller work:[\s\S]*?timing diagnostics flush only after new data arrives/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
