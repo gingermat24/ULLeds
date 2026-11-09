@@ -1525,6 +1525,10 @@ function setupReleaseCarousel() {
     marker.type = "button";
     marker.className = "release-progress-marker";
     marker.setAttribute("aria-label", `Show ULLeds ${version}`);
+    marker.style.setProperty(
+      "--release-position",
+      `${entries.length === 1 ? 50 : index * 100 / (entries.length - 1)}%`
+    );
     marker.addEventListener("click", () => showRelease(index));
     marker.addEventListener("keydown", (event) => {
       if (event.key === "ArrowLeft") {

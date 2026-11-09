@@ -73,6 +73,7 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(app, /compareVersions\(version, state\.version\)/);
   assert.match(app, /versionComparison > 0 \? "Update" : "Downgrade"/);
   assert.match(app, /header\.insertBefore\(actions, header\.querySelector\("h3"\)\.nextSibling\)/);
+  assert.match(css, /\.release-download\s*\{[^}]*height:\s*auto;[^}]*font-size:\s*14px/s);
   assert.match(app, /showVersionNotice\(latest\)/);
   assert.match(app, /startReleaseUpdate\(installer\.version, updateButton\)/);
   assert.match(app, /window\.ull\.installRelease\(version\)/);
@@ -345,7 +346,7 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(html, /id="release-older" class="icon-btn release-arrow"[^>]*aria-label="Older release"[^>]*>&gt;<\/button>/);
   assert.match(html, /id="release-progress-markers"[^>]*role="group"/);
   assert.match(html, /id="release-history-status"[^>]*role="status"/);
-  assert.match(html, /id="release-position"[^>]*>1\/70<\/output>/);
+  assert.match(html, /id="release-position"[^>]*>1\/71<\/output>/);
   assert.match(app, /dateLabel\.textContent = "Date unavailable"/);
   assert.match(app, /newerButton\.onclick = \(\) => showRelease\(\(currentIndex - 1 \+ entries\.length\) % entries\.length\)/);
   assert.match(app, /olderButton\.onclick = \(\) => showRelease\(\(currentIndex \+ 1\) % entries\.length\)/);
@@ -359,9 +360,9 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(css, /\.release-carousel-navigation \.release-arrow\s*\{[^}]*width:\s*26px/);
   assert.match(css, /\.icon-btn\s*\{[^}]*border-radius:\s*var\(--radius-xs\);[^}]*background:\s*transparent/s);
   assert.match(css, /\.release-progress-marker\[aria-current="step"\]/);
-  assert.match(css, /\.release-progress-markers\s*\{[^}]*grid-template-columns:\s*repeat\(var\(--release-count,\s*1\),\s*minmax\(0,\s*1fr\)\)/s);
-  assert.match(css, /\.release-progress-marker:first-child::before\s*\{[^}]*justify-self:\s*start/);
-  assert.match(css, /\.release-progress-marker:last-child::before\s*\{[^}]*justify-self:\s*end/);
+  assert.match(css, /\.release-progress-markers\s*\{[^}]*position:\s*relative;[^}]*height:\s*20px/s);
+  assert.match(css, /\.release-progress-marker\s*\{[^}]*left:\s*var\(--release-position\);[^}]*transform:\s*translateX\(-50%\);[^}]*width:\s*calc\(100% \/ var\(--release-count,\s*1\)\)/s);
+  assert.match(app, /entries\.length === 1 \? 50 : index \* 100 \/ \(entries\.length - 1\)/);
   assert.match(css, /\.release-position\s*\{[^}]*margin-left:\s*auto;[^}]*text-align:\s*right/s);
   assert.match(css, /\.release-progress-marker::before\s*\{[^}]*transition:\s*width 0\.2s var\(--ease\)/s);
   assert.match(css, /\.icon-btn:hover\s*\{[^}]*background:\s*rgb\(255 255 255 \/ 0\.07\)/s);
@@ -379,9 +380,10 @@ test("release notes have one combined entry for 1.0.68 instead of duplicate vers
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.68").length, 1);
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.69").length, 1);
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.70").length, 1);
+  assert.equal(releaseVersions.filter((entry) => entry === "1.0.71").length, 1);
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.70<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.71<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.match(html, /Reduced idle controller work:[\s\S]*?timing diagnostics flush only after new data arrives/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });

@@ -1800,8 +1800,11 @@ select:disabled {
 }
 
 .release-download {
-  min-width: 92px;
-  padding: 5px 10px;
+  min-width: 0;
+  height: auto;
+  padding: 0 3px;
+  font-size: 14px;
+  line-height: 1.2;
 }
 
 .release-download-status {
@@ -1845,19 +1848,20 @@ select:disabled {
 }
 
 .release-progress-markers {
-  display: grid;
-  grid-template-columns: repeat(var(--release-count, 1), minmax(0, 1fr));
+  position: relative;
+  height: 20px;
   flex: 1;
-  align-items: center;
-  justify-items: center;
   min-width: 0;
 }
 
 .release-progress-marker {
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: var(--release-position);
+  transform: translateX(-50%);
   display: grid;
   place-items: center;
-  width: 100%;
+  width: calc(100% / var(--release-count, 1));
   min-width: 0;
   height: 20px;
   padding: 0;
@@ -1865,18 +1869,6 @@ select:disabled {
   border-radius: var(--radius-xs);
   background: transparent;
   cursor: pointer;
-}
-
-.release-progress-marker:first-child::before {
-  justify-self: start;
-}
-
-.release-progress-marker:last-child::before {
-  justify-self: end;
-}
-
-.release-progress-marker:only-child::before {
-  justify-self: center;
 }
 
 .release-progress-marker::before {
