@@ -14,6 +14,7 @@ test("controller timing diagnostics aggregate timings without recording device d
   const diagnostics = createControllerWriteDiagnostics(logPath, () => {});
 
   diagnostics.start();
+  assert.equal(diagnostics.isFlushScheduled, false);
   diagnostics.recordWrite({
     command: "RB",
     status: "written",
@@ -21,6 +22,7 @@ test("controller timing diagnostics aggregate timings without recording device d
     queueMs: 3.2,
     writeMs: 8.7
   });
+  assert.equal(diagnostics.isFlushScheduled, true);
   diagnostics.recordWrite({
     command: "SC",
     status: "superseded",

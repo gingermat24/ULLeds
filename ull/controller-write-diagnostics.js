@@ -31,6 +31,15 @@ function createControllerWriteDiagnostics(filePath, onError = console.error) {
     windowStartedAt = performance.now();
   }
 
+  function scheduleFlush() {
+    if (!stream || summaryTimer) return;
+    summaryTimer = setTimeout(() => {
+      summaryTimer = null;
+      flush();
+    }, 2000);
+    summaryTimer.unref();
+  }
+
   function hasSamples() {
     return settingsSaveMs.length > 0 || COMMANDS.some((command) =>
       STATUSES.some((status) => writes[command].counts[status] > 0)
@@ -44,7 +53,7 @@ function createControllerWriteDiagnostics(filePath, onError = console.error) {
     output.on("error", (error) => {
       if (stream === output) {
         stream = null;
-        if (summaryTimer) clearInterval(summaryTimer);
+        if (summaryTimer) clearTimeout(summaryTimer);
         summaryTimer = null;
       }
       onError("Could not write controller timing diagnostics:", error);
@@ -53,8 +62,6 @@ function createControllerWriteDiagnostics(filePath, onError = console.error) {
     writes = createWriteStats();
     settingsSaveMs = [];
     windowStartedAt = performance.now();
-    summaryTimer = setInterval(flush, 2000);
-    summaryTimer.unref();
   }
 
   function recordWrite({ command, status, reportCount, queueMs, writeMs }) {
@@ -70,6 +77,7 @@ function createControllerWriteDiagnostics(filePath, onError = console.error) {
     summary.reportCount += reportCount;
     summary.queueMs.push(queueMs);
     if (writeMs !== null) summary.writeMs.push(writeMs);
+    scheduleFlush();
   }
 
   function recordSettingsSave(durationMs) {
@@ -78,11 +86,12 @@ function createControllerWriteDiagnostics(filePath, onError = console.error) {
       throw new TypeError("Controller timing diagnostics received an invalid settings-save duration.");
     }
     settingsSaveMs.push(durationMs);
+    scheduleFlush();
   }
 
   function stop() {
     if (!stream) return Promise.resolve();
-    if (summaryTimer) clearInterval(summaryTimer);
+    if (summaryTimer) clearTimeout(summaryTimer);
     summaryTimer = null;
     flush();
     const output = stream;
@@ -93,7 +102,13 @@ function createControllerWriteDiagnostics(filePath, onError = console.error) {
     });
   }
 
-  return Object.freeze({ recordSettingsSave, recordWrite, start, stop });
+  return Object.freeze({
+    get isFlushScheduled() { return Boolean(summaryTimer); },
+    recordSettingsSave,
+    recordWrite,
+    start,
+    stop
+  });
 }
 
 function createWriteStats() {

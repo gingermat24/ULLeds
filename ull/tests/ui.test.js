@@ -178,6 +178,9 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(main, /ipcMain\.handle\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+const result = setSettings\(input, !powerChanged\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
   assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\)\) return;/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
+  assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{[\s\S]*?if \(hidDevice\) \{[\s\S]*?writeColor\(settings\.color\)[\s\S]*?return;\s+\}/);
+  const animation = main.slice(main.indexOf("function updateAnimation"), main.indexOf("function deviceState"));
+  assert.match(animation, /settings\.effect === "steady"[\s\S]*?return;\s+\}\s+const interval/);
   assert.match(main, /ipcMain\.handle\("screen-sync:colors", \(_event, colors\) => \{\s+if \(!screenSyncActive \|\| !hidDevice \|\| !settings\.power\) return \{ active: false \};/);
   assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+dismissMovieFormatPrompt\(\);\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
   assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \}/);
@@ -311,6 +314,20 @@ test("Device settings are grouped by controller, sync, startup, and reset", () =
   assert.match(css, /\.settings-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
 });
 
+test("controller reconnect polling sleeps while connected and retries only while disconnected", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const watcher = main.slice(main.indexOf("function stopDeviceWatcher"), main.indexOf("async function connectDevice"));
+  const startup = main.slice(main.indexOf("void scanAndConnect().catch"), main.indexOf('app.on("activate"'));
+
+  assert.match(watcher, /function scheduleDeviceWatcher\(\) \{\s+if \(watcherTimer \|\| isQuitting \|\| hidDevice\) return/);
+  assert.match(watcher, /watcherTimer = setTimeout\(async \(\) =>/);
+  assert.match(watcher, /if \(isQuitting \|\| hidDevice\) return/);
+  assert.match(watcher, /if \(!hidDevice\) scheduleDeviceWatcher\(\)/);
+  assert.doesNotMatch(watcher, /setInterval/);
+  assert.match(main, /if \(hidDevice\) stopDeviceWatcher\(\);\s+else scheduleDeviceWatcher\(\)/);
+  assert.match(startup, /if \(!hidDevice\) scheduleDeviceWatcher\(\)/);
+});
+
 test("release carousel has dated entries, accessible navigation, and progress markers", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
@@ -320,8 +337,9 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(html, /id="release-newer" class="icon-btn release-arrow"[^>]*aria-label="Newer release"[^>]*>&lt;<\/button>/);
   assert.match(html, /id="release-older" class="icon-btn release-arrow"[^>]*aria-label="Older release"[^>]*>&gt;<\/button>/);
   assert.match(html, /id="release-progress-markers"[^>]*role="group"/);
-  assert.match(html, /id="release-position"[^>]*>1\/67<\/output>/);
+  assert.match(html, /id="release-position"[^>]*>1\/68<\/output>/);
   assert.match(app, /releaseDates = new Map/);
+  assert.match(app, /\["1\.0\.67", "2026-11-09"\]/);
   assert.match(app, /\["1\.0\.66", "2026-11-09"\]/);
   assert.match(app, /\["1\.0\.65", "2026-11-08"\]/);
   assert.match(app, /\["1\.0\.64", "2026-11-08"\]/);
@@ -347,16 +365,16 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(css, /\.release-entry\[hidden\]\s*\{\s*display:\s*none/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.66", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.67", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 66; version += 1) {
+  for (let version = 0; version <= 67; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.66<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.67<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 
@@ -425,7 +443,7 @@ test("update installation stops controller work without waiting for HID shutdown
   assert.notEqual(prepare, -1);
   assert.notEqual(install, -1);
   assert.notEqual(updaterLaunch, -1);
-  assert.match(main.slice(prepare, install), /void disconnectDevice\(\)/);
+  assert.match(main.slice(prepare, install), /void disconnectDevice\("", \{ scheduleScan: false \}\)/);
   assert.match(main.slice(install, updaterLaunch), /prepareForUpdate\(\)/);
   assert.doesNotMatch(main.slice(install, updaterLaunch), /await/);
 });

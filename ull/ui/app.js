@@ -50,6 +50,7 @@ let updateCheckInProgress = false;
 let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
 
 const releaseDates = new Map([
+  ["1.0.67", "2026-11-09"],
   ["1.0.66", "2026-11-09"],
   ["1.0.65", "2026-11-08"],
   ["1.0.64", "2026-11-08"],

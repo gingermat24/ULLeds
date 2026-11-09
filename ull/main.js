@@ -580,7 +580,29 @@ function broadcastDeviceState(error = "") {
   }
 }
 
-function disconnectDevice(error = "") {
+function stopDeviceWatcher() {
+  if (watcherTimer) clearTimeout(watcherTimer);
+  watcherTimer = null;
+}
+
+function scheduleDeviceWatcher() {
+  if (watcherTimer || isQuitting || hidDevice) return;
+  watcherTimer = setTimeout(async () => {
+    watcherTimer = null;
+    if (isQuitting || hidDevice) return;
+    try {
+      await scanAndConnect();
+    } catch (error) {
+      console.error("Could not scan for the LED controller:", error);
+      deviceError = error.message;
+      broadcastDeviceState(error.message);
+    }
+    if (!hidDevice) scheduleDeviceWatcher();
+  }, 5000);
+  watcherTimer.unref();
+}
+
+function disconnectDevice(error = "", { scheduleScan = true } = {}) {
   if (animationTimer) clearInterval(animationTimer);
   animationTimer = null;
   let closePromise = Promise.resolve();
@@ -597,17 +619,17 @@ function disconnectDevice(error = "") {
   connectedInfo = null;
   deviceError = error;
   broadcastDeviceState(error);
+  if (scheduleScan) scheduleDeviceWatcher();
   return closePromise;
 }
 
 function prepareForUpdate() {
-  if (watcherTimer) clearInterval(watcherTimer);
-  watcherTimer = null;
+  stopDeviceWatcher();
   if (animationTimer) clearInterval(animationTimer);
   animationTimer = null;
   screenSyncActive = false;
 
-  void disconnectDevice();
+  void disconnectDevice("", { scheduleScan: false });
 
   tray?.destroy();
   tray = null;
@@ -633,7 +655,7 @@ async function connectDeviceNow(targetPath, knownDevices) {
   const devices = knownDevices || await getDeviceList();
   const selected = devices.find((device) => device.path === targetPath);
   if (!selected) throw new Error("That LED controller is no longer available. Scan again.");
-  await disconnectDevice();
+  await disconnectDevice("", { scheduleScan: false });
   try {
     hidDevice = await HIDAsync.open(selected.path);
     hidDevice.on("error", (error) => disconnectDevice(error.message));
@@ -683,6 +705,7 @@ async function connectDeviceNow(targetPath, knownDevices) {
     if (!settings.color && profile.color) settings.color = profile.color;
     saveSettings();
     deviceError = "";
+    stopDeviceWatcher();
     updateAnimation({ preserveOutput: settings.resumeScreenSync });
     broadcastDeviceState();
     return { ...deviceState(), error: "" };
@@ -706,6 +729,8 @@ async function scanAndConnect() {
     );
     if (selected) await connectDevice(selected.path, devices);
   }
+  if (hidDevice) stopDeviceWatcher();
+  else scheduleDeviceWatcher();
   return {
     devices,
     ...deviceState()
@@ -1364,19 +1389,10 @@ app.whenReady().then(async () => {
     console.error("Could not scan for the LED controller:", error);
     deviceError = error.message;
     broadcastDeviceState(error.message);
+    scheduleDeviceWatcher();
+  }).finally(() => {
+    if (!hidDevice) scheduleDeviceWatcher();
   });
-  watcherTimer = setInterval(async () => {
-    try {
-      if (!hidDevice) {
-        await scanAndConnect();
-      }
-    } catch (error) {
-      console.error("Could not scan for the LED controller:", error);
-      deviceError = error.message;
-      broadcastDeviceState(error.message);
-    }
-  }, 5000);
-  watcherTimer.unref();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -1392,7 +1408,7 @@ app.on("before-quit", () => {
   void controllerWriteDiagnostics?.stop().catch((error) => {
     console.error("Could not finalize controller timing diagnostics:", error);
   });
-  if (watcherTimer) clearInterval(watcherTimer);
+  stopDeviceWatcher();
   screenSyncActive = false;
   disconnectDevice();
   if (updateServer) {
