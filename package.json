@@ -1,7 +1,7 @@
 {
   "name": "ulleds",
   "productName": "ULLeds",
-  "version": "1.0.65",
+  "version": "1.0.66",
   "description": "A desktop controller for USB monitor-backlight LED strips",
   "author": "gingermat",
   "license": "UNLICENSED",
@@ -10,7 +10,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "npm start",
-    "test": "node --test ull/tests/controller-catalog.test.js ull/tests/controller-write-diagnostics.test.js ull/tests/device-profile.test.js ull/tests/github-releases.test.js ull/tests/hid-output.test.js ull/tests/led-selection.test.js ull/tests/local-update-server.test.js ull/tests/protocol.test.js ull/tests/release-notes.test.js ull/tests/reset-data.test.js ull/tests/scene-data.test.js ull/tests/screen-sync.test.js ull/tests/screen-sync-diagnostics.test.js ull/tests/screen-sync-lifecycle.test.js ull/tests/single-instance.test.js ull/tests/spotify-sync.test.js ull/tests/strip-layout.test.js ull/tests/ui.test.js ull/tests/update-feed.test.js",
+    "test": "node --test ull/tests/controller-catalog.test.js ull/tests/controller-write-diagnostics.test.js ull/tests/device-profile.test.js ull/tests/github-releases.test.js ull/tests/hid-output.test.js ull/tests/led-selection.test.js ull/tests/local-update-server.test.js ull/tests/protocol.test.js ull/tests/release-notes.test.js ull/tests/reset-data.test.js ull/tests/scene-data.test.js ull/tests/screen-sync.test.js ull/tests/screen-sync-diagnostics.test.js ull/tests/screen-sync-lifecycle.test.js ull/tests/shutdown-power.test.js ull/tests/single-instance.test.js ull/tests/spotify-sync.test.js ull/tests/strip-layout.test.js ull/tests/ui.test.js ull/tests/update-feed.test.js",
     "build:spotify-helper": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-spotify-helper.ps1",
     "release:notes": "node scripts/release-notes.js",
     "dist:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/create-icon.ps1 && electron-builder --win nsis --publish never && node scripts/write-update-manifest.js"

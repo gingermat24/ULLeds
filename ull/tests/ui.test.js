@@ -183,6 +183,18 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \}/);
 });
 
+test("Windows session shutdown powers off connected LEDs without changing saved power", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const shutdownPower = fs.readFileSync(path.join(__dirname, "..", "shutdown-power.js"), "utf8");
+
+  assert.match(main, /app\.on\("session-end", \(event\) => \{\s+void turnOffForSessionEnd\(event, \{/);
+  assert.match(main, /powered: settings\.power,\s+connected: Boolean\(hidDevice\)/);
+  assert.match(main, /return writeColor\(settings\.color, 1, false\)/);
+  assert.match(main, /Could not turn off the LEDs before Windows session end/);
+  assert.match(shutdownPower, /SESSION_END_REASONS = new Set\(\["shutdown", "critical", "logoff"\]\)/);
+  assert.doesNotMatch(main.slice(main.indexOf('app.on("session-end"'), main.indexOf('app.on("session-end"') + 700), /settings\.power\s*=/);
+});
+
 test("topbar uses compact status, shared page padding, and integrated window controls", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
@@ -308,8 +320,9 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(html, /id="release-newer" class="icon-btn release-arrow"[^>]*aria-label="Newer release"[^>]*>&lt;<\/button>/);
   assert.match(html, /id="release-older" class="icon-btn release-arrow"[^>]*aria-label="Older release"[^>]*>&gt;<\/button>/);
   assert.match(html, /id="release-progress-markers"[^>]*role="group"/);
-  assert.match(html, /id="release-position"[^>]*>1\/66<\/output>/);
+  assert.match(html, /id="release-position"[^>]*>1\/67<\/output>/);
   assert.match(app, /releaseDates = new Map/);
+  assert.match(app, /\["1\.0\.66", "2026-11-09"\]/);
   assert.match(app, /\["1\.0\.65", "2026-11-08"\]/);
   assert.match(app, /\["1\.0\.64", "2026-11-08"\]/);
   assert.match(app, /\["1\.0\.58", "2026-11-08"\]/);
@@ -334,16 +347,16 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(css, /\.release-entry\[hidden\]\s*\{\s*display:\s*none/);
 });
 
-test("release notes have separate entries for every version from 1.0.0 through 1.0.65", () => {
+test("release notes have separate entries for every version from 1.0.0 through 1.0.66", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const releaseVersions = [...html.matchAll(/<h3>ULLeds (1\.0\.\d+)<\/h3>/g)].map((match) => match[1]);
 
-  for (let version = 0; version <= 65; version += 1) {
+  for (let version = 0; version <= 66; version += 1) {
     assert.equal(releaseVersions.filter((entry) => entry === `1.0.${version}`).length, 1);
   }
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.65<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.66<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
 

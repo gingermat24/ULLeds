@@ -38,6 +38,7 @@ const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
 const { normalizeScenes } = require("./scene-data");
 const { acquireSingleInstanceLock } = require("./single-instance");
+const { turnOffForSessionEnd } = require("./shutdown-power");
 const {
   compareVersions,
   findReleaseInstaller,
@@ -430,7 +431,7 @@ function animatedColor(now) {
   return { color: settings.color, brightness: 1 };
 }
 
-function writeColor(color, effectBrightness = 1) {
+function writeColor(color, effectBrightness = 1, power = settings.power) {
   if (!hidDevice) return;
   const profile = settings.deviceProfile;
   const ledCount = profile?.ledCount;
@@ -440,14 +441,14 @@ function writeColor(color, effectBrightness = 1) {
       ? settings.ledColors[index]
       : color
   );
-  return writeColors(colors, effectBrightness);
+  return writeColors(colors, effectBrightness, power);
 }
 
 function enqueueHidReports(device, reports, command = "RB") {
   return hidOutputQueue.enqueue(device, reports, () => hidDevice === device, command);
 }
 
-async function writeColors(colors, effectBrightness = 1) {
+async function writeColors(colors, effectBrightness = 1, power = settings.power) {
   if (!hidDevice) return;
   const device = hidDevice;
   const profile = settings.deviceProfile;
@@ -460,7 +461,7 @@ async function writeColors(colors, effectBrightness = 1) {
   const packets = buildColorFrames(
     colors,
     settings.brightness,
-    settings.power,
+    power,
     effectBrightness,
     profile?.colorOrder || "RGB",
     firstMessageId,
@@ -1400,4 +1401,20 @@ app.on("before-quit", () => {
   }
   tray?.destroy();
   tray = null;
+});
+
+app.on("session-end", (event) => {
+  void turnOffForSessionEnd(event, {
+    platform: process.platform,
+    powered: settings.power,
+    connected: Boolean(hidDevice),
+    writeOff: () => {
+      if (animationTimer) clearInterval(animationTimer);
+      animationTimer = null;
+      screenSyncActive = false;
+      return writeColor(settings.color, 1, false);
+    }
+  }).catch((error) => {
+    console.error("Could not turn off the LEDs before Windows session end:", error);
+  });
 });
