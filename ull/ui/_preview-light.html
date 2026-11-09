@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>ULLeds</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand" aria-label="ULLeds">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-word">ULLeds</span>
+        </div>
+
+        <nav class="tabs" role="tablist" aria-label="Sections">
+          <button class="tab active" data-view="light" role="tab" aria-selected="true">Lighting</button>
+          <button class="tab" data-view="scenes" role="tab" aria-selected="false" tabindex="-1">Scenes</button>
+          <button class="tab" data-view="settings" role="tab" aria-selected="false" tabindex="-1">Device</button>
+          <button class="tab" data-view="updates" role="tab" aria-selected="false" tabindex="-1">Updates</button>
+        </nav>
+
+        <div class="device-status" id="device-status" role="status" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="device-label">Finding LEDs</span>
+          <button id="scan-device" class="icon-btn" type="button" title="Scan again" aria-label="Scan for controllers again">
+            <span aria-hidden="true">↻</span>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="view" id="view-light" role="tabpanel">
+          <div class="light-grid">
+            <div class="card preview-card">
+              <div class="card-header">
+                <div class="heading-block">
+                  <div class="card-label">Live preview</div>
+                  <h2 id="preview-title">Behind your monitor</h2>
+                </div>
+                <div class="power-control">
+                  <span class="power-caption" aria-hidden="true">Power</span>
+                  <button id="power-toggle" class="power-switch" type="button" role="switch" aria-checked="true" aria-label="LED power: on">
+                    <span class="power-track" aria-hidden="true"><span class="power-knob"></span></span>
+                    <span id="power-state" class="power-state">On</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="preview-stage">
+                <div class="preview-ambient" aria-hidden="true"></div>
+                <div class="monitor" id="monitor">
+                  <div class="monitor-screen" aria-hidden="true"></div>
+                  <div class="led-edge led-top" id="led-top" data-edge="top" tabindex="0" role="group" aria-label="Top LED strip"></div>
+                  <div class="led-edge led-left" id="led-left" data-edge="left" tabindex="0" role="group" aria-label="Left LED strip"></div>
+                  <div class="led-edge led-right" id="led-right" data-edge="right" tabindex="0" role="group" aria-label="Right LED strip"></div>
+                  <div class="led-edge led-bottom hidden" id="led-bottom" data-edge="bottom" tabindex="0" role="group" aria-label="Bottom LED strip"></div>
+                </div>
+              </div>
+
+              <div class="preview-footer">
+                <div class="selection-summary">
+                  <strong id="selection-label">All LEDs</strong>
+                  <span id="preview-led-count">Detecting…</span>
+                </div>
+                <button id="select-all" class="ghost-btn" type="button">Select all</button>
+              </div>
+            </div>
+
+            <div class="card controls-card">
+              <div class="controls-head">
+                <div class="card-label">Controls</div>
+                <p>Adjust the light for your selection.</p>
+              </div>
+
+              <div class="control-group">
+                <div class="field-head">
+                  <label for="color-picker">Color</label>
+                  <span class="field-note">Pick or type a hex</span>
+                </div>
+                <div class="color-row">
+                  <input id="color-picker" type="color" value="#008100" aria-label="Pick a color">
+                  <input id="hex-color" class="hex-input" type="text" value="#008100" maxlength="7" spellcheck="false" aria-label="Hex color">
+                </div>
+              </div>
+
+              <div class="control-group">
+                <div class="range-row">
+                  <label for="brightness">Brightness</label>
+                  <output id="brightness-value">50%</output>
+                </div>
+                <input id="brightness" type="range" min="0" max="100" value="50">
+              </div>
+
+              <details class="color-tuning">
+                <summary>LED color tuning</summary>
+                <p>Adjust channel balance if your LEDs look different from the selected color.</p>
+                <div class="tuning-channel">
+                  <label for="rgb-red">Red <output id="rgb-red-value">100%</output></label>
+                  <input id="rgb-red" type="range" min="50" max="150" value="100">
+                </div>
+                <div class="tuning-channel">
+                  <label for="rgb-green">Green <output id="rgb-green-value">100%</output></label>
+                  <input id="rgb-green" type="range" min="50" max="150" value="100">
+                </div>
+                <div class="tuning-channel">
+                  <label for="rgb-blue">Blue <output id="rgb-blue-value">100%</output></label>
+                  <input id="rgb-blue" type="range" min="50" max="150" value="100">
+                </div>
+                <button id="reset-color-tuning" class="ghost-btn" type="button">Reset channel balance</button>
+              </details>
+
+              <div class="control-group">
+                <label for="effect">Effect</label>
+                <select id="effect">
+                  <option value="steady">Solid</option>
+                  <option value="breathe">Breathe</option>
+                  <option value="spectrum">Spectrum</option>
+                  <option value="palette">Palette drift</option>
+                </select>
+              </div>
+
+              <div id="speed-control" class="control-group hidden">
+                <div class="range-row">
+                  <label for="speed">Speed</label>
+                  <output id="speed-value">48%</output>
+                </div>
+                <input id="speed" type="range" min="1" max="100" value="48">
+              </div>
+
+              <details id="palette-tuning" class="color-tuning palette-tuning hidden">
+                <summary>Edit effect palette</summary>
+                <p>These colors are used by Palette drift and are saved with each scene.</p>
+                <div class="palette-swatches" id="palette-swatches"></div>
+                <button id="add-palette-color" class="ghost-btn" type="button">Add palette color</button>
+              </details>
+
+              <div class="sync-section">
+                <div class="sync-heading">
+                  <div class="card-label">Sync</div>
+                  <p>Follow your screen or your music.</p>
+                </div>
+
+                <div class="sync-block">
+                  <div>
+                    <div class="sync-title">Screen Sync</div>
+                    <div class="sync-desc" id="screen-sync-description">Match LEDs to your display</div>
+                  </div>
+                  <button id="screen-sync-toggle" class="secondary-btn" type="button">Start</button>
+                </div>
+
+                <div class="sync-block">
+                  <div>
+                    <div class="sync-title">Music Sync</div>
+                    <div class="sync-desc" id="music-sync-description">React to Spotify and other audio apps</div>
+                  </div>
+                  <button id="music-sync-toggle" class="secondary-btn" type="button">Start</button>
+                </div>
+                <p class="music-sync-privacy">Audio is analyzed on this PC only. ULLeds does not record or upload it.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view hidden" id="view-scenes" role="tabpanel">
+          <div class="section-header">
+            <div class="section-heading">
+              <div class="card-label">Scenes</div>
+              <h2>Saved setups</h2>
+            </div>
+            <button id="save-scene" class="primary-btn" type="button">Save current setup</button>
+          </div>
+          <p class="scene-intro">Each setup saves color, brightness, effect, speed, and per-LED colors. Device calibration stays unchanged.</p>
+          <div class="scene-list" id="scene-grid" aria-live="polite"></div>
+        </section>
+
+        <section class="view hidden" id="view-settings" role="tabpanel">
+          <div class="section-header">
+            <div class="section-heading">
+              <div class="card-label">Device</div>
+              <h2>Controller &amp; profile</h2>
+            </div>
+            <button id="open-setup" class="secondary-btn" type="button">Edit profile</button>
+          </div>
+
+          <div class="settings-grid">
+            <div class="settings-column">
+              <div class="card controller-picker">
+                <label for="controller-select">USB controller</label>
+                <select id="controller-select" aria-label="Select USB LED controller">
+                  <option value="">Scanning for compatible controllers…</option>
+                </select>
+                <p>Choose any connected ULLeds-compatible controller. Arbitrary HID devices are not driven. Use the scan button in the header to refresh this list.</p>
+              </div>
+
+              <div class="card details-card">
+                <div class="detail-row">
+                  <span>Controller</span>
+                  <strong id="settings-device">—</strong>
+                </div>
+                <div class="detail-row">
+                  <span>LED count</span>
+                  <strong id="settings-count">—</strong>
+                </div>
+                <div class="detail-row">
+                  <span>Color order</span>
+                  <strong id="settings-order">—</strong>
+                </div>
+                <div class="detail-row">
+                  <span>Layout</span>
+                  <strong id="settings-layout">—</strong>
+                </div>
+              </div>
+
+              <div class="card startup-card">
+                <label class="preference-row" for="start-with-windows">
+                  <span>
+                    <strong>Start ULLeds with Windows</strong>
+                    <small>Restore your saved LED color after you sign in.</small>
+                  </span>
+                  <input id="start-with-windows" type="checkbox">
+                </label>
+                <label class="preference-row" for="resume-screen-sync">
+                  <span>
+                    <strong>Resume Screen Sync at startup</strong>
+                    <small>Automatically sync the primary display when ULLeds starts.</small>
+                  </span>
+                  <input id="resume-screen-sync" type="checkbox">
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-column">
+              <div class="card sync-fps-card">
+                <div class="sync-fps-heading">
+                  <div>
+                    <h3>Screen Sync speed</h3>
+                    <p>Choose how often ULLeds captures and updates your LEDs.</p>
+                  </div>
+                  <output id="sync-fps-value" for="sync-fps-range sync-fps-number">30 FPS</output>
+                </div>
+                <div class="fps-control-row">
+                  <input id="sync-fps-range" type="range" min="5" max="60" step="1" value="30" aria-label="Screen Sync frames per second">
+                  <label class="fps-number-label" for="sync-fps-number">FPS</label>
+                  <input id="sync-fps-number" class="fps-number" type="number" min="5" max="60" step="1" value="30">
+                </div>
+                <small>Higher rates update more often and may use more CPU. Default: 30 FPS.</small>
+              </div>
+
+              <div class="card sync-area-card">
+                <label for="sync-content-mode">Screen Sync picture area</label>
+                <p>Choose the area your movie fills. Widescreen mode samples the picture, away from 2.35:1 letterbox bars.</p>
+                <select id="sync-content-mode">
+                  <option value="display">Full display</option>
+                  <option value="cinema235">Cinema widescreen (2.35:1)</option>
+                </select>
+              </div>
+
+              <div class="card startup-card">
+                <label class="preference-row" for="sync-auto-detect">
+                  <span>
+                    <strong>Detect widescreen movies</strong>
+                    <small>Look for stable letterbox bars during Screen Sync. ULLeds will ask before using the detected picture ratio.</small>
+                  </span>
+                  <input id="sync-auto-detect" type="checkbox">
+                </label>
+              </div>
+
+              <div class="card reset-card">
+                <div>
+                  <h3>Reset ULLeds</h3>
+                  <p>Clear saved lighting setups, colors, device settings, sync preferences, the update folder, and imported lighting profiles. ULLeds stays installed, and its browser cache is kept.</p>
+                </div>
+                <button id="reset-all-data" class="danger-btn" type="button">Reset all data</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view hidden" id="view-updates" role="tabpanel">
+          <div class="section-header">
+            <div class="section-heading">
+              <div class="card-label">Updates</div>
+              <h2>Update ULLeds</h2>
+            </div>
+            <span class="version-label">Version <strong id="app-version">—</strong></span>
+          </div>
+
+          <div class="card update-card">
+            <h3>Update source</h3>
+            <p>Check GitHub Releases for a newer version or use a local update folder.</p>
+            <div class="update-sources" role="radiogroup" aria-label="Update source">
+              <label class="update-source-option" for="update-source-github">
+                <input id="update-source-github" type="radio" name="update-source" value="github">
+                <span>
+                  <strong>GitHub Releases</strong>
+                  <small>Checks for the latest public release</small>
+                </span>
+              </label>
+              <label class="update-source-option" for="update-source-local">
+                <input id="update-source-local" type="radio" name="update-source" value="local">
+                <span>
+                  <strong>Local folder</strong>
+                  <small>Use an update package from this PC</small>
+                </span>
+              </label>
+            </div>
+            <p id="github-update-note" class="source-note">Checks the public ULLeds GitHub Releases and downloads verified updates.</p>
+            <div class="btn-row">
+              <button id="check-updates" class="primary-btn" type="button">Check for updates</button>
+            </div>
+            <div id="local-update-controls" class="local-update-controls hidden">
+              <button id="choose-update-folder" class="secondary-btn" type="button">Choose folder</button>
+              <p class="folder-path" id="update-folder-label">No folder selected</p>
+            </div>
+            <div class="update-message hidden" id="update-message" role="status" aria-live="polite">
+              <div id="update-status-text"></div>
+              <div
+                class="update-progress hidden"
+                id="update-progress"
+                role="progressbar"
+                aria-label="Update download progress"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <span id="update-progress-fill"></span>
+              </div>
+              <div class="update-progress-detail hidden" id="update-progress-detail"></div>
+              <div id="update-actions"></div>
+            </div>
+          </div>
+
+          <section class="release-log" aria-labelledby="release-log-title">
+            <div class="section-header release-log-heading">
+              <div>
+                <div class="card-label">RELEASE NOTES</div>
+                <h2 id="release-log-title">What changed</h2>
+              </div>
+            </div>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.58</h3><span>Current</span></header>
+              <div class="release-category"><strong>Added</strong><ul><li>Added Music Sync for Spotify and other audio apps using local system-audio analysis, with no Spotify login or audio recording.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Kept top LEDs sampling picture colors when small bright overlays cross widescreen letterbox bars.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Applied bundled Cormorant Garamond titles, Noto Sans body text, and a shared spacing scale.</li><li>Automated Windows release builds and uploads from version tags, with GitHub notes generated from this changelog.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.57</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Kept Lighting controls grouped together instead of spreading them across the full card height.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.56</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Kept page gutters, card padding, control sizes, and spacing consistent while resizing the window.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.55</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Expanded the lighting layout on large displays, scaled controls to fit the available space, matched the monitor preview to your display's aspect ratio, and rounded the LED previews to match the interface.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.54</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Refined the interface with tighter spacing, hairline borders, understated active tabs, compact controls, and clearer visual hierarchy.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.53</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Redesigned the app with a cleaner black-and-white interface, softer surfaces, and consistent controls.</li><li>Made the widescreen prompt compact and translucent, and stopped repeated prompts for already-seen movie formats during a Screen Sync session.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.52</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Screen Sync no longer drops nearly half its samples when the 30 FPS capture timestamps vary slightly.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.51</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Removed the extra focus outline from dropdowns and text fields.</li><li>Added local Screen Sync callback and sampling timing diagnostics to help pinpoint low frame rates.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.50</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Screen Sync returns to your saved picture area after widescreen letterbox bars disappear.</li><li>Shift-click selects every LED between the previous and current LED; the selected outline no longer turns into a conflicting focus ring.</li><li>The widescreen prompt now uses the app's shared styles and button presets.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.49</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Added a compact, semi-transparent movie-format prompt at the top center of the screen, including over fullscreen windows.</li><li>Choosing Use detected within five seconds applies the detected ratio for the current Screen Sync session. If the prompt times out or you choose Keep current, Screen Sync keeps its existing format.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.48</h3></header>
+              <div class="release-category"><strong>Added</strong><ul><li>Added GitHub in-app update checks and verified downloads. Users on 1.0.47 or earlier need to install 1.0.48 manually once before in-app updates are available.</li><li>Added temporary aggregate settings-save and USB-write timing diagnostics at %APPDATA%\ULLeds\controller-write-diagnostics.log. The log records timings and counts only, not screen content, colors, or device identifiers.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.47</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Made the connection status compact and unified the page spacing.</li><li>Matched the Windows title bar to the app header.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.46</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Aligned the connection status with the full-height Windows title-bar controls and kept the scrollbar below the header.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.45</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Reorganized the top navigation and connection status for steadier alignment across window sizes.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.44</h3></header>
+              <div class="release-category"><strong>Added</strong><ul><li>Scenes now save, rename, duplicate, and restore complete lighting setups.</li><li>Optional widescreen detection asks before applying a stable detected movie picture ratio.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.43</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Screen Sync can sample inside the picture area of 2.35:1 widescreen movies instead of sampling letterbox bars.</li><li>The 1280-pixel capture cap scales the full display; it does not crop the capture.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.42</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Screen Sync limits desktop capture resolution to reduce processing work while preserving the existing color-sampling resolution.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.41</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Launching ULLeds again reopens the existing window instead of starting a second controller session, preserving Screen Sync state.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.40</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Screen Sync follows newly presented display frames and sends the newest sampled colors as soon as the current controller write completes, reducing avoidable delay.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.39</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>The LED preview scales with the window, and selecting a single LED no longer enlarges it over neighboring LEDs.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.38</h3></header>
+              <div class="release-category"><strong>Diagnostic</strong><ul><li>Screen Sync records timestamped counts of ULLeds USB color writes in %APPDATA%\ULLeds\screen-sync-diagnostics.log. The log does not include screen pixels or color values.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.37</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Screen Sync initialization no longer prevents the interface from loading, so buttons and controls respond again.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.36</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Controller discovery no longer blocks the app's main thread while enumerating USB devices.</li><li>The interface and setup wizard appear immediately while device discovery runs in the background.</li><li>Startup discovery reuses its device scan rather than enumerating the same controllers multiple times.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.35</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Screen Sync uses representative sampled pixels directly, avoiding invented colors from patch averages and transition blending.</li><li>Repeated Stop clicks now share one stop request, and Stop remains available while Screen Sync is starting.</li></ul></div>
+              <div class="release-category"><strong>Changed</strong><ul><li>Screen Sync explicitly rejects audio tracks; it only samples display video.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.34</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Screen Sync keeps using the selected strip direction when you edit a profile while sync is running.</li><li>Screen-facing left and right colors are explicitly mapped to their matching LED sides in either strip direction.</li></ul></div>
+              <div class="release-category"><strong>Changed</strong><ul><li>Rebuilt the Windows, tray, and taskbar icons from the new 1024 × 1024 app artwork.</li><li>Power and preference switches now share the same track and thumb proportions.</li><li>Strip direction choices spell out the full route from the monitor's front view.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.33</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Detecting LED counts now handles both HID report formats, including 75-LED controllers.</li><li>Edited strip layouts stay visible on the connected controller and take precedence over older imported profiles after reconnecting.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Power-off output remains black, and the live switch state stays in sync with the controller.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.32</h3></header>
+              <div class="release-category"><strong>Changed</strong><ul><li>Power is now a labelled switch that reports the live LED state, so On and Off can no longer read as the opposite action.</li><li>The whole interface uses a single typeface, and the top-left logo has been removed.</li><li>The Windows title bar is black to match the app, and the redundant native menu bar is gone.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Switching the LEDs off now leaves the preview dark, so the preview and the controller agree.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.31</h3></header>
+              <div class="release-category"><strong>Changed</strong><ul><li>Redesigned the interface in a Nothing/CMF language: pure black surfaces, hairline borders, monospaced labels, and a single red accent.</li><li>Removed Liquid Glass, glow, and archived Scenes from the active interface.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Powering off now always reaches the controller, even while Screen Sync is active, so the button and the LEDs stay in agreement.</li><li>Only one release is marked Current in the changelog.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Lighting updates and Screen Sync frames skip work while the output is off.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.30</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Power changes stop Screen Sync first and wait for the requested lighting output to settle.</li><li>Stopping Screen Sync waits for the saved LED colors or selected lighting effect to be restored.</li></ul></div>
+              <div class="release-category"><strong>Changed</strong><ul><li>Archived Liquid Glass without removing its implementation or settings markup.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.29</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Refreshed the interface with a more spacious Liquid Glass layout and refined controls.</li><li>Manual Screen Sync now uses the direct primary-display capture path already used by automatic resume.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.28</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Preference switch thumbs stay vertically centered in both states.</li><li>Rapid setting changes are saved in order without allowing older responses to overwrite newer control values.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Power changes are sent immediately, and slider changes are flushed when released while continuing to update during dragging.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.27</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Glass controls use a dark neutral tint instead of a white overlay.</li><li>Range slider thumbs are vertically centered on their tracks.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.26</h3></header>
+              <div class="release-category"><strong>Changed</strong><ul><li>Removed the ULLeds logo and title from the top-left of the interface.</li><li>Reworked Liquid Glass with clearer frosted translucency and a cleaner, quieter surface treatment.</li></ul></div>
+              <div class="release-category"><strong>Removed</strong><ul><li>Removed decorative glow, ambient lighting, and drop shadows throughout the interface.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.25</h3></header>
+              <div class="release-category"><strong>Changed</strong><ul><li>Redesigned the interface with optional Liquid Glass controls, adjustable transparency, animated tab selection, and filled range sliders.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Added clearer tab and control accessibility labels and keyboard selection state.</li><li>Screen Sync FPS remains editable while typing, and section changes return to the top.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.24</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Controller discovery accepts valid device-info replies even when another HID reader changes the response ID.</li><li>Saved Screen Sync no longer suppresses manual lighting controls when automatic resume fails.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.23</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Reset keeps the active controller connected and restores its detected profile.</li><li>The Windows app, tray, and refreshed shortcuts use the updated icon.</li></ul></div>
+              <div class="release-category"><strong>New</strong><ul><li>Choose between connected compatible controllers from Device settings.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Added separate release entries for every version from 1.0.0 through 1.0.23.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.22</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>The top navigation stays centered when controller status changes.</li><li>Connection details fit their reserved space instead of shifting the tabs.</li></ul></div>
+              <div class="release-category"><strong>Changed</strong><ul><li>Updated the app artwork and regenerated the Windows icon.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.21</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Reset clears saved settings without removing active browser data.</li><li>Windows shortcuts refresh to the current app icon after install or update.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.20</h3></header>
+              <div class="release-category"><strong>New</strong><ul><li>Added a confirmation flow to reset saved settings and imported lighting profiles.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Reset preserves Electron browser data and only removes ULLeds settings and selected legacy profiles.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.19</h3></header>
+              <div class="release-category"><strong>Changed</strong><ul><li>Fresh installs now start at #008100 and 50% brightness.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>The interface fills wide windows and scales spacing and type up on large displays.</li><li>The Windows icon is generated from the supplied app.png.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.18</h3></header>
+              <div class="release-category"><strong>New</strong><ul><li>Adjustable Screen Sync speed from 5 to 60 FPS, defaulting to 30.</li><li>A dedicated Updates page with local-folder updates and GitHub Releases marked Coming Soon.</li></ul></div>
+              <div class="release-category"><strong>Changed</strong><ul><li>Uses the matching saved LED count when the controller misses its count reply.</li><li>Screen capture and LED updates follow the selected FPS.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Device and update layouts adapt to narrower windows.</li><li>The app icon can be supplied as a PNG for the window, tray, and installer.</li></ul></div>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Matching controllers can connect using their saved strip profile if the startup count handshake times out.</li><li>Reduced-motion preferences apply at every window size.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.17</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Screen Sync samples screen edges more responsively and calibrates RGB channels.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.16</h3></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Restored Screen Sync state cleanly when reopening the app.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.15</h3></header>
+              <div class="release-category"><strong>New</strong><ul><li>Windows sign-in startup and optional automatic Screen Sync resume.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Restores saved lighting and shortens the update restart flow.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.14</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Shortened the update restart flow and clarified that ULLeds reopens automatically.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.13</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Stopped controller work before update installation to make restart more reliable.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.12</h3></header>
+              <div class="release-category"><strong>New</strong><ul><li>Added visible update download progress.</li></ul></div>
+              <div class="release-category"><strong>Removed</strong><ul><li>Archived Scenes from the active interface.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.11</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.10</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.9</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.8</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.7</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.6</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.5</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.4</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.3</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.2</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.1</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.0</h3></header>
+              <div class="release-category"><strong>History</strong><ul><li>This installer predates the available source commits; its individual changes could not be verified.</li></ul></div>
+            </article>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="setup-dialog" class="wizard">
+      <form method="dialog">
+        <div class="wizard-progress">
+          <span class="wizard-step active"></span>
+          <span class="wizard-step"></span>
+          <span class="wizard-step"></span>
+        </div>
+        <div class="card-label">STRIP PROFILE</div>
+        <h2 id="wizard-title">Set up your strip</h2>
+        <p id="wizard-copy"></p>
+        <div id="wizard-content"></div>
+        <div class="wizard-actions">
+          <button id="wizard-back" class="secondary-btn hidden" type="button">Back</button>
+          <button id="wizard-next" class="primary-btn" type="button">Continue</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="reset-dialog" class="wizard reset-dialog">
+      <form method="dialog">
+        <div class="card-label">RESET ULLeds</div>
+        <h2>Clear all saved data?</h2>
+        <p>This resets saved lighting setups, colors, preferences, and the update folder, and removes imported lighting profiles. The active compatible controller stays connected and selected so ULLeds can continue detecting and controlling it. Browser data and the app installation are kept.</p>
+        <div class="wizard-actions">
+          <button id="cancel-reset" class="secondary-btn" type="submit" value="cancel">Keep my data</button>
+          <button id="confirm-reset" class="danger-btn" type="button">Delete and reset</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="scene-dialog" class="wizard scene-dialog">
+      <form id="scene-form">
+        <div class="card-label">SAVED SETUP</div>
+        <h2 id="scene-dialog-title">Name this setup</h2>
+        <p id="scene-dialog-copy">Choose a name that will help you find this lighting later.</p>
+        <label class="wizard-field" for="scene-name">Setup name</label>
+        <input id="scene-name" class="scene-name-input" type="text" maxlength="36" required autocomplete="off">
+        <div class="wizard-actions">
+          <button id="cancel-scene" class="secondary-btn" type="button">Cancel</button>
+          <button id="save-scene-name" class="primary-btn" type="submit">Save setup</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="delete-scene-dialog" class="wizard reset-dialog">
+      <form method="dialog">
+        <div class="card-label">SAVED SETUP</div>
+        <h2>Delete this setup?</h2>
+        <p id="delete-scene-name"></p>
+        <div class="wizard-actions">
+          <button id="cancel-delete-scene" class="secondary-btn" type="submit" value="cancel">Keep setup</button>
+          <button id="confirm-delete-scene" class="danger-btn" type="button">Delete setup</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    
+    
+    
+    
+    
+    
+    
+  <script>
+  const fills = { "led-top": 24, "led-left": 9, "led-right": 9 };
+  for (const [id, count] of Object.entries(fills)) {
+    const host = document.getElementById(id);
+    for (let i = 0; i < count; i += 1) {
+      const b = document.createElement("button");
+      b.className = "led-pixel";
+      b.style.backgroundColor = "#008100";
+      b.style.opacity = "0.5";
+      host.appendChild(b);
+    }
+  }
+</script></body>
+</html>
