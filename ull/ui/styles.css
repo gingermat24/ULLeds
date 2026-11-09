@@ -1794,12 +1794,14 @@ select:disabled {
 
 .release-actions {
   display: flex;
-  justify-content: flex-end;
-  margin-top: var(--space-3);
+  flex: 0 0 auto;
+  justify-content: flex-start;
+  margin: 0;
 }
 
 .release-download {
   min-width: 92px;
+  padding: 5px 10px;
 }
 
 .release-download-status {
@@ -1865,6 +1867,18 @@ select:disabled {
   cursor: pointer;
 }
 
+.release-progress-marker:first-child::before {
+  justify-self: start;
+}
+
+.release-progress-marker:last-child::before {
+  justify-self: end;
+}
+
+.release-progress-marker:only-child::before {
+  justify-self: center;
+}
+
 .release-progress-marker::before {
   content: "";
   width: 3px;
@@ -1897,10 +1911,13 @@ select:disabled {
 }
 
 .release-position {
+  flex: 0 0 auto;
+  margin-left: auto;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  text-align: right;
   white-space: nowrap;
 }
 

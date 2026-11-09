@@ -220,7 +220,7 @@ async function loadReleaseDownloads() {
       button.setAttribute("aria-label", `${actionLabel} to ULLeds ${version}`);
       button.addEventListener("click", () => void startReleaseUpdate(version, button));
       actions.append(button);
-      entry.append(actions);
+      header.insertBefore(actions, header.querySelector("h3").nextSibling);
     }
 
     const latest = installers[0];
