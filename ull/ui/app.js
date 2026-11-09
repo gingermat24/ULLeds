@@ -49,29 +49,7 @@ let sceneDialogMode = null;
 let updateCheckInProgress = false;
 let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
 
-const releaseDates = new Map([
-  ["1.0.68", "2026-11-09"],
-  ["1.0.66", "2026-11-09"],
-  ["1.0.65", "2026-11-08"],
-  ["1.0.64", "2026-11-08"],
-  ["1.0.47", "2026-11-08"],
-  ["1.0.48", "2026-11-08"],
-  ["1.0.49", "2026-11-08"],
-  ["1.0.50", "2026-11-08"],
-  ["1.0.51", "2026-11-08"],
-  ["1.0.52", "2026-11-08"],
-  ["1.0.53", "2026-11-08"],
-  ["1.0.54", "2026-11-08"],
-  ["1.0.55", "2026-11-08"],
-  ["1.0.56", "2026-11-08"],
-  ["1.0.57", "2026-11-08"],
-  ["1.0.58", "2026-11-08"],
-  ["1.0.59", "2026-11-08"],
-  ["1.0.60", "2026-11-08"],
-  ["1.0.61", "2026-11-08"],
-  ["1.0.62", "2026-11-08"],
-  ["1.0.63", "2026-11-08"]
-]);
+let selectedReleaseVersion = null;
 
 const $ = (selector) => document.querySelector(selector);
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -197,10 +175,16 @@ async function startReleaseUpdate(version, button) {
 
 async function loadReleaseDownloads() {
   const status = $("#release-download-status");
+  const historyStatus = $("#release-history-status");
   try {
-    const installers = await window.ull.listReleaseDownloads();
+    const [installers, releases] = await Promise.all([
+      window.ull.listReleaseDownloads(),
+      window.ull.listReleaseHistory()
+    ]);
     if (!Array.isArray(installers)) throw new Error("GitHub returned an invalid release list.");
+    renderReleaseHistory(releases);
     status.classList.add("hidden");
+    historyStatus.classList.add("hidden");
 
     const installerByVersion = new Map(installers.map((installer) => [installer.version, installer]));
     const latestVersion = installers[0]?.version;
@@ -247,7 +231,101 @@ async function loadReleaseDownloads() {
     console.error("Could not load GitHub release downloads:", error);
     status.textContent = "Could not load release downloads. Check your connection and try again.";
     status.classList.remove("hidden");
+    historyStatus.textContent = "Could not load GitHub release notes. Showing the built-in changelog.";
+    historyStatus.classList.remove("hidden");
   }
+}
+
+function renderReleaseCategories(entry, categories) {
+  const existingCategories = entry.querySelectorAll(".release-category");
+  existingCategories.forEach((category) => category.remove());
+  for (const category of categories) {
+    if (typeof category?.name !== "string" || !Array.isArray(category.items)) continue;
+    const items = category.items.filter((item) => typeof item === "string" && item.trim());
+    if (items.length === 0) continue;
+
+    const section = document.createElement("div");
+    section.className = "release-category";
+    const heading = document.createElement("strong");
+    heading.textContent = category.name;
+    const list = document.createElement("ul");
+    for (const item of items) {
+      const listItem = document.createElement("li");
+      listItem.textContent = item;
+      list.append(listItem);
+    }
+    section.append(heading, list);
+    entry.append(section);
+  }
+}
+
+function renderReleaseHistory(releases) {
+  if (!Array.isArray(releases)) throw new Error("GitHub returned an invalid release history.");
+  const track = $("#release-track");
+  const entries = new Map([...track.querySelectorAll(".release-entry")].map((entry) => {
+    const version = entry.querySelector("h3").textContent.match(/\d+\.\d+\.\d+/)?.[0];
+    if (!version) throw new Error("A changelog entry is missing its version.");
+    return [version, entry];
+  }));
+  const publishedByVersion = new Map();
+  for (const release of releases) {
+    if (typeof release?.version !== "string" || !/^\d+\.\d+\.\d+$/.test(release.version)) continue;
+    publishedByVersion.set(release.version, release);
+    if (!entries.has(release.version)) {
+      const entry = document.createElement("article");
+      entry.className = "card release-entry";
+      const header = document.createElement("header");
+      const title = document.createElement("h3");
+      title.textContent = `ULLeds ${release.version}`;
+      header.append(title);
+      entry.append(header);
+      entries.set(release.version, entry);
+    }
+  }
+
+  for (const [version, entry] of entries) {
+    const release = publishedByVersion.get(version);
+    const header = entry.querySelector("header");
+    let legacyBadge = header.querySelector(".release-legacy");
+    if (release) {
+      legacyBadge?.remove();
+      if (Array.isArray(release.categories) && release.categories.length > 0) {
+        renderReleaseCategories(entry, release.categories);
+      }
+    } else {
+      if (!legacyBadge) {
+        legacyBadge = document.createElement("span");
+        legacyBadge.className = "release-legacy";
+        legacyBadge.textContent = "Legacy";
+        header.append(legacyBadge);
+      }
+    }
+
+    header.querySelector(".release-date")?.remove();
+    const releaseDate = typeof release?.date === "string" &&
+      !Number.isNaN(Date.parse(release.date)) ? release.date : null;
+    const dateLabel = document.createElement(releaseDate ? "time" : "span");
+    dateLabel.className = "release-date";
+    if (releaseDate) {
+      dateLabel.dateTime = releaseDate;
+      dateLabel.textContent = new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC"
+      }).format(new Date(releaseDate));
+    } else {
+      dateLabel.textContent = "Date unavailable";
+    }
+    const badge = header.querySelector(".release-current, .release-legacy");
+    header.insertBefore(dateLabel, badge);
+  }
+
+  const orderedEntries = [...entries.entries()]
+    .sort(([left], [right]) => window.ullGithubReleases.compareVersions(right, left))
+    .map(([, entry]) => entry);
+  track.replaceChildren(...orderedEntries);
+  setupReleaseCarousel();
 }
 
 function queueSettings(changes, immediate = false) {
@@ -1403,12 +1481,20 @@ function setupReleaseCarousel() {
   const olderButton = $("#release-older");
   const newerButton = $("#release-newer");
   const position = $("#release-position");
-  let currentIndex = 0;
+  const selectedIndex = selectedReleaseVersion
+    ? entries.findIndex((entry) =>
+      entry.querySelector("h3").textContent.match(/\d+\.\d+\.\d+/)?.[0] === selectedReleaseVersion
+    )
+    : -1;
+  let currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
   let previousIndex = null;
+  markers.replaceChildren();
   markers.style.setProperty("--release-count", String(entries.length));
 
   function showRelease(index) {
     currentIndex = clamp(index, 0, entries.length - 1);
+    selectedReleaseVersion = entries[currentIndex].querySelector("h3").textContent
+      .match(/\d+\.\d+\.\d+/)?.[0] || null;
     entries.forEach((entry, entryIndex) => {
       entry.hidden = entryIndex !== currentIndex;
       const marker = markers.children[entryIndex];
@@ -1435,22 +1521,6 @@ function setupReleaseCarousel() {
     const version = header.querySelector("h3").textContent.match(/1\.0\.\d+/)?.[0];
     if (!version) throw new Error("A changelog entry is missing its version.");
 
-    const releaseDate = releaseDates.get(version);
-    const dateLabel = document.createElement(releaseDate ? "time" : "span");
-    dateLabel.className = "release-date";
-    if (releaseDate) {
-      dateLabel.dateTime = releaseDate;
-      dateLabel.textContent = new Intl.DateTimeFormat("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        timeZone: "UTC"
-      }).format(new Date(`${releaseDate}T00:00:00Z`));
-    } else {
-      dateLabel.textContent = "Date unavailable";
-    }
-    header.insertBefore(dateLabel, header.querySelector(".release-current"));
-
     const marker = document.createElement("button");
     marker.type = "button";
     marker.className = "release-progress-marker";
@@ -1472,12 +1542,8 @@ function setupReleaseCarousel() {
     markers.append(marker);
   });
 
-  newerButton.addEventListener("click", () =>
-    showRelease((currentIndex - 1 + entries.length) % entries.length)
-  );
-  olderButton.addEventListener("click", () =>
-    showRelease((currentIndex + 1) % entries.length)
-  );
+  newerButton.onclick = () => showRelease((currentIndex - 1 + entries.length) % entries.length);
+  olderButton.onclick = () => showRelease((currentIndex + 1) % entries.length);
   showRelease(currentIndex);
 }
 

@@ -42,7 +42,9 @@ const { turnOffForSessionEnd } = require("./shutdown-power");
 const {
   compareVersions,
   findReleaseInstaller,
+  getPublishedReleases,
   getReleasedInstallers,
+  getReleaseFromHtml,
   getReleaseInstallerFromHtml,
   getReleasePageCountFromHtml,
   getReleaseTagsFromHtml
@@ -1104,9 +1106,9 @@ ipcMain.handle("updates:choose-folder", async () => {
   setSettings({ updateFolder: result.filePaths[0], updateSource: "local" });
   return { canceled: false, folder: settings.updateFolder };
 });
-async function getGithubReleaseInstallers() {
+async function getGithubReleaseData() {
   if (githubReleaseCache && githubReleaseCache.expiresAt > Date.now()) {
-    return githubReleaseCache.installers;
+    return githubReleaseCache;
   }
   if (githubReleaseRequest) return githubReleaseRequest;
 
@@ -1144,18 +1146,26 @@ async function getGithubReleaseInstallers() {
 
     const tags = [...new Set(pages.flatMap(getReleaseTagsFromHtml))];
     const installers = [];
+    const releases = [];
     for (let offset = 0; offset < tags.length; offset += 8) {
       const batch = await Promise.all(tags.slice(offset, offset + 8).map(async (tag) => {
-        const html = await fetchReleaseHtml(
-          `https://github.com/gingermat24/ULLeds/releases/expanded_assets/${tag}`
-        );
-        return getReleaseInstallerFromHtml(html, tag.slice(1));
+        const version = tag.slice(1);
+        const [releaseHtml, assetHtml] = await Promise.all([
+          fetchReleaseHtml(`https://github.com/gingermat24/ULLeds/releases/tag/${tag}`),
+          fetchReleaseHtml(`https://github.com/gingermat24/ULLeds/releases/expanded_assets/${tag}`)
+        ]);
+        return {
+          release: getReleaseFromHtml(releaseHtml, version),
+          installer: getReleaseInstallerFromHtml(assetHtml, version)
+        };
       }));
-      installers.push(...batch.filter(Boolean));
+      releases.push(...batch.map(({ release }) => release).filter(Boolean));
+      installers.push(...batch.map(({ installer }) => installer).filter(Boolean));
     }
     if (installers.length === 0) throw new Error("No published Windows installers were found on GitHub.");
     installers.sort((left, right) => compareVersions(right.version, left.version));
-    return installers;
+    releases.sort((left, right) => compareVersions(right.version, left.version));
+    return { installers, releases };
   }
 
   const request = (async () => {
@@ -1174,8 +1184,11 @@ async function getGithubReleaseInstallers() {
         }
       );
       if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status}.`);
-      const installers = getReleasedInstallers(await response.json());
-      if (installers.length > 0) return installers;
+      const releases = await response.json();
+      const installers = getReleasedInstallers(releases);
+      if (installers.length > 0) {
+        return { installers, releases: getPublishedReleases(releases) };
+      }
       apiError = new Error("GitHub's Releases API returned no Windows installers.");
     } catch (error) {
       apiError = error;
@@ -1195,14 +1208,21 @@ async function getGithubReleaseInstallers() {
   })();
   githubReleaseRequest = request;
   try {
-    const installers = await request;
-    githubReleaseCache = { installers, expiresAt: Date.now() + 60 * 60 * 1000 };
-    return installers;
+    const releaseData = await request;
+    githubReleaseCache = { ...releaseData, expiresAt: Date.now() + 60 * 60 * 1000 };
+    return githubReleaseCache;
   } finally {
     if (githubReleaseRequest === request) githubReleaseRequest = null;
   }
 }
+async function getGithubReleaseInstallers() {
+  return (await getGithubReleaseData()).installers;
+}
+async function getGithubReleaseHistory() {
+  return (await getGithubReleaseData()).releases;
+}
 ipcMain.handle("updates:release-downloads", () => getGithubReleaseInstallers());
+ipcMain.handle("updates:release-history", () => getGithubReleaseHistory());
 ipcMain.handle("updates:install-release", async (_event, version) => {
   if (!app.isPackaged) {
     return { available: false, error: "Updates are available from the installed app." };

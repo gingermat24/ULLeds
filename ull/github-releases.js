@@ -46,6 +46,117 @@ function getReleasedInstallers(releases) {
   }).sort((left, right) => compareVersions(right.version, left.version));
 }
 
+function parseReleaseNotes(body) {
+  if (typeof body !== "string") return [];
+  const categories = [];
+  let currentCategory = null;
+  for (const rawLine of body.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    if (heading) {
+      currentCategory = heading[1].length === 3
+        ? { name: heading[2], items: [] }
+        : null;
+      if (currentCategory) categories.push(currentCategory);
+      continue;
+    }
+    if (!currentCategory || !line) continue;
+    const item = line.match(/^(?:[-*+]|\d+\.)\s+(.+)$/);
+    if (item) {
+      currentCategory.items.push(item[1]);
+    } else if (currentCategory.items.length > 0) {
+      const lastIndex = currentCategory.items.length - 1;
+      currentCategory.items[lastIndex] += ` ${line}`;
+    } else {
+      currentCategory.items.push(line);
+    }
+  }
+  return categories.filter((category) => category.items.length > 0);
+}
+
+function getPublishedReleases(releases) {
+  if (!Array.isArray(releases)) throw new TypeError("GitHub releases must be an array.");
+  return releases.flatMap((release) => {
+    if (!release || release.draft || release.prerelease ||
+        typeof release.tag_name !== "string" ||
+        !/^v\d+\.\d+\.\d+$/.test(release.tag_name) ||
+        typeof release.published_at !== "string" ||
+        Number.isNaN(Date.parse(release.published_at))) {
+      return [];
+    }
+    return [{
+      version: release.tag_name.slice(1),
+      date: release.published_at,
+      categories: parseReleaseNotes(release.body)
+    }];
+  }).sort((left, right) => compareVersions(right.version, left.version));
+}
+
+function decodeHtmlEntities(text) {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#(?:39|x27);/gi, "'")
+    .replace(/&#(x[0-9a-f]+|\d+);/gi, (_match, entity) => {
+      const codePoint = entity[0].toLowerCase() === "x"
+        ? Number.parseInt(entity.slice(1), 16)
+        : Number.parseInt(entity, 10);
+      return Number.isInteger(codePoint) && codePoint > 0 && codePoint <= 0x10ffff
+        ? String.fromCodePoint(codePoint)
+        : "";
+    });
+}
+
+function getReleaseFromHtml(html, version) {
+  if (typeof html !== "string" || !VERSION_PATTERN.test(version)) return undefined;
+  const openingTag = /<div\b(?=[^>]*\bdata-test-selector="body-content")[^>]*>/i.exec(html);
+  if (!openingTag) return { version, date: undefined, categories: [] };
+
+  const bodyStart = openingTag.index + openingTag[0].length;
+  const divTags = /<\/?div\b[^>]*>/gi;
+  divTags.lastIndex = bodyStart;
+  let depth = 1;
+  let bodyEnd = html.length;
+  for (let match = divTags.exec(html); match; match = divTags.exec(html)) {
+    if (/^<\//.test(match[0])) {
+      depth -= 1;
+      if (depth === 0) {
+        bodyEnd = match.index;
+        break;
+      }
+    } else if (!/\/>$/.test(match[0])) {
+      depth += 1;
+    }
+  }
+
+  const categories = [];
+  let currentCategory = null;
+  const content = html.slice(bodyStart, bodyEnd);
+  for (const match of content.matchAll(/<(h[1-6]|p|li)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi)) {
+    const text = decodeHtmlEntities(match[2].replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim());
+    if (!text) continue;
+    if (/^h[1-6]$/i.test(match[1])) {
+      const level = Number(match[1][1]);
+      currentCategory = level === 3 ? { name: text, items: [] } : null;
+      if (currentCategory) categories.push(currentCategory);
+    } else if (currentCategory) {
+      currentCategory.items.push(text);
+    }
+  }
+
+  const dateMatch = /<relative-time\b[^>]*\bdatetime="([^"]+)"/i.exec(html);
+  const date = dateMatch && !Number.isNaN(Date.parse(dateMatch[1]))
+    ? dateMatch[1]
+    : undefined;
+  return {
+    version,
+    date,
+    categories: categories.filter((category) => category.items.length > 0)
+  };
+}
+
 function getReleaseTagsFromHtml(html) {
   if (typeof html !== "string") throw new TypeError("GitHub release page must be HTML text.");
   return [...new Set(
@@ -93,10 +204,13 @@ function findReleaseInstaller(releases, version) {
 const githubReleases = Object.freeze({
   compareVersions,
   findReleaseInstaller,
+  getPublishedReleases,
   getReleasedInstallers,
+  getReleaseFromHtml,
   getReleaseInstallerFromHtml,
   getReleasePageCountFromHtml,
-  getReleaseTagsFromHtml
+  getReleaseTagsFromHtml,
+  parseReleaseNotes
 });
 if (typeof module !== "undefined" && module.exports) module.exports = githubReleases;
 else globalThis.ullGithubReleases = githubReleases;

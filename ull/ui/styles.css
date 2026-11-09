@@ -1762,7 +1762,8 @@ select:disabled {
   letter-spacing: -0.008em;
 }
 
-.release-entry > header .release-current {
+.release-entry > header .release-current,
+.release-entry > header .release-legacy {
   padding: 3px 9px;
   border: 1px solid rgb(255 255 255 / 0.24);
   border-radius: 99px;
@@ -1773,6 +1774,10 @@ select:disabled {
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.release-entry > header .release-legacy {
+  color: var(--muted);
 }
 
 .release-date {

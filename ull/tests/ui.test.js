@@ -66,6 +66,10 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(html, /id="version-notice-update"[^>]*>Update</);
   assert.match(html, /github-releases\.js/);
   assert.match(app, /listReleaseDownloads\(\)/);
+  assert.match(app, /listReleaseHistory\(\)/);
+  assert.match(app, /renderReleaseHistory\(releases\)/);
+  assert.match(app, /listItem\.textContent = item/);
+  assert.match(app, /legacyBadge\.textContent = "Legacy"/);
   assert.match(app, /compareVersions\(version, state\.version\)/);
   assert.match(app, /versionComparison > 0 \? "Update" : "Downgrade"/);
   assert.match(app, /showVersionNotice\(latest\)/);
@@ -75,8 +79,10 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(app, /Downloading ULLeds \$\{result\.version\}/);
   assert.match(app, /showUpdateMessage\(`ULLeds \$\{result\.version\} is ready\./);
   assert.match(preload, /listReleaseDownloads: \(\) => ipcRenderer\.invoke\("updates:release-downloads"\)/);
+  assert.match(preload, /listReleaseHistory: \(\) => ipcRenderer\.invoke\("updates:release-history"\)/);
   assert.match(preload, /installRelease: \(version\) => ipcRenderer\.invoke\("updates:install-release", version\)/);
   assert.match(main, /ipcMain\.handle\("updates:release-downloads"/);
+  assert.match(main, /ipcMain\.handle\("updates:release-history"/);
   assert.match(main, /fetchInstallersFromReleasePages/);
   assert.match(main, /using public release pages/);
   assert.match(main, /getReleaseTagsFromHtml/);
@@ -337,19 +343,11 @@ test("release carousel has dated entries, accessible navigation, and progress ma
   assert.match(html, /id="release-newer" class="icon-btn release-arrow"[^>]*aria-label="Newer release"[^>]*>&lt;<\/button>/);
   assert.match(html, /id="release-older" class="icon-btn release-arrow"[^>]*aria-label="Older release"[^>]*>&gt;<\/button>/);
   assert.match(html, /id="release-progress-markers"[^>]*role="group"/);
-  assert.match(html, /id="release-position"[^>]*>1\/68<\/output>/);
-  assert.match(app, /releaseDates = new Map/);
-  assert.match(app, /\["1\.0\.68", "2026-11-09"\]/);
-  assert.doesNotMatch(app, /\["1\.0\.67"/);
-  assert.match(app, /\["1\.0\.66", "2026-11-09"\]/);
-  assert.match(app, /\["1\.0\.65", "2026-11-08"\]/);
-  assert.match(app, /\["1\.0\.64", "2026-11-08"\]/);
-  assert.match(app, /\["1\.0\.58", "2026-11-08"\]/);
-  assert.match(app, /\["1\.0\.59", "2026-11-08"\]/);
-  assert.match(app, /\["1\.0\.60", "2026-11-08"\]/);
+  assert.match(html, /id="release-history-status"[^>]*role="status"/);
+  assert.match(html, /id="release-position"[^>]*>1\/69<\/output>/);
   assert.match(app, /dateLabel\.textContent = "Date unavailable"/);
-  assert.match(app, /newerButton\.addEventListener\("click", \(\) =>\s+showRelease\(\(currentIndex - 1 \+ entries\.length\) % entries\.length\)\s+\)/);
-  assert.match(app, /olderButton\.addEventListener\("click", \(\) =>\s+showRelease\(\(currentIndex \+ 1\) % entries\.length\)\s+\)/);
+  assert.match(app, /newerButton\.onclick = \(\) => showRelease\(\(currentIndex - 1 \+ entries\.length\) % entries\.length\)/);
+  assert.match(app, /olderButton\.onclick = \(\) => showRelease\(\(currentIndex \+ 1\) % entries\.length\)/);
   assert.doesNotMatch(app, /(?:older|newer)Button\.hidden\s*=/);
   assert.doesNotMatch(html, /id="release-newer"[^>]*hidden/);
   assert.match(app, /const nextIndex = \(index - 1 \+ entries\.length\) % entries\.length/);
@@ -375,9 +373,10 @@ test("release notes have one combined entry for 1.0.68 instead of duplicate vers
   }
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.67").length, 0);
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.68").length, 1);
+  assert.equal(releaseVersions.filter((entry) => entry === "1.0.69").length, 1);
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.68<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.69<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.match(html, /Reduced idle controller work:[\s\S]*?timing diagnostics flush only after new data arrives/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });

@@ -375,6 +375,7 @@
               </div>
             </div>
             <div id="release-download-status" class="release-download-status hidden" role="status" aria-live="polite"></div>
+            <div id="release-history-status" class="release-download-status hidden" role="status" aria-live="polite"></div>
             <div class="release-carousel">
               <div class="release-carousel-navigation">
                 <button id="release-newer" class="icon-btn release-arrow" type="button" aria-label="Newer release" aria-controls="release-track">&lt;</button>
@@ -382,7 +383,11 @@
               </div>
               <div class="release-track" id="release-track" aria-live="polite">
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.68</h3><span class="release-current">Current</span></header>
+              <header><h3>ULLeds 1.0.69</h3><span class="release-current">Current</span></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>The changelog now uses published GitHub release notes and dates. Versions without a GitHub release keep their built-in notes and are marked Legacy.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.68</h3></header>
               <div class="release-category"><strong>Improved</strong><ul><li>Reduced idle controller work: reconnect checks pause while the controller is connected, timing diagnostics flush only after new data arrives, and steady-color LEDs are left undisturbed between changes.</li></ul></div>
             </article>
             <article class="card release-entry">
@@ -681,7 +686,7 @@
               </div>
               <div class="release-progress">
                 <div class="release-progress-markers" id="release-progress-markers" role="group" aria-label="Choose a release"></div>
-                <output class="release-position" id="release-position" aria-live="polite">1/68</output>
+                <output class="release-position" id="release-position" aria-live="polite">1/69</output>
               </div>
             </div>
           </section>
