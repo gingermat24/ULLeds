@@ -10,8 +10,8 @@ const html = fs.readFileSync(path.join(__dirname, "..", "ui", "index.html"), "ut
 
 test("GitHub release text is generated from every in-app changelog entry", () => {
   const entries = extractReleaseNotes(html);
-  assert.equal(entries.length, 71);
-  for (let version = 0; version <= 71; version += 1) {
+  assert.equal(entries.length, 72);
+  for (let version = 0; version <= 72; version += 1) {
     if (version === 67) continue;
     assert.ok(entries.some((entry) => entry.version === `1.0.${version}`));
   }
