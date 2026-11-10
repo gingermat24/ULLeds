@@ -2,7 +2,29 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { turnOffForSessionEnd } = require("../shutdown-power");
+const {
+  shouldTurnOffForSessionEnd,
+  turnOffForSessionEnd
+} = require("../shutdown-power");
+
+test("Windows session-end query is delayed only when a connected strip needs power-off", () => {
+  const query = { reasons: ["shutdown"] };
+  assert.equal(shouldTurnOffForSessionEnd(query, {
+    platform: "win32",
+    powered: true,
+    connected: true
+  }), true);
+  assert.equal(shouldTurnOffForSessionEnd({ reasons: ["close-app"] }, {
+    platform: "win32",
+    powered: true,
+    connected: true
+  }), false);
+  assert.equal(shouldTurnOffForSessionEnd(query, {
+    platform: "win32",
+    powered: false,
+    connected: true
+  }), false);
+});
 
 test("Windows shutdown turns LEDs off only when they were on and connected", async () => {
   let writeCount = 0;

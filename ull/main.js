@@ -43,7 +43,7 @@ const {
   mergeScenes
 } = require("./scene-data");
 const { acquireSingleInstanceLock } = require("./single-instance");
-const { turnOffForSessionEnd } = require("./shutdown-power");
+const { shouldTurnOffForSessionEnd, turnOffForSessionEnd } = require("./shutdown-power");
 const {
   compareVersions,
   findReleaseInstaller,
@@ -896,6 +896,27 @@ function createWindow() {
   mainWindow.once("ready-to-show", () => {
     if (!startHidden) mainWindow.show();
   });
+  mainWindow.on("query-session-end", (event) => {
+    const shutdown = {
+      platform: process.platform,
+      powered: settings.power,
+      connected: Boolean(hidDevice)
+    };
+    if (!shouldTurnOffForSessionEnd(event, shutdown)) return;
+
+    event.preventDefault();
+    if (animationTimer) clearInterval(animationTimer);
+    animationTimer = null;
+    screenSyncActive = false;
+    void turnOffForSessionEnd(event, {
+      ...shutdown,
+      writeOff: () => writeColor(settings.color, 1, false)
+    }).catch((error) => {
+      console.error("Could not turn off the LEDs before Windows session end:", error);
+    }).finally(() => {
+      app.quit();
+    });
+  });
   mainWindow.on("close", (event) => {
     if (isQuitting) return;
     event.preventDefault();
@@ -1479,20 +1500,4 @@ app.on("before-quit", () => {
   }
   tray?.destroy();
   tray = null;
-});
-
-app.on("session-end", (event) => {
-  void turnOffForSessionEnd(event, {
-    platform: process.platform,
-    powered: settings.power,
-    connected: Boolean(hidDevice),
-    writeOff: () => {
-      if (animationTimer) clearInterval(animationTimer);
-      animationTimer = null;
-      screenSyncActive = false;
-      return writeColor(settings.color, 1, false);
-    }
-  }).catch((error) => {
-    console.error("Could not turn off the LEDs before Windows session end:", error);
-  });
 });

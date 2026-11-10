@@ -97,9 +97,12 @@ test("gradient application rejects empty, out-of-range, and invalid input", () =
 
 test("select-all state marks every LED and edge as selected", () => {
   const all = null;
+  const none = new Set();
   assert.equal(isLedSelected(all, 0), true);
   assert.equal(isLedSelected(all, 74), true);
   assert.equal(isEdgeSelected(all, [0, 1, 2]), true);
+  assert.equal(isLedSelected(none, 0), false);
+  assert.equal(isEdgeSelected(none, [0, 1, 2]), false);
   assert.equal(isLedSelected(new Set([1]), 0), false);
   assert.equal(isLedSelected(new Set([1]), 1), true);
   assert.equal(isEdgeSelected(new Set([0, 1]), [0, 1]), true);

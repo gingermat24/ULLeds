@@ -200,12 +200,25 @@ test("Windows session shutdown powers off connected LEDs without changing saved 
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const shutdownPower = fs.readFileSync(path.join(__dirname, "..", "shutdown-power.js"), "utf8");
 
-  assert.match(main, /app\.on\("session-end", \(event\) => \{\s+void turnOffForSessionEnd\(event, \{/);
-  assert.match(main, /powered: settings\.power,\s+connected: Boolean\(hidDevice\)/);
-  assert.match(main, /return writeColor\(settings\.color, 1, false\)/);
+  const queryEnd = main.slice(
+    main.indexOf('mainWindow.on("query-session-end"'),
+    main.indexOf('mainWindow.on("close"', main.indexOf('mainWindow.on("query-session-end"'))
+  );
+  assert.match(queryEnd, /shouldTurnOffForSessionEnd\(event, shutdown\)/);
+  assert.match(queryEnd, /event\.preventDefault\(\)/);
+  assert.match(queryEnd, /await turnOffForSessionEnd|void turnOffForSessionEnd/);
+  assert.match(queryEnd, /writeOff: \(\) => writeColor\(settings\.color, 1, false\)/);
+  assert.match(queryEnd, /\.finally\(\(\) => \{\s+app\.quit\(\)/);
   assert.match(main, /Could not turn off the LEDs before Windows session end/);
   assert.match(shutdownPower, /SESSION_END_REASONS = new Set\(\["shutdown", "critical", "logoff"\]\)/);
-  assert.doesNotMatch(main.slice(main.indexOf('app.on("session-end"'), main.indexOf('app.on("session-end"') + 700), /settings\.power\s*=/);
+  assert.doesNotMatch(main, /app\.on\("session-end"/);
+});
+
+test("LED selection starts empty when the renderer opens", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  assert.match(app, /let selectedLedIndices = new Set\(\)/);
+  assert.match(html, /id="selection-label">No LEDs selected</);
 });
 
 test("topbar uses compact status, shared page padding, and integrated window controls", () => {
@@ -397,9 +410,10 @@ test("release notes have one combined entry for 1.0.68 instead of duplicate vers
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.73").length, 1);
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.74").length, 1);
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.75").length, 1);
+  assert.equal(releaseVersions.filter((entry) => entry === "1.0.76").length, 1);
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.75<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.76<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.match(html, /Reduced idle controller work:[\s\S]*?timing diagnostics flush only after new data arrives/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });

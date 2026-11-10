@@ -36,7 +36,7 @@ let wizardStep = 0;
 let detectedDevices = [];
 let deviceConnecting = false;
 let connectingDevicePath = "";
-let selectedLedIndices = null;
+let selectedLedIndices = new Set();
 let selectedLedAnchorIndex = null;
 let screenSyncSession = null;
 const screenSyncLifecycle = window.ullScreenSyncLifecycle.createScreenSyncLifecycle();
@@ -586,7 +586,7 @@ async function applyScene(scene) {
   if (screenSyncSession || screenSyncLifecycle.isStarting) {
     await stopScreenSync("", true);
   }
-  selectedLedIndices = null;
+  selectedLedIndices = new Set();
   selectedLedAnchorIndex = null;
   const lighting = window.ullSceneData.settingsFromScene(scene);
   const profile = state.device.profile || state.settings.deviceProfile;
@@ -1922,7 +1922,7 @@ async function resetAllData() {
     const result = await window.ull.resetData();
     state.settings = result.settings;
     state.device = result.device;
-    selectedLedIndices = null;
+    selectedLedIndices = new Set();
     selectedLedAnchorIndex = null;
     screenSyncError = "";
     $("#reset-dialog").close();
