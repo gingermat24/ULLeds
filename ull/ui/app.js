@@ -374,6 +374,37 @@ async function flushSettingsQueue() {
   }
 }
 
+async function exportScenes() {
+  try {
+    const result = await window.ull.exportScenes();
+    if (result.canceled) return;
+    toast(`Exported ${result.count} lighting setup${result.count === 1 ? "" : "s"}.`);
+  } catch (error) {
+    console.error("Could not export lighting setups:", error);
+    toast(`Could not export setups: ${error.message}`);
+  }
+}
+
+async function importScenes() {
+  try {
+    const result = await window.ull.importScenes();
+    if (result.canceled) return;
+    state.settings = result.settings;
+    renderScenes();
+    if (result.imported === 0) {
+      toast(result.skipped ? "Those setups are already in ULLeds." : "No setups were imported.");
+      return;
+    }
+    const skipped = result.skipped
+      ? ` ${result.skipped} already existed and were skipped.`
+      : "";
+    toast(`Imported ${result.imported} lighting setup${result.imported === 1 ? "" : "s"}.${skipped}`);
+  } catch (error) {
+    console.error("Could not import lighting setups:", error);
+    toast(`Could not import setups: ${error.message}`);
+  }
+}
+
 function renderConnection() {
   const indicator = $("#device-status");
   const label = $("#device-label");
@@ -592,6 +623,34 @@ function applyColor(color, all = false) {
   ));
 }
 
+async function applyGradient() {
+  const profile = state.device.profile || state.settings.deviceProfile;
+  const ledCount = Number(profile?.ledCount);
+  if (!Number.isInteger(ledCount) || ledCount < 1 || ledCount > 253) {
+    return toast("Connect a controller with a detected LED count before applying a gradient.");
+  }
+  if (selectedLedIndices?.size === 0) return toast("Select at least one LED first.");
+  try {
+    const changes = window.ullLedSelection.gradientChanges(
+      state.settings.ledColors,
+      selectedLedIndices,
+      ledCount,
+      $("#gradient-start").value,
+      $("#gradient-end").value
+    );
+    if (screenSyncSession || screenSyncLifecycle.isStarting) {
+      await stopScreenSync("", true);
+    }
+    queueSettings(changes, true);
+    toast(`Applied a gradient across ${selectedLedIndices === null
+      ? ledCount
+      : selectedLedIndices.size} LEDs.`);
+  } catch (error) {
+    console.error("Could not apply LED gradient:", error);
+    toast(`Could not apply gradient: ${error.message}`);
+  }
+}
+
 function updatePreview() {
   const settings = state.settings;
   const channelGainIds = ["rgb-red", "rgb-green", "rgb-blue"];
@@ -655,6 +714,12 @@ function updatePreview() {
   } else {
     $("#selection-label").textContent = `${selectedLedIndices.size} LEDs selected`;
   }
+  const gradientButton = $("#apply-gradient");
+  const selectedCount = selectedLedIndices === null ? count : selectedLedIndices.size;
+  gradientButton.disabled = selectedCount === 0;
+  gradientButton.textContent = selectedCount
+    ? `Apply across ${selectedCount} ${selectedCount === 1 ? "LED" : "LEDs"}`
+    : "Apply gradient";
 
   const color = selectedColor();
   $("#color-picker").value = color;
@@ -732,6 +797,7 @@ function renderScenes() {
   const root = $("#scene-grid");
   root.replaceChildren();
   const scenes = state.settings.scenes || [];
+  $("#export-scenes").disabled = scenes.length === 0;
 
   if (!scenes.length) {
     const empty = document.createElement("div");
@@ -922,6 +988,7 @@ function startScreenSync(options = {}) {
     if (requestedSyncMode === "screen") requestedSyncMode = null;
     updatePreview();
   });
+  $("#apply-gradient").addEventListener("click", () => void applyGradient());
 }
 
 async function runScreenSyncStart({ automatic = false } = {}) {
@@ -2026,6 +2093,8 @@ function bindEvents() {
   });
 
   $("#save-scene").addEventListener("click", () => openSceneDialog("create"));
+  $("#import-scenes").addEventListener("click", importScenes);
+  $("#export-scenes").addEventListener("click", exportScenes);
   $("#scene-form").addEventListener("submit", saveSceneName);
   $("#cancel-scene").addEventListener("click", () => {
     $("#scene-dialog").close();

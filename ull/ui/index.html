@@ -96,7 +96,21 @@
                 </div>
               </div>
 
-              <div class="control-group">
+                <details class="color-tuning gradient-control">
+                  <summary>Apply a color gradient</summary>
+                  <p>Blend between two colors in strip order across the selected LEDs.</p>
+                  <div class="gradient-colors">
+                    <label for="gradient-start">Start
+                      <input id="gradient-start" class="palette-color" type="color" value="#008100">
+                    </label>
+                    <label for="gradient-end">End
+                      <input id="gradient-end" class="palette-color" type="color" value="#ffffff">
+                    </label>
+                  </div>
+                  <button id="apply-gradient" class="secondary-btn" type="button" disabled>Apply gradient</button>
+                </details>
+
+                <div class="control-group">
                 <div class="range-row">
                   <label for="brightness">Brightness</label>
                   <output id="brightness-value">50%</output>
@@ -180,9 +194,13 @@
               <div class="card-label">Scenes</div>
               <h2>Saved setups</h2>
             </div>
-            <button id="save-scene" class="primary-btn" type="button">Save current setup</button>
+            <div class="scene-management-actions">
+              <button id="import-scenes" class="secondary-btn" type="button">Import</button>
+              <button id="export-scenes" class="secondary-btn" type="button" disabled>Export</button>
+              <button id="save-scene" class="primary-btn" type="button">Save current setup</button>
+            </div>
           </div>
-          <p class="scene-intro">Each setup saves color, brightness, effect, speed, and per-LED colors. Device calibration stays unchanged.</p>
+          <p class="scene-intro">Setups include color, brightness, effects, and per-LED colors. Import adds missing setups without replacing yours; export creates a backup you can move to another PC.</p>
           <div class="scene-list" id="scene-grid" aria-live="polite"></div>
         </section>
 
@@ -383,9 +401,13 @@
               </div>
               <div class="release-track" id="release-track" aria-live="polite">
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.72</h3><span class="release-current">Current</span></header>
-              <div class="release-category"><strong>Fixed</strong><ul><li>The selected changelog marker now uses its actual width in the layout, so the gaps adapt and the progress rail stays aligned to both edges.</li><li>The changelog card and its contents now resize with the available window width.</li></ul></div>
-              <div class="release-category"><strong>Improved</strong><ul><li>Aligned the compact Update and Downgrade buttons with their release titles.</li></ul></div>
+              <header><h3>ULLeds 1.0.73</h3><span class="release-current">Current</span></header>
+              <div class="release-category"><strong>New</strong><ul><li>Export saved lighting setups as a backup and import them on another PC without replacing existing setups.</li><li>Apply a two-color gradient across the whole strip or selected LEDs in strip order.</li></ul></div>
+              <div class="release-category"><strong>Improved</strong><ul><li>Aligned changelog markers at both ends of the responsive release card and aligned compact Update and Downgrade buttons with their titles.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.72</h3></header>
+              <div class="release-category"><strong>Improved</strong><ul><li>Fixed changelog marker spacing and made the release card resize with the window.</li><li>Aligned compact Update and Downgrade buttons with their release titles.</li></ul></div>
             </article>
             <article class="card release-entry">
               <header><h3>ULLeds 1.0.71</h3></header>

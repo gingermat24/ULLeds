@@ -2,7 +2,14 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { normalizeScenes, sceneFromLighting, settingsFromScene } = require("../scene-data");
+const {
+  normalizeScenes,
+  sceneFromLighting,
+  settingsFromScene,
+  createSceneBackup,
+  readSceneBackup,
+  mergeScenes
+} = require("../scene-data");
 
 const lighting = {
   color: "#008100",
@@ -37,4 +44,40 @@ test("restoring one scene returns independent palette and LED color copies", () 
   restored.ledColors[0] = "#000000";
   assert.equal(scene.palette[0], "#e879a8");
   assert.equal(scene.ledColors[0], "#ff0000");
+});
+
+test("scene backups contain only validated lighting scenes", () => {
+  const scene = sceneFromLighting("scene-1234", "Movie", lighting);
+  const backup = createSceneBackup([scene]);
+
+  assert.deepEqual(backup, {
+    format: "ulleds-scenes",
+    version: 1,
+    scenes: [scene]
+  });
+  assert.deepEqual(readSceneBackup(JSON.parse(JSON.stringify(backup))), [scene]);
+  assert.throws(() => readSceneBackup({ ...backup, version: 2 }), /supported ULLeds/);
+  assert.throws(() => readSceneBackup({ ...backup, scenes: [{ ...scene, color: "invalid" }] }),
+    /scene details/);
+});
+
+test("import merges new scenes, skips existing IDs, and rejects overflow without truncation", () => {
+  const current = sceneFromLighting("scene-current", "Desk", lighting);
+  const incoming = [
+    current,
+    sceneFromLighting("scene-new", "Movie", { ...lighting, color: "#123456" })
+  ];
+  const merged = mergeScenes([current], incoming);
+
+  assert.deepEqual(merged, {
+    scenes: [current, incoming[1]],
+    imported: 1,
+    skipped: 1
+  });
+  assert.throws(() => mergeScenes(
+    Array.from({ length: 30 }, (_, index) =>
+      sceneFromLighting(`scene-${index}`, `Setup ${index}`, lighting)
+    ),
+    [incoming[1]]
+  ), /30 saved scenes/);
 });

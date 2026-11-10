@@ -36,7 +36,12 @@ const { createHidOutputQueue } = require("./hid-output");
 const { resetStoredData } = require("./reset-data");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
-const { normalizeScenes } = require("./scene-data");
+const {
+  normalizeScenes,
+  createSceneBackup,
+  readSceneBackup,
+  mergeScenes
+} = require("./scene-data");
 const { acquireSingleInstanceLock } = require("./single-instance");
 const { turnOffForSessionEnd } = require("./shutdown-power");
 const {
@@ -995,6 +1000,43 @@ ipcMain.handle("settings:update", async (_event, input) => {
   const result = setSettings(input, !powerChanged);
   if (powerChanged) await updateAnimation({ waitForOutput: true });
   return result;
+});
+ipcMain.handle("scenes:export", async () => {
+  const scenes = normalizeScenes(settings.scenes);
+  if (scenes.length === 0) throw new Error("Save a lighting setup before exporting.");
+  const date = new Date().toISOString().slice(0, 10);
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "Export ULLeds setups",
+    defaultPath: path.join(app.getPath("documents"), `ULLeds-setups-${date}.json`),
+    filters: [{ name: "ULLeds setups", extensions: ["json"] }]
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+  fs.writeFileSync(
+    result.filePath,
+    `${JSON.stringify(createSceneBackup(scenes), null, 2)}\n`,
+    "utf8"
+  );
+  return { canceled: false, count: scenes.length };
+});
+ipcMain.handle("scenes:import", async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Import ULLeds setups",
+    properties: ["openFile"],
+    filters: [{ name: "ULLeds setups", extensions: ["json"] }]
+  });
+  if (result.canceled || !result.filePaths[0]) return { canceled: true };
+  const filePath = result.filePaths[0];
+  const { size } = fs.statSync(filePath);
+  if (size > 1024 * 1024) throw new RangeError("The setup backup is larger than 1 MB.");
+  const backup = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const merged = mergeScenes(settings.scenes, readSceneBackup(backup));
+  const updated = merged.imported > 0 ? setSettings({ scenes: merged.scenes }, false) : null;
+  return {
+    canceled: false,
+    imported: merged.imported,
+    skipped: merged.skipped,
+    settings: updated?.settings || settingsSnapshot()
+  };
 });
 ipcMain.on("settings:flush", (event, input) => {
   try {

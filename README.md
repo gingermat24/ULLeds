@@ -19,9 +19,11 @@ or choose a color and effect yourself.
 - **Set the mood:** Pick a color, adjust brightness, or use breathing, spectrum,
   and palette effects.
 - **Choose colors by LED:** Select one LED or a section of the strip and give it
-  its own color.
+  its own color, or blend a two-color gradient across the selected LEDs.
 - **Save your favorites:** Create named lighting setups and switch between
-  them. Device layout and Screen Sync preferences stay as they are.
+  them. Export setups as a backup or move them to another PC; importing adds
+  new setups without replacing the ones you already have. Device layout and
+  Screen Sync preferences stay as they are.
 
 ## Compatibility
 

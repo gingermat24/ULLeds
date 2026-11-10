@@ -1,6 +1,8 @@
 "use strict";
 
 const EFFECTS = new Set(["steady", "breathe", "spectrum", "palette"]);
+const SCENE_BACKUP_FORMAT = "ulleds-scenes";
+const SCENE_BACKUP_VERSION = 1;
 
 function validColor(value) {
   return typeof value === "string" && /^#[\da-f]{6}$/i.test(value);
@@ -73,6 +75,41 @@ function settingsFromScene(scene) {
   };
 }
 
-const sceneData = Object.freeze({ normalizeScenes, sceneFromLighting, settingsFromScene });
+function createSceneBackup(scenes) {
+  return {
+    format: SCENE_BACKUP_FORMAT,
+    version: SCENE_BACKUP_VERSION,
+    scenes: normalizeScenes(scenes)
+  };
+}
+
+function readSceneBackup(backup) {
+  if (!backup || typeof backup !== "object" || Array.isArray(backup) ||
+      backup.format !== SCENE_BACKUP_FORMAT || backup.version !== SCENE_BACKUP_VERSION) {
+    throw new TypeError("This file is not a supported ULLeds scenes backup.");
+  }
+  return normalizeScenes(backup.scenes);
+}
+
+function mergeScenes(currentScenes, importedScenes) {
+  const current = normalizeScenes(currentScenes);
+  const incoming = normalizeScenes(importedScenes);
+  const ids = new Set(current.map((scene) => scene.id));
+  const additions = incoming.filter((scene) => !ids.has(scene.id));
+  return {
+    scenes: normalizeScenes([...current, ...additions]),
+    imported: additions.length,
+    skipped: incoming.length - additions.length
+  };
+}
+
+const sceneData = Object.freeze({
+  normalizeScenes,
+  sceneFromLighting,
+  settingsFromScene,
+  createSceneBackup,
+  readSceneBackup,
+  mergeScenes
+});
 if (typeof module !== "undefined" && module.exports) module.exports = sceneData;
 else globalThis.ullSceneData = sceneData;

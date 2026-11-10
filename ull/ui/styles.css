@@ -827,6 +827,29 @@ p {
   line-height: 1.5;
 }
 
+.gradient-colors {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.gradient-colors label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.gradient-colors .palette-color {
+  width: 100%;
+  height: var(--control-h);
+}
+
+.gradient-control .secondary-btn {
+  width: 100%;
+}
+
 .tuning-channel {
   margin: var(--space-3) 0;
 }
@@ -1103,6 +1126,14 @@ select:disabled {
 
 .section-heading h2 {
   line-height: 0.95;
+}
+
+.scene-management-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .scene-intro {
@@ -2422,6 +2453,15 @@ select:disabled {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--space-3);
+  }
+
+  .scene-management-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  #save-scene {
+    margin-left: auto;
   }
 
   .light-grid {
