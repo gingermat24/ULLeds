@@ -19,7 +19,8 @@ or choose a color and effect yourself.
 - **Set the mood:** Pick a color, adjust brightness, or use breathing, spectrum,
   and palette effects.
 - **Choose colors by LED:** Select one LED or a section of the strip and give it
-  its own color, or blend a two-color gradient across the selected LEDs.
+  its own color, or blend a two-color gradient across the selected LEDs. Manual
+  colors and gradients switch to Solid so the selected colors show on the strip.
 - **Save your favorites:** Create named lighting setups and switch between
   them. Export setups as a backup or move them to another PC; importing adds
   new setups without replacing the ones you already have. Device layout and

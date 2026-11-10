@@ -29,6 +29,25 @@ function colorChanges(currentColor, currentLedColors, selection, color) {
   return { ledColors };
 }
 
+function fixedColorChanges(currentColor, currentLedColors, selection, color) {
+  if (selection !== null && selection.size === 0) {
+    throw new RangeError("Select at least one LED before changing its color.");
+  }
+  return {
+    ...colorChanges(currentColor, currentLedColors, selection, color),
+    effect: "steady"
+  };
+}
+
+function isLedSelected(selection, index) {
+  return selection === null || selection.has(index);
+}
+
+function isEdgeSelected(selection, indices) {
+  return indices.length > 0 &&
+    (selection === null || indices.every((index) => selection.has(index)));
+}
+
 function gradientChanges(currentLedColors, selection, ledCount, startColor, endColor) {
   if (!Number.isInteger(ledCount) || ledCount < 1 || ledCount > 253 ||
       !/^#[\da-f]{6}$/i.test(startColor) || !/^#[\da-f]{6}$/i.test(endColor)) {
@@ -54,13 +73,16 @@ function gradientChanges(currentLedColors, selection, ledCount, startColor, endC
     ).join("");
     ledColors[index] = `#${color}`;
   });
-  return { ledColors };
+  return { ledColors, effect: "steady" };
 }
 
 const ledSelection = Object.freeze({
   selectLed,
   selectLedRange,
   colorChanges,
+  fixedColorChanges,
+  isLedSelected,
+  isEdgeSelected,
   gradientChanges
 });
 if (typeof module !== "undefined" && module.exports) module.exports = ledSelection;

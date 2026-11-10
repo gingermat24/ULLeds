@@ -88,7 +88,7 @@
               <div class="control-group">
                 <div class="field-head">
                   <label for="color-picker">Color</label>
-                  <span class="field-note">Pick or type a hex</span>
+                  <span class="field-note">Choosing a color sets Solid effect</span>
                 </div>
                 <div class="color-row">
                   <input id="color-picker" type="color" value="#008100" aria-label="Pick a color">
@@ -98,7 +98,7 @@
 
                 <details class="color-tuning gradient-control">
                   <summary>Apply a color gradient</summary>
-                  <p>Blend between two colors in strip order across the selected LEDs.</p>
+                  <p>Blend two colors in strip order. Applying the gradient sets Solid effect.</p>
                   <div class="gradient-colors">
                     <label for="gradient-start">Start
                       <input id="gradient-start" class="palette-color" type="color" value="#008100">
@@ -401,7 +401,11 @@
               </div>
               <div class="release-track" id="release-track" aria-live="polite">
             <article class="card release-entry">
-              <header><h3>ULLeds 1.0.73</h3><span class="release-current">Current</span></header>
+              <header><h3>ULLeds 1.0.74</h3><span class="release-current">Current</span></header>
+              <div class="release-category"><strong>Fixed</strong><ul><li>Select all now visibly marks every LED, and fixed colors or gradients switch to Solid so their colors reach the strip.</li></ul></div>
+            </article>
+            <article class="card release-entry">
+              <header><h3>ULLeds 1.0.73</h3></header>
               <div class="release-category"><strong>New</strong><ul><li>Export saved lighting setups as a backup and import them on another PC without replacing existing setups.</li><li>Apply a two-color gradient across the whole strip or selected LEDs in strip order.</li></ul></div>
               <div class="release-category"><strong>Improved</strong><ul><li>Aligned changelog markers at both ends of the responsive release card and aligned compact Update and Downgrade buttons with their titles.</li></ul></div>
             </article>

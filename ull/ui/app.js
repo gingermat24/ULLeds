@@ -490,7 +490,7 @@ function makePixels(container, indices, edge) {
 
   for (const [position, index] of indices.entries()) {
     const pixel = container.children[position];
-    const selected = selectedLedIndices?.has(index) || false;
+    const selected = window.ullLedSelection.isLedSelected(selectedLedIndices, index);
     const color = calibratedColor(
       screenSyncSession?.colors?.[index] ||
         state.settings.ledColors?.[index] || state.settings.color,
@@ -609,18 +609,17 @@ function applyDetectedMovieFormat({ aspectRatio }) {
 }
 
 function applyColor(color, all = false) {
-  if (screenSyncSession) stopScreenSync("", true);
-  if (all || selectedLedIndices === null) {
-    queueSettings({ color, ledColors: {} });
-    return;
+  if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
+  try {
+    queueSettings(window.ullLedSelection.fixedColorChanges(
+      state.settings.color,
+      state.settings.ledColors,
+      all ? null : selectedLedIndices,
+      color
+    ), true);
+  } catch (error) {
+    toast(error.message);
   }
-  if (selectedLedIndices.size === 0) return toast("Select at least one LED first.");
-  queueSettings(window.ullLedSelection.colorChanges(
-    state.settings.color,
-    state.settings.ledColors,
-    selectedLedIndices,
-    color
-  ));
 }
 
 async function applyGradient() {
@@ -631,6 +630,7 @@ async function applyGradient() {
   }
   if (selectedLedIndices?.size === 0) return toast("Select at least one LED first.");
   try {
+    const selectedCount = selectedLedIndices === null ? ledCount : selectedLedIndices.size;
     const changes = window.ullLedSelection.gradientChanges(
       state.settings.ledColors,
       selectedLedIndices,
@@ -642,9 +642,7 @@ async function applyGradient() {
       await stopScreenSync("", true);
     }
     queueSettings(changes, true);
-    toast(`Applied a gradient across ${selectedLedIndices === null
-      ? ledCount
-      : selectedLedIndices.size} LEDs.`);
+    toast(`Applied a gradient across ${selectedCount} LEDs.`);
   } catch (error) {
     console.error("Could not apply LED gradient:", error);
     toast(`Could not apply gradient: ${error.message}`);
@@ -688,8 +686,7 @@ function updatePreview() {
     container.classList.toggle("hidden", indices.length === 0);
     container.classList.toggle(
       "selected",
-      indices.length > 0 && selectedLedIndices?.size === indices.length &&
-        indices.every((index) => selectedLedIndices.has(index))
+      window.ullLedSelection.isEdgeSelected(selectedLedIndices, indices)
     );
   });
 

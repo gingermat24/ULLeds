@@ -395,9 +395,10 @@ test("release notes have one combined entry for 1.0.68 instead of duplicate vers
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.71").length, 1);
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.72").length, 1);
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.73").length, 1);
+  assert.equal(releaseVersions.filter((entry) => entry === "1.0.74").length, 1);
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.73<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.74<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.match(html, /Reduced idle controller work:[\s\S]*?timing diagnostics flush only after new data arrives/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
@@ -435,6 +436,12 @@ test("Shift-click selects an inclusive LED range and selected focus keeps its se
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const selection = fs.readFileSync(path.join(__dirname, "..", "led-selection.js"), "utf8");
 
+  assert.match(app, /isLedSelected\(selectedLedIndices, index\)/);
+  assert.match(app, /isEdgeSelected\(selectedLedIndices, indices\)/);
+  assert.match(app, /fixedColorChanges\(/);
+  assert.match(app, /#select-all"\)\.addEventListener\("click", \(\) => \{\s+selectedLedIndices = null/);
+  assert.match(app, /function applyGradient\(\)[\s\S]*queueSettings\(changes, true\)/);
+  assert.match(selection, /effect: "steady"/);
   assert.match(app, /event\.shiftKey && selectedLedAnchorIndex !== null/);
   assert.match(app, /selectLedRange\(selectedLedAnchorIndex, index\)/);
   assert.match(selection, /function selectLedRange\(anchorIndex, index\)/);
