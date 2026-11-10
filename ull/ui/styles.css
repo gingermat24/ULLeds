@@ -673,6 +673,12 @@ p {
   min-width: 0;
 }
 
+.selection-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+}
+
 .preview-footer strong {
   display: block;
   font-size: 13px;

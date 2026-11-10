@@ -17,9 +17,11 @@ function selectLedRange(anchorIndex, index) {
       throw new RangeError("LED index must be between 0 and 252.");
     }
   }
-  const first = Math.min(anchorIndex, index);
-  const last = Math.max(anchorIndex, index);
-  return new Set(Array.from({ length: last - first + 1 }, (_, offset) => first + offset));
+  const direction = index >= anchorIndex ? 1 : -1;
+  return new Set(Array.from(
+    { length: Math.abs(index - anchorIndex) + 1 },
+    (_, offset) => anchorIndex + offset * direction
+  ));
 }
 
 function colorChanges(currentColor, currentLedColors, selection, color) {
@@ -55,7 +57,7 @@ function gradientChanges(currentLedColors, selection, ledCount, startColor, endC
   }
   const indices = selection === null
     ? Array.from({ length: ledCount }, (_, index) => index)
-    : [...selection].sort((left, right) => left - right);
+    : [...selection];
   if (indices.length === 0 || indices.some((index) =>
     !Number.isInteger(index) || index < 0 || index >= ledCount)) {
     throw new RangeError("Select valid LEDs before applying a gradient.");

@@ -22,7 +22,7 @@ test("clicking selects one LED and additive clicks toggle additional LEDs", () =
 
 test("Shift selection includes every LED between the anchor and clicked LED", () => {
   assert.deepEqual([...selectLedRange(3, 7)], [3, 4, 5, 6, 7]);
-  assert.deepEqual([...selectLedRange(7, 3)], [3, 4, 5, 6, 7]);
+  assert.deepEqual([...selectLedRange(7, 3)], [7, 6, 5, 4, 3]);
   assert.throws(() => selectLedRange(0, 253), RangeError);
 });
 
@@ -40,7 +40,7 @@ test("a whole-strip color change clears individual overrides", () => {
   );
 });
 
-test("a gradient blends in strip order and keeps colors outside the selection", () => {
+test("a gradient follows selection order and keeps colors outside the selection", () => {
   assert.deepEqual(
     gradientChanges(
       { 0: "#111111", 2: "#222222", 4: "#444444" },
@@ -53,10 +53,25 @@ test("a gradient blends in strip order and keeps colors outside the selection", 
       effect: "steady",
       ledColors: {
         0: "#111111",
-        1: "#000000",
+        1: "#808080",
         2: "#222222",
-        3: "#808080",
-        4: "#ffffff"
+        3: "#ffffff",
+        4: "#000000"
+      }
+    }
+  );
+});
+
+test("a gradient follows a reverse selection from its first LED to its last", () => {
+  assert.deepEqual(
+    gradientChanges({}, selectLedRange(4, 1), 5, "#ff0000", "#0000ff"),
+    {
+      effect: "steady",
+      ledColors: {
+        1: "#0000ff",
+        2: "#5500aa",
+        3: "#aa0055",
+        4: "#ff0000"
       }
     }
   );

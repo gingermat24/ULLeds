@@ -985,7 +985,6 @@ function startScreenSync(options = {}) {
     if (requestedSyncMode === "screen") requestedSyncMode = null;
     updatePreview();
   });
-  $("#apply-gradient").addEventListener("click", () => void applyGradient());
 }
 
 async function runScreenSyncStart({ automatic = false } = {}) {
@@ -1946,6 +1945,8 @@ async function resetAllData() {
 function bindEvents() {
   setupReleaseCarousel();
 
+  $("#apply-gradient").addEventListener("click", () => void applyGradient());
+
   document.querySelectorAll(".tab").forEach((item) => {
     item.addEventListener("click", () => switchView(item.dataset.view));
   });
@@ -1984,6 +1985,12 @@ function bindEvents() {
 
   $("#select-all").addEventListener("click", () => {
     selectedLedIndices = null;
+    selectedLedAnchorIndex = null;
+    updatePreview();
+  });
+
+  $("#deselect-all").addEventListener("click", () => {
+    selectedLedIndices = new Set();
     selectedLedAnchorIndex = null;
     updatePreview();
   });

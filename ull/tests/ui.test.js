@@ -396,9 +396,10 @@ test("release notes have one combined entry for 1.0.68 instead of duplicate vers
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.72").length, 1);
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.73").length, 1);
   assert.equal(releaseVersions.filter((entry) => entry === "1.0.74").length, 1);
+  assert.equal(releaseVersions.filter((entry) => entry === "1.0.75").length, 1);
   const currentMarkers = [...html.matchAll(/<header><h3>ULLeds 1\.0\.\d+<\/h3><span class="release-current">Current<\/span><\/header>/g)];
   assert.equal(currentMarkers.length, 1);
-  assert.match(html, /<header><h3>ULLeds 1\.0\.74<\/h3><span class="release-current">Current<\/span><\/header>/);
+  assert.match(html, /<header><h3>ULLeds 1\.0\.75<\/h3><span class="release-current">Current<\/span><\/header>/);
   assert.match(html, /Reduced idle controller work:[\s\S]*?timing diagnostics flush only after new data arrives/);
   assert.doesNotMatch(html, /<h3>ULLeds 1\.0\.12[–-]1\.0\.14<\/h3>/);
 });
@@ -435,16 +436,58 @@ test("dropdowns and text fields use a single border for visible keyboard focus",
 test("Shift-click selects an inclusive LED range and selected focus keeps its selection mark", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const selection = fs.readFileSync(path.join(__dirname, "..", "led-selection.js"), "utf8");
+  const bindEventsStart = app.indexOf("function bindEvents() {");
+  const startScreenSyncStart = app.indexOf("function startScreenSync(");
+  const bindEvents = app.slice(bindEventsStart, app.indexOf("async function start()", bindEventsStart));
+  const startScreenSync = app.slice(startScreenSyncStart, app.indexOf("async function runScreenSyncStart", startScreenSyncStart));
 
+  assert.notEqual(bindEventsStart, -1);
+  assert.notEqual(startScreenSyncStart, -1);
+  assert.match(bindEvents, /#apply-gradient"\)\.addEventListener\("click", \(\) => void applyGradient\(\)\)/);
+  assert.doesNotMatch(startScreenSync, /apply-gradient/);
   assert.match(app, /isLedSelected\(selectedLedIndices, index\)/);
   assert.match(app, /isEdgeSelected\(selectedLedIndices, indices\)/);
   assert.match(app, /fixedColorChanges\(/);
   assert.match(app, /#select-all"\)\.addEventListener\("click", \(\) => \{\s+selectedLedIndices = null/);
+  assert.match(app, /#deselect-all"\)\.addEventListener\("click", \(\) => \{\s+selectedLedIndices = new Set\(\)/);
   assert.match(app, /function applyGradient\(\)[\s\S]*queueSettings\(changes, true\)/);
+  assert.match(selection, /: \[\.\.\.selection\]/);
   assert.match(selection, /effect: "steady"/);
   assert.match(app, /event\.shiftKey && selectedLedAnchorIndex !== null/);
   assert.match(app, /selectLedRange\(selectedLedAnchorIndex, index\)/);
   assert.match(selection, /function selectLedRange\(anchorIndex, index\)/);
+});
+
+test("clicking the preview background or pressing Escape does not clear LED selection", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const selectStart = app.indexOf("function selectPreviewPosition(event) {");
+  const selectEnd = app.indexOf("function stopScreenSync(", selectStart);
+  const bindStart = app.indexOf("function bindEvents() {");
+  const bindEnd = app.indexOf("async function start()", bindStart);
+  const selectedLedIndices = new Set([2, 8]);
+  const context = {
+    selectedLedIndices,
+    selectedLedAnchorIndex: 8,
+    updatePreview() {
+      assert.fail("A click outside an LED should not change the preview");
+    }
+  };
+  const monitorKeydown = app.slice(
+    app.indexOf('$("#monitor").addEventListener("keydown"', bindStart),
+    app.indexOf('$("#select-all")', bindStart)
+  );
+
+  assert.notEqual(selectStart, -1);
+  assert.notEqual(selectEnd, -1);
+  assert.notEqual(bindStart, -1);
+  vm.runInNewContext(
+    `${app.slice(selectStart, selectEnd)}\nselectPreviewPosition({ target: { closest: () => null } });`,
+    context
+  );
+
+  assert.equal(context.selectedLedIndices, selectedLedIndices);
+  assert.match(monitorKeydown, /event\.key === "Enter" \|\| event\.key === " "/);
+  assert.doesNotMatch(monitorKeydown, /Escape|selectedLedIndices\s*=/);
 });
 
 test("Scenes save full lighting setups with explicit management actions", () => {
@@ -464,6 +507,8 @@ test("Scenes save full lighting setups with explicit management actions", () => 
   assert.match(html, /id="gradient-start"/);
   assert.match(html, /id="gradient-end"/);
   assert.match(html, /id="apply-gradient"/);
+  assert.match(html, /id="deselect-all"[^>]*>Deselect all/);
+  assert.match(html, /order you selected the LEDs/);
   assert.match(app, /sceneFromLighting\(/);
   assert.match(app, /function applyGradient\(\)/);
   assert.match(app, /gradientChanges\(/);
