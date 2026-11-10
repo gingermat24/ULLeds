@@ -1,5 +1,43 @@
 "use strict";
 
+/* ==========================================================================
+   ULLeds renderer
+
+    1. Constants and state        7. Scenes
+    2. Helpers                    8. Screen Sync and Spotify Sync
+    3. Settings persistence       9. Updates and release notes
+    4. Device and connection     10. Setup wizard and reset
+    5. Lighting preview          11. Event binding
+    6. Color and selection       12. Startup
+   ========================================================================== */
+
+
+/* ==========================================================================
+   1. Constants and state
+   ========================================================================== */
+
+const MAX_SCENES = 30;
+const MAX_PALETTE_COLORS = 8;
+const MAX_LEDS = 253;
+const SCENE_NAME_MAX = 36;
+const FPS = { min: 5, max: 60, fallback: 30 };
+const TOAST_MS = 2600;
+const VERSION_NOTICE_MS = 8000;
+
+const EFFECT_LABELS = {
+  steady: "Solid",
+  breathe: "Breathe",
+  spectrum: "Spectrum",
+  palette: "Palette drift"
+};
+
+const POSITION_TITLES = {
+  "monitor-back": "Behind your monitor",
+  "monitor-front": "Around your screen",
+  top: "Above your screen",
+  desk: "On your desk"
+};
+
 let state = {
   settings: {
     color: "#008100",
@@ -17,7 +55,7 @@ let state = {
     onboarded: false,
     updateFolder: "",
     updateSource: "github",
-    syncFps: 30,
+    syncFps: FPS.fallback,
     syncContentMode: "display",
     syncAutoDetect: true,
     startWithWindows: true,
@@ -26,36 +64,91 @@ let state = {
   device: { connected: false, name: "", serialNumber: "" }
 };
 
-let toastTimer;
-let versionNoticeTimer;
-let pendingVersionNotice = null;
-let settingsQueue = {};
-let settingsTimer;
-let settingsFlushPromise = null;
-let wizardStep = 0;
-let detectedDevices = [];
-let deviceConnecting = false;
-let connectingDevicePath = "";
+// Debounced settings writes.
+const queue = { changes: {}, timer: null, flushing: null };
+
+// LED selection: a Set of indices, or null meaning "all LEDs".
 let selectedLedIndices = new Set();
 let selectedLedAnchorIndex = null;
-let screenSyncSession = null;
-const screenSyncLifecycle = window.ullScreenSyncLifecycle.createScreenSyncLifecycle();
-let screenSyncGeneration = 0;
-let requestedSyncMode = null;
-let autoSyncAttempted = false;
-let screenSyncError = "";
-let spotifySyncError = "";
+
+// Screen Sync / Spotify Sync. Only one session can run at a time.
+const sync = {
+  session: null,
+  lifecycle: window.ullScreenSyncLifecycle.createScreenSyncLifecycle(),
+  generation: 0,
+  requestedMode: null,
+  autoAttempted: false,
+  screenError: "",
+  spotifyError: ""
+};
+
+// Device discovery.
+const devices = { list: [], connecting: false, connectingPath: "" };
+
+// Updates and release notes.
+const updates = { busy: false, progress: { phase: "idle", percent: null, transferred: 0, total: 0 } };
+const releases = {
+  builtin: [],          // from the changelog block in index.html
+  published: null,      // Map(version → release) once GitHub history loads
+  installers: null,     // Map(version → installer) once GitHub downloads load
+  latest: null,         // newest installer
+  selected: null,       // version currently shown
+  versions: [],         // versions in display order
+  previousIndex: null
+};
+
+let wizardStep = 0;
 let sceneDialogMode = null;
-let updateCheckInProgress = false;
-let updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
+let pendingVersionNotice = null;
+let toastTimer;
+let versionNoticeTimer;
 
-let selectedReleaseVersion = null;
 
-const $ = (selector) => document.querySelector(selector);
+/* ==========================================================================
+   2. Helpers
+   ========================================================================== */
+
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-function stripLayoutSignature(layout) {
-  return JSON.stringify([layout.ledCount, layout.indices]);
+/** Tiny element builder: h("button", { class: "btn", onclick }, "Label") */
+function h(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value == null || value === false) continue;
+    if (key === "class") node.className = value;
+    else if (key === "text") node.textContent = value;
+    else if (key === "dataset") Object.assign(node.dataset, value);
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+    else node.setAttribute(key, value === true ? "" : value);
+  }
+  node.append(...children.filter(Boolean));
+  return node;
+}
+
+const currentProfile = () => state.device.profile || state.settings.deviceProfile;
+
+function buildLayout(ledCount, profile) {
+  return window.ullStripLayout.allocateEdgeIndices(
+    ledCount,
+    clamp(Number(profile?.edgeCount) || 3, 1, 4),
+    profile?.installationMethod ?? 0
+  );
+}
+
+const stripLayoutSignature = (layout) => JSON.stringify([layout.ledCount, layout.indices]);
+
+function plural(count, word) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+function toast(message) {
+  const element = $("#toast");
+  element.textContent = message;
+  element.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => element.classList.remove("visible"), TOAST_MS);
 }
 
 // Saved profiles and live HID data can still carry the original vendor name.
@@ -73,23 +166,6 @@ function deviceLabel(value, fallback = "USB LED controller") {
   return cleaned;
 }
 
-function updateRangeFill(input) {
-  const min = Number(input.min || 0);
-  const max = Number(input.max || 100);
-  const percent = max > min ? ((Number(input.value) - min) / (max - min)) * 100 : 0;
-  input.style.setProperty("--fill", `${clamp(percent, 0, 100)}%`);
-}
-
-function updateRangeFills() {
-  document.querySelectorAll('input[type="range"]').forEach(updateRangeFill);
-}
-
-function updateMonitorAspectRatio() {
-  const { width, height } = window.screen;
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
-  document.documentElement.style.setProperty("--monitor-aspect-ratio", String(width / height));
-}
-
 function calibratedColor(color, gains = [100, 100, 100]) {
   const channels = color.slice(1).match(/../g).map((part, index) =>
     clamp(Math.round(Number.parseInt(part, 16) * gains[index] / 100), 0, 255)
@@ -97,270 +173,75 @@ function calibratedColor(color, gains = [100, 100, 100]) {
   return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function toast(message) {
-  const element = $("#toast");
-  element.textContent = message;
-  element.classList.add("visible");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => element.classList.remove("visible"), 2600);
+function updateRangeFill(input) {
+  const min = Number(input.min || 0);
+  const max = Number(input.max || 100);
+  const percent = max > min ? ((Number(input.value) - min) / (max - min)) * 100 : 0;
+  input.style.setProperty("--range-fill", `${clamp(percent, 0, 100)}%`);
 }
 
-function dismissVersionNotice() {
-  clearTimeout(versionNoticeTimer);
-  $("#version-notice").classList.add("hidden");
+const updateRangeFills = () => $$('input[type="range"]').forEach(updateRangeFill);
+
+function updateMonitorAspectRatio() {
+  const { width, height } = window.screen;
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+  document.documentElement.style.setProperty("--monitor-aspect-ratio", String(width / height));
 }
 
-function showVersionNotice(installer) {
-  const setupDialog = $("#setup-dialog");
-  if (setupDialog.open) {
-    pendingVersionNotice = installer;
-    setupDialog.addEventListener("close", () => {
-      if (!pendingVersionNotice) return;
-      const pending = pendingVersionNotice;
-      pendingVersionNotice = null;
-      showVersionNotice(pending);
-    }, { once: true });
-    return;
-  }
-
-  const notice = $("#version-notice");
-  $("#version-notice-title").textContent = `ULLeds ${installer.version} is available`;
-  const updateButton = $("#version-notice-update");
-  updateButton.onclick = () => {
-    void startReleaseUpdate(installer.version, updateButton).then((started) => {
-      if (started) dismissVersionNotice();
-    });
-  };
-  notice.classList.remove("hidden");
-  clearTimeout(versionNoticeTimer);
-  versionNoticeTimer = setTimeout(dismissVersionNotice, 8000);
+function stopTracks(stream) {
+  stream?.getTracks().forEach((track) => track.stop());
 }
 
-async function startReleaseUpdate(version, button) {
-  if (updateCheckInProgress) return false;
-  updateCheckInProgress = true;
-  switchView("updates");
-  if (button) button.disabled = true;
-  updateState = { phase: "checking", percent: null, transferred: 0, total: 0 };
-  showUpdateMessage(`Preparing ULLeds ${version}…`);
-  try {
-    const result = await window.ull.installRelease(version);
-    if (result.available) {
-      if (result.downloaded || updateState.phase === "ready") {
-        updateState = { phase: "ready", percent: null, transferred: 0, total: 0 };
-        showUpdateMessage(`ULLeds ${result.version} is ready. Your saved settings will be kept.`, false, true);
-      } else {
-        updateState = { phase: "downloading", percent: null, transferred: 0, total: 0 };
-        showUpdateMessage(`Downloading ULLeds ${result.version}…`);
-      }
-      return true;
-    }
-
-    updateState = { phase: result.upToDate ? "idle" : "error", percent: null, transferred: 0, total: 0 };
-    showUpdateMessage(
-      result.error || `ULLeds ${result.version} is already installed.`,
-      Boolean(result.error)
-    );
-    return false;
-  } catch (error) {
-    updateState = { phase: "error", percent: null, transferred: 0, total: 0 };
-    showUpdateMessage(`Could not prepare ULLeds ${version}: ${error.message}`, true);
-    return false;
-  } finally {
-    updateCheckInProgress = false;
-    if (button) button.disabled = false;
-    renderUpdates();
-  }
+function switchView(name) {
+  $$(".tab").forEach((tab) => {
+    const active = tab.dataset.view === name;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+    tab.tabIndex = active ? 0 : -1;
+  });
+  $$(".view").forEach((panel) => panel.classList.toggle("hidden", panel.id !== `view-${name}`));
+  window.scrollTo({ top: 0 });
+  $("main").scrollTo({ top: 0 });
 }
 
-async function loadReleaseDownloads() {
-  const status = $("#release-download-status");
-  const historyStatus = $("#release-history-status");
-  try {
-    const [installers, releases] = await Promise.all([
-      window.ull.listReleaseDownloads(),
-      window.ull.listReleaseHistory()
-    ]);
-    if (!Array.isArray(installers)) throw new Error("GitHub returned an invalid release list.");
-    renderReleaseHistory(releases);
-    status.classList.add("hidden");
-    historyStatus.classList.add("hidden");
 
-    const installerByVersion = new Map(installers.map((installer) => [installer.version, installer]));
-    const latestVersion = installers[0]?.version;
-    for (const entry of document.querySelectorAll(".release-entry")) {
-      entry.querySelector(".release-actions")?.remove();
-      const header = entry.querySelector("header");
-      const version = header.querySelector("h3").textContent.match(/\d+\.\d+\.\d+/)?.[0];
-      const badge = header.querySelector(".release-current");
-      const badgeText = version === latestVersion
-        ? version === state.version ? "Current" : "Latest"
-        : version === state.version ? "Installed" : "";
-      if (badgeText) {
-        const statusBadge = badge || document.createElement("span");
-        statusBadge.className = "release-current";
-        statusBadge.textContent = badgeText;
-        if (!badge) header.insertBefore(statusBadge, header.querySelector(".release-date"));
-      } else {
-        badge?.remove();
-      }
-
-      const installer = installerByVersion.get(version);
-      if (!installer || !state.version) continue;
-
-      const versionComparison = window.ullGithubReleases.compareVersions(version, state.version);
-      if (versionComparison === 0) continue;
-      const actionLabel = versionComparison > 0 ? "Update" : "Downgrade";
-      const actions = document.createElement("div");
-      actions.className = "release-actions";
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "secondary-btn release-download";
-      button.textContent = actionLabel;
-      button.setAttribute("aria-label", `${actionLabel} to ULLeds ${version}`);
-      button.addEventListener("click", () => void startReleaseUpdate(version, button));
-      actions.append(button);
-      header.insertBefore(actions, header.querySelector("h3").nextSibling);
-    }
-
-    const latest = installers[0];
-    if (latest && window.ullGithubReleases.compareVersions(latest.version, state.version) > 0) {
-      showVersionNotice(latest);
-    }
-  } catch (error) {
-    console.error("Could not load GitHub release downloads:", error);
-    status.textContent = "Could not load release downloads. Check your connection and try again.";
-    status.classList.remove("hidden");
-    historyStatus.textContent = "Could not load GitHub release notes. Showing the built-in changelog.";
-    historyStatus.classList.remove("hidden");
-  }
-}
-
-function renderReleaseCategories(entry, categories) {
-  const existingCategories = entry.querySelectorAll(".release-category");
-  existingCategories.forEach((category) => category.remove());
-  for (const category of categories) {
-    if (typeof category?.name !== "string" || !Array.isArray(category.items)) continue;
-    const items = category.items.filter((item) => typeof item === "string" && item.trim());
-    if (items.length === 0) continue;
-
-    const section = document.createElement("div");
-    section.className = "release-category";
-    const heading = document.createElement("strong");
-    heading.textContent = category.name;
-    const list = document.createElement("ul");
-    for (const item of items) {
-      const listItem = document.createElement("li");
-      listItem.textContent = item;
-      list.append(listItem);
-    }
-    section.append(heading, list);
-    entry.append(section);
-  }
-}
-
-function renderReleaseHistory(releases) {
-  if (!Array.isArray(releases)) throw new Error("GitHub returned an invalid release history.");
-  const track = $("#release-track");
-  const entries = new Map([...track.querySelectorAll(".release-entry")].map((entry) => {
-    const version = entry.querySelector("h3").textContent.match(/\d+\.\d+\.\d+/)?.[0];
-    if (!version) throw new Error("A changelog entry is missing its version.");
-    return [version, entry];
-  }));
-  const publishedByVersion = new Map();
-  for (const release of releases) {
-    if (typeof release?.version !== "string" || !/^\d+\.\d+\.\d+$/.test(release.version)) continue;
-    publishedByVersion.set(release.version, release);
-    if (!entries.has(release.version)) {
-      const entry = document.createElement("article");
-      entry.className = "card release-entry";
-      const header = document.createElement("header");
-      const title = document.createElement("h3");
-      title.textContent = `ULLeds ${release.version}`;
-      header.append(title);
-      entry.append(header);
-      entries.set(release.version, entry);
-    }
-  }
-
-  for (const [version, entry] of entries) {
-    const release = publishedByVersion.get(version);
-    const header = entry.querySelector("header");
-    let legacyBadge = header.querySelector(".release-legacy");
-    if (release) {
-      legacyBadge?.remove();
-      if (Array.isArray(release.categories) && release.categories.length > 0) {
-        renderReleaseCategories(entry, release.categories);
-      }
-    } else {
-      if (!legacyBadge) {
-        legacyBadge = document.createElement("span");
-        legacyBadge.className = "release-legacy";
-        legacyBadge.textContent = "Legacy";
-        header.append(legacyBadge);
-      }
-    }
-
-    header.querySelector(".release-date")?.remove();
-    const releaseDate = typeof release?.date === "string" &&
-      !Number.isNaN(Date.parse(release.date)) ? release.date : null;
-    const dateLabel = document.createElement(releaseDate ? "time" : "span");
-    dateLabel.className = "release-date";
-    if (releaseDate) {
-      dateLabel.dateTime = releaseDate;
-      dateLabel.textContent = new Intl.DateTimeFormat("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-        timeZone: "UTC"
-      }).format(new Date(releaseDate));
-    } else {
-      dateLabel.textContent = "Date unavailable";
-    }
-    const badge = header.querySelector(".release-current, .release-legacy");
-    header.insertBefore(dateLabel, badge);
-  }
-
-  const orderedEntries = [...entries.entries()]
-    .sort(([left], [right]) => window.ullGithubReleases.compareVersions(right, left))
-    .map(([, entry]) => entry);
-  track.replaceChildren(...orderedEntries);
-  setupReleaseCarousel();
-}
+/* ==========================================================================
+   3. Settings persistence
+   ========================================================================== */
 
 function queueSettings(changes, immediate = false) {
   Object.assign(state.settings, changes);
-  Object.assign(settingsQueue, changes);
+  Object.assign(queue.changes, changes);
   updatePreview();
-  clearTimeout(settingsTimer);
+  clearTimeout(queue.timer);
   if (immediate) {
-    settingsTimer = null;
+    queue.timer = null;
     void flushSettingsQueue();
     return;
   }
-  settingsTimer = setTimeout(() => {
-    settingsTimer = null;
+  queue.timer = setTimeout(() => {
+    queue.timer = null;
     void flushSettingsQueue();
   }, 16);
 }
 
 async function flushSettingsQueue() {
-  if (settingsFlushPromise) return settingsFlushPromise;
-  settingsFlushPromise = (async () => {
-    while (Object.keys(settingsQueue).length) {
-      const pending = settingsQueue;
-      settingsQueue = {};
+  if (queue.flushing) return queue.flushing;
+  queue.flushing = (async () => {
+    while (Object.keys(queue.changes).length) {
+      const pending = queue.changes;
+      queue.changes = {};
       try {
         const result = await window.ull.updateSettings(pending);
         state.settings = result.settings;
-        Object.assign(state.settings, settingsQueue);
+        Object.assign(state.settings, queue.changes);
         state.device = result;
         renderConnection();
         updatePreview();
         if (Object.hasOwn(pending, "scenes")) renderScenes();
         if (Object.hasOwn(pending, "palette")) renderPalette();
       } catch (error) {
-        settingsQueue = { ...pending, ...settingsQueue };
+        queue.changes = { ...pending, ...queue.changes };
         console.error("Could not save ULLeds settings:", error);
         toast(`Could not save settings: ${error.message}`);
         break;
@@ -368,17 +249,595 @@ async function flushSettingsQueue() {
     }
   })();
   try {
-    await settingsFlushPromise;
+    await queue.flushing;
   } finally {
-    settingsFlushPromise = null;
+    queue.flushing = null;
   }
+}
+
+/** Save settings immediately and adopt the controller's reply. */
+async function saveSettingsNow(changes) {
+  const result = await window.ull.updateSettings(changes);
+  state.settings = result.settings;
+  state.device = result;
+  return result;
+}
+
+
+/* ==========================================================================
+   4. Device and connection
+   ========================================================================== */
+
+function applyDeviceState(device) {
+  state.device = device;
+  const profile = device.connected && device.profile;
+  if (!device.connected && sync.session) stopScreenSync("Controller disconnected.");
+  if (profile?.ledCount) {
+    const hadProfile = Boolean(state.settings.deviceProfile);
+    state.settings.deviceProfile = profile;
+    state.settings.ledCount = profile.ledCount;
+    state.settings.devicePath = device.devicePath;
+    if (!hadProfile && profile.color) state.settings.color = profile.color;
+  }
+}
+
+function renderConnection() {
+  const indicator = $("#device-status");
+  const label = $("#device-label");
+  const { connected, error } = state.device;
+
+  indicator.classList.toggle("connected", connected);
+  indicator.classList.toggle("has-error", Boolean(error));
+
+  const details = connected
+    ? deviceLabel(state.device.name, "LED controller connected")
+    : error || "No LED controller connected";
+  label.textContent = connected ? "Connected" : error ? "Connection issue" : "Not connected";
+  label.title = details;
+  indicator.title = details;
+
+  renderDeviceSelector();
+
+  $("#settings-device").textContent = connected
+    ? `${deviceLabel(state.device.name)}${state.device.serialNumber ? ` · ${state.device.serialNumber}` : ""}`
+    : (error || "Not connected");
+
+  renderProfile(currentProfile());
+}
+
+function renderDeviceSelector() {
+  const select = $("#controller-select");
+  const currentPath = devices.connectingPath || state.device.devicePath || state.settings.devicePath || "";
+  const options = devices.list.map((device, index) => {
+    const ids = `${Number(device.vendorId).toString(16).padStart(4, "0")}:${Number(device.productId).toString(16).padStart(4, "0")}`;
+    const iface = device.interface == null ? null : `interface ${device.interface}`;
+    const detail = device.serialNumber
+      ? [device.serialNumber, iface].filter(Boolean).join(" · ")
+      : [ids, iface || `controller ${index + 1}`].join(" · ");
+    return { value: device.path, label: `${deviceLabel(device.name)} · ${detail}` };
+  });
+
+  if (options.length === 0) {
+    select.replaceChildren(new Option("No compatible controller found", ""));
+    select.disabled = true;
+    return;
+  }
+  select.replaceChildren(...options.map(({ value, label }) => new Option(label, value)));
+  select.disabled = devices.connecting;
+  select.value = options.some((option) => option.value === currentPath)
+    ? currentPath
+    : state.device.connected && options.some((option) => option.value === state.device.devicePath)
+      ? state.device.devicePath
+      : "";
+}
+
+function renderProfile(profile) {
+  const position = profile?.position || "monitor-back";
+  const countSource = profile?.countSource === "saved profile"
+    ? "saved setup"
+    : state.device.connected ? "detected" : "last saved";
+  $("#settings-count").textContent = profile?.ledCount
+    ? `${profile.ledCount} LEDs · ${countSource}`
+    : "Not detected";
+  $("#settings-order").textContent = profile?.colorOrder || "Not configured";
+  $("#settings-layout").textContent = profile?.edgeCount
+    ? `${profile.edgeCount} sides · ${position.replaceAll("-", " ")}`
+    : "Not configured";
+}
+
+async function scanDevices() {
+  $("#device-label").textContent = "Scanning for the controller…";
+  try {
+    const result = await window.ull.scanDevices();
+    devices.list = result.devices || [];
+    applyDeviceState(result);
+    render();
+    if (!state.settings.onboarded && $("#setup-dialog").open && wizardStep === 0) {
+      setWizardStep(0);
+    }
+    if (!state.device.connected && !result.error) {
+      toast(devices.list.length ? "Controller found but not connected." : "No supported USB controller found.");
+    }
+  } catch (error) {
+    state.device = { connected: false, error: error.message };
+    renderConnection();
+    toast(`Scan failed: ${error.message}`);
+  }
+}
+
+async function connectSelectedDevice(devicePath) {
+  if (!devicePath || devices.connecting) return;
+  devices.connecting = true;
+  devices.connectingPath = devicePath;
+  renderDeviceSelector();
+  try {
+    const device = await window.ull.connectDevice(devicePath);
+    applyDeviceState(device);
+    render();
+    toast(device.connected
+      ? `Connected to ${deviceLabel(device.name)}.`
+      : device.error || "Could not connect to that controller.");
+  } catch (error) {
+    toast(`Could not connect to the selected controller: ${error.message}`);
+  } finally {
+    devices.connecting = false;
+    devices.connectingPath = "";
+    renderDeviceSelector();
+  }
+}
+
+
+/* ==========================================================================
+   5. Lighting preview
+   ========================================================================== */
+
+function setPixelColor(pixel, color) {
+  if (pixel.dataset.color === color) return;
+  pixel.style.backgroundColor = color;
+  pixel.dataset.color = color;
+}
+
+/** Paint the live preview from a session's sampled colors. */
+function paintSessionPixels(session) {
+  for (const pixel of session.pixelElements) {
+    setPixelColor(pixel, session.colors[Number(pixel.dataset.ledIndex)]);
+  }
+}
+
+function renderEdgePixels(container, indices, edge) {
+  const sameLayout = container.children.length === indices.length &&
+    indices.every((index, position) => Number(container.children[position]?.dataset.ledIndex) === index);
+
+  if (!sameLayout) {
+    container.replaceChildren(...indices.map((index) =>
+      h("button", {
+        type: "button",
+        class: "led-pixel",
+        dataset: { ledIndex: String(index) },
+        "aria-label": `Select LED ${index + 1}, ${edge} side`
+      })
+    ));
+  }
+
+  for (const [position, index] of indices.entries()) {
+    const pixel = container.children[position];
+    const selected = window.ullLedSelection.isLedSelected(selectedLedIndices, index);
+    const color = calibratedColor(
+      sync.session?.colors?.[index] || state.settings.ledColors?.[index] || state.settings.color,
+      state.settings.channelGains
+    );
+    const label = `Select LED ${index + 1}, ${edge} side${selected ? ", selected" : ""}`;
+
+    setPixelColor(pixel, color);
+    if (pixel.getAttribute("aria-label") !== label) pixel.setAttribute("aria-label", label);
+    pixel.setAttribute("aria-pressed", String(selected));
+    pixel.classList.toggle("selected", selected);
+  }
+}
+
+function selectedColor() {
+  if (!selectedLedIndices?.size) return state.settings.color;
+  const first = selectedLedIndices.values().next().value;
+  return state.settings.ledColors?.[first] || state.settings.color;
+}
+
+/** Re-render everything that depends on settings, device or selection. */
+function updatePreview() {
+  const settings = state.settings;
+  const profile = currentProfile();
+  const count = Number.isInteger(profile?.ledCount) ? clamp(profile.ledCount, 1, MAX_LEDS) : 0;
+  const layout = count ? buildLayout(count, profile) : { counts: {}, indices: {} };
+
+  if (selectedLedIndices && count) {
+    selectedLedIndices = new Set([...selectedLedIndices].filter((index) => index < count));
+  }
+  if (selectedLedAnchorIndex !== null && selectedLedAnchorIndex >= count) {
+    selectedLedAnchorIndex = null;
+  }
+
+  renderMonitor(settings, profile, count, layout);
+  renderSelectionSummary(count, layout);
+  renderControls(settings);
+  renderSyncControls(settings);
+
+  if (sync.session) {
+    const signature = stripLayoutSignature(layout);
+    if (sync.session.layoutSignature !== signature) {
+      sync.session.layout = layout;
+      sync.session.layoutSignature = signature;
+      sync.session.colors = null;
+    }
+    sync.session.pixelElements = $$(".led-pixel");
+  }
+
+  updateRangeFills();
+}
+
+function renderMonitor(settings, profile, count, layout) {
+  const position = profile?.position || "monitor-back";
+
+  for (const edge of ["top", "left", "right", "bottom"]) {
+    const indices = layout.indices[edge] || [];
+    const container = $(`#led-${edge}`);
+    renderEdgePixels(container, indices, edge);
+    container.classList.toggle("hidden", indices.length === 0);
+    container.classList.toggle("selected", window.ullLedSelection.isEdgeSelected(selectedLedIndices, indices));
+  }
+
+  $("#monitor").dataset.position = position;
+  $("#monitor").dataset.power = settings.power ? "on" : "off";
+  $("#preview-title").textContent = POSITION_TITLES[position] || POSITION_TITLES["monitor-back"];
+
+  const root = document.documentElement.style;
+  root.setProperty("--led-color", settings.color);
+  root.setProperty("--led-opacity", settings.power ? String(settings.brightness / 100) : "0");
+
+  $("#preview-led-count").textContent = count
+    ? `${count} LEDs ${profile?.countSource === "saved profile"
+      ? "from saved setup"
+      : state.device.connected ? "detected" : "saved"}`
+    : "Waiting for controller";
+
+  $("#power-toggle").setAttribute("aria-checked", String(settings.power));
+  $("#power-toggle").setAttribute("aria-label", `LED power: ${settings.power ? "on" : "off"}`);
+  $("#power-state").textContent = settings.power ? "On" : "Off";
+}
+
+function renderSelectionSummary(count, layout) {
+  const label = $("#selection-label");
+  if (selectedLedIndices === null) {
+    label.textContent = "All LEDs";
+  } else if (selectedLedIndices.size === 0) {
+    label.textContent = "No LEDs selected";
+  } else if (selectedLedIndices.size === 1) {
+    const index = selectedLedIndices.values().next().value;
+    const edge = Object.entries(layout.indices).find(([, indices]) => indices.includes(index))?.[0];
+    label.textContent = `LED ${index + 1}${edge ? ` · ${edge[0].toUpperCase()}${edge.slice(1)}` : ""}`;
+  } else {
+    label.textContent = `${selectedLedIndices.size} LEDs selected`;
+  }
+
+  const selectedCount = selectedLedIndices === null ? count : selectedLedIndices.size;
+  const button = $("#apply-gradient");
+  button.disabled = selectedCount === 0;
+  button.textContent = selectedCount
+    ? `Apply across ${plural(selectedCount, "LED")}`
+    : "Apply gradient";
+}
+
+function renderControls(settings) {
+  const gainIds = ["red", "green", "blue"];
+  gainIds.forEach((name, index) => {
+    $(`#rgb-${name}`).value = settings.channelGains[index];
+    $(`#rgb-${name}-value`).textContent = `${settings.channelGains[index]}%`;
+  });
+
+  const color = selectedColor();
+  $("#color-picker").value = color;
+  $("#hex-color").value = color;
+  $("#brightness").value = settings.brightness;
+  $("#brightness-value").textContent = `${settings.brightness}%`;
+  $("#speed").value = settings.speed;
+  $("#speed-value").textContent = `${settings.speed}%`;
+  $("#effect").value = settings.effect;
+  $("#palette-tuning").classList.toggle("hidden", settings.effect !== "palette");
+  $("#speed-control").classList.toggle("hidden", settings.effect === "steady");
+
+  const fps = clamp(Number(settings.syncFps) || FPS.fallback, FPS.min, FPS.max);
+  $("#sync-fps-range").value = fps;
+  if (document.activeElement !== $("#sync-fps-number")) $("#sync-fps-number").value = fps;
+  $("#sync-content-mode").value = settings.syncContentMode || "display";
+  $("#sync-auto-detect").checked = settings.syncAutoDetect !== false;
+}
+
+function renderSyncControls(settings) {
+  const { lifecycle } = sync;
+  const startingScreen = lifecycle.isStarting && sync.requestedMode === "screen";
+  const startingSpotify = lifecycle.isStarting && sync.requestedMode === "spotify";
+  const resuming = settings.resumeScreenSync && sync.autoAttempted && !sync.session && !sync.screenError;
+
+  const setToggle = (button, { active, starting, resumingNow = false }) => {
+    button.textContent = lifecycle.isStopping
+      ? "Stopping…"
+      : active ? "Stop" : resumingNow ? "Starting…" : "Start";
+    button.disabled = lifecycle.isStopping || (lifecycle.isStarting && !starting);
+    button.classList.toggle("is-active", active || resumingNow);
+  };
+
+  setToggle($("#screen-sync-toggle"), {
+    active: sync.session?.mode === "screen" || startingScreen,
+    starting: startingScreen,
+    resumingNow: resuming
+  });
+  setToggle($("#spotify-sync-toggle"), {
+    active: sync.session?.mode === "spotify" || startingSpotify,
+    starting: startingSpotify
+  });
+
+  $("#screen-sync-description").textContent = sync.session
+    ? sync.session.mode === "spotify" ? "Spotify Sync is active" : "Matching the primary display"
+    : startingScreen ? "Starting display capture…"
+    : resuming ? "Resuming display capture…"
+    : sync.screenError || (settings.resumeScreenSync
+      ? "Will resume automatically when ULLeds starts"
+      : "Match LEDs to your display");
+
+  $("#spotify-sync-description").textContent = sync.session?.mode === "spotify"
+    ? "Reading Spotify cover art on this PC"
+    : sync.spotifyError || "Use colors from the currently playing track";
+}
+
+function render() {
+  $("#app-version").textContent = state.version || "—";
+  $("#start-with-windows").checked = state.settings.startWithWindows;
+  $("#resume-screen-sync").checked = state.settings.resumeScreenSync;
+  renderUpdates();
+  renderScenes();
+  renderPalette();
+  renderConnection();
+  updatePreview();
+}
+
+function renderPalette() {
+  $("#palette-swatches").replaceChildren(...state.settings.palette.map((color, index) =>
+    h("input", {
+      type: "color",
+      class: "swatch",
+      value: color,
+      "aria-label": `Palette color ${index + 1}`,
+      oninput: (event) => {
+        const palette = [...state.settings.palette];
+        palette[index] = event.target.value;
+        queueSettings({ palette });
+      }
+    })
+  ));
+}
+
+
+/* ==========================================================================
+   6. Color and selection
+   ========================================================================== */
+
+const syncIsActive = () => Boolean(sync.session) || sync.lifecycle.isStarting;
+
+/** Manual lighting changes end any running sync first. */
+function stopActiveSync() {
+  return syncIsActive() ? stopScreenSync("", true) : Promise.resolve();
+}
+
+function applyColor(color, all = false) {
+  void stopActiveSync();
+  try {
+    queueSettings(window.ullLedSelection.fixedColorChanges(
+      state.settings.color,
+      state.settings.ledColors,
+      all ? null : selectedLedIndices,
+      color
+    ), true);
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+async function applyGradient() {
+  const ledCount = Number(currentProfile()?.ledCount);
+  if (!Number.isInteger(ledCount) || ledCount < 1 || ledCount > MAX_LEDS) {
+    return toast("Connect a controller with a detected LED count before applying a gradient.");
+  }
+  if (selectedLedIndices?.size === 0) return toast("Select at least one LED first.");
+  try {
+    const selectedCount = selectedLedIndices === null ? ledCount : selectedLedIndices.size;
+    const changes = window.ullLedSelection.gradientChanges(
+      state.settings.ledColors,
+      selectedLedIndices,
+      ledCount,
+      $("#gradient-start").value,
+      $("#gradient-end").value
+    );
+    await stopActiveSync();
+    queueSettings(changes, true);
+    toast(`Applied a gradient across ${selectedCount} LEDs.`);
+  } catch (error) {
+    console.error("Could not apply LED gradient:", error);
+    toast(`Could not apply gradient: ${error.message}`);
+  }
+}
+
+function selectPreviewPosition(event) {
+  const pixel = event.target.closest(".led-pixel");
+  const edge = pixel?.closest(".led-edge") || event.target.closest(".led-edge");
+  if (!edge) return;
+
+  if (pixel) {
+    const index = Number(pixel.dataset.ledIndex);
+    selectedLedIndices = event.shiftKey && selectedLedAnchorIndex !== null
+      ? window.ullLedSelection.selectLedRange(selectedLedAnchorIndex, index)
+      : window.ullLedSelection.selectLed(selectedLedIndices, index, event.ctrlKey || event.metaKey);
+    selectedLedAnchorIndex = index;
+  } else {
+    const profile = currentProfile();
+    const count = Number(profile?.ledCount);
+    if (!Number.isInteger(count)) return;
+    selectedLedIndices = new Set(buildLayout(count, profile).indices[edge.dataset.edge] || []);
+    selectedLedAnchorIndex = null;
+  }
+  updatePreview();
+}
+
+function setSelection(indices) {
+  selectedLedIndices = indices;
+  selectedLedAnchorIndex = null;
+  updatePreview();
+}
+
+
+/* ==========================================================================
+   7. Scenes
+   ========================================================================== */
+
+function renderScenes() {
+  const root = $("#scene-grid");
+  const scenes = state.settings.scenes || [];
+  $("#export-scenes").disabled = scenes.length === 0;
+
+  if (!scenes.length) {
+    root.replaceChildren(h("div", { class: "empty" },
+      h("h3", { text: "Save a setup for later" }),
+      h("p", { text: "Your current color, brightness, effect, speed, palette and individual LED colors are saved together." }),
+      h("button", { class: "btn", type: "button", text: "Save current setup", onclick: () => openSceneDialog("create") })
+    ));
+    return;
+  }
+
+  root.replaceChildren(...scenes.map(buildSceneCard));
+}
+
+function buildSceneCard(scene) {
+  const previewColors = scene.effect === "palette" ? scene.palette : Object.values(scene.ledColors).slice(0, 8);
+  const colors = previewColors.length ? previewColors : [scene.color];
+  const stops = colors.map((color, index) =>
+    `${color} ${(index / colors.length) * 100}% ${((index + 1) / colors.length) * 100}%`
+  ).join(", ");
+
+  const individual = Object.keys(scene.ledColors).length;
+  const summary = [
+    EFFECT_LABELS[scene.effect] ?? scene.effect,
+    scene.effect === "steady" ? null : `${scene.speed}% speed`,
+    `${scene.brightness}% brightness`,
+    individual ? `${individual} individual LEDs` : null
+  ].filter(Boolean).join(" · ");
+
+  const action = (label, className, handler) => h("button", {
+    class: className,
+    type: "button",
+    text: label,
+    "aria-label": `${label} ${scene.name}`,
+    onclick: handler
+  });
+
+  const ribbon = h("div", { class: "scene-ribbon", "aria-hidden": "true" });
+  ribbon.style.background = `linear-gradient(90deg, ${stops})`;
+
+  return h("article", { class: "scene" },
+    ribbon,
+    h("div", {}, h("h3", { text: scene.name }), h("p", { text: summary })),
+    h("div", { class: "scene-actions" },
+      action("Apply", "btn btn-primary btn-sm", () => applyScene(scene)),
+      action("Rename", "btn btn-ghost btn-sm", () => openSceneDialog("rename", scene)),
+      action("Duplicate", "btn btn-ghost btn-sm", () => duplicateScene(scene)),
+      action("Delete", "btn btn-ghost btn-sm", () => confirmDeleteScene(scene))
+    )
+  );
+}
+
+function openSceneDialog(mode, scene = null) {
+  if (mode === "create" && state.settings.scenes.length >= MAX_SCENES) {
+    return toast(`You can save up to ${MAX_SCENES} lighting setups.`);
+  }
+  const renaming = mode === "rename";
+  sceneDialogMode = { mode, id: scene?.id || null };
+  $("#scene-dialog-title").textContent = renaming ? "Rename this setup" : "Name this setup";
+  $("#scene-dialog-copy").textContent = renaming
+    ? "Choose a name that will help you find this lighting later."
+    : "This saves your current lighting without changing device or Screen Sync settings.";
+  $("#save-scene-name").textContent = renaming ? "Save name" : "Save setup";
+  $("#scene-name").value = scene?.name || "";
+  $("#scene-dialog").showModal();
+  $("#scene-name").focus();
+  if (renaming) $("#scene-name").select();
+}
+
+function saveSceneName(event) {
+  event.preventDefault();
+  const renaming = sceneDialogMode?.mode === "rename";
+  const name = $("#scene-name").value.trim();
+  if (!name || name.length > SCENE_NAME_MAX) {
+    toast(`Enter a setup name from 1 to ${SCENE_NAME_MAX} characters.`);
+    $("#scene-name").focus();
+    return;
+  }
+
+  const scenes = [...state.settings.scenes];
+  if (renaming) {
+    const index = scenes.findIndex((scene) => scene.id === sceneDialogMode.id);
+    if (index === -1) return toast("That setup no longer exists.");
+    scenes[index] = { ...scenes[index], name };
+  } else {
+    if (scenes.length >= MAX_SCENES) return toast(`You can save up to ${MAX_SCENES} lighting setups.`);
+    scenes.push(window.ullSceneData.sceneFromLighting(`scene-${crypto.randomUUID()}`, name, state.settings));
+  }
+
+  queueSettings({ scenes }, true);
+  $("#scene-dialog").close();
+  sceneDialogMode = null;
+  toast(renaming ? "Setup renamed." : "Setup saved.");
+}
+
+function duplicateScene(scene) {
+  if (state.settings.scenes.length >= MAX_SCENES) {
+    return toast(`You can save up to ${MAX_SCENES} lighting setups.`);
+  }
+  const copy = window.ullSceneData.sceneFromLighting(
+    `scene-${crypto.randomUUID()}`,
+    `${scene.name} copy`.slice(0, SCENE_NAME_MAX),
+    scene
+  );
+  queueSettings({ scenes: [...state.settings.scenes, copy] }, true);
+  toast(`Copied ${scene.name}.`);
+}
+
+function confirmDeleteScene(scene) {
+  $("#delete-scene-name").textContent = `Delete “${scene.name}”? This cannot be undone.`;
+  $("#delete-scene-dialog").showModal();
+  $("#confirm-delete-scene").onclick = () => {
+    queueSettings({ scenes: state.settings.scenes.filter((entry) => entry.id !== scene.id) }, true);
+    $("#delete-scene-dialog").close();
+    toast(`Deleted ${scene.name}.`);
+  };
+}
+
+async function applyScene(scene) {
+  await stopActiveSync();
+  selectedLedIndices = new Set();
+  selectedLedAnchorIndex = null;
+
+  const lighting = window.ullSceneData.settingsFromScene(scene);
+  const ledCount = Number(currentProfile()?.ledCount);
+  if (Number.isInteger(ledCount) && ledCount > 0) {
+    lighting.ledColors = Object.fromEntries(
+      Object.entries(lighting.ledColors).filter(([index]) => Number(index) < ledCount)
+    );
+  }
+  queueSettings(lighting, true);
+  toast(`Applied ${scene.name}.`);
 }
 
 async function exportScenes() {
   try {
     const result = await window.ull.exportScenes();
     if (result.canceled) return;
-    toast(`Exported ${result.count} lighting setup${result.count === 1 ? "" : "s"}.`);
+    toast(`Exported ${plural(result.count, "lighting setup")}.`);
   } catch (error) {
     console.error("Could not export lighting setups:", error);
     toast(`Could not export setups: ${error.message}`);
@@ -395,566 +854,51 @@ async function importScenes() {
       toast(result.skipped ? "Those setups are already in ULLeds." : "No setups were imported.");
       return;
     }
-    const skipped = result.skipped
-      ? ` ${result.skipped} already existed and were skipped.`
-      : "";
-    toast(`Imported ${result.imported} lighting setup${result.imported === 1 ? "" : "s"}.${skipped}`);
+    const skipped = result.skipped ? ` ${result.skipped} already existed and were skipped.` : "";
+    toast(`Imported ${plural(result.imported, "lighting setup")}.${skipped}`);
   } catch (error) {
     console.error("Could not import lighting setups:", error);
     toast(`Could not import setups: ${error.message}`);
   }
 }
 
-function renderConnection() {
-  const indicator = $("#device-status");
-  const label = $("#device-label");
-  const profile = state.device.profile || state.settings.deviceProfile;
 
-  indicator.classList.toggle("connected", state.device.connected);
-  indicator.classList.toggle("has-error", Boolean(state.device.error));
+/* ==========================================================================
+   8. Screen Sync and Spotify Sync
+   Both modes share one session slot (sync.session), one lifecycle guard and
+   one generation counter. A start that finds the generation changed was
+   cancelled and must release everything it acquired.
+   ========================================================================== */
 
-  const connectionDetails = state.device.connected
-    ? deviceLabel(state.device.name, "LED controller connected")
-    : state.device.error || "No LED controller connected";
-  label.textContent = state.device.connected
-    ? "Connected"
-    : state.device.error
-      ? "Connection issue"
-      : "Not connected";
-  label.title = connectionDetails;
-  indicator.title = connectionDetails;
-  renderDeviceSelector();
-
-  $("#settings-device").textContent = state.device.connected
-    ? `${deviceLabel(state.device.name)}${state.device.serialNumber ? ` · ${state.device.serialNumber}` : ""}`
-    : (state.device.error || "Not connected");
-
-  renderProfile(profile);
-}
-
-function renderDeviceSelector() {
-  const select = $("#controller-select");
-  if (!select) return;
-  const currentPath = connectingDevicePath || state.device.devicePath || state.settings.devicePath || "";
-  const options = detectedDevices.map((device, index) => {
-    const identifiers = `${Number(device.vendorId).toString(16).padStart(4, "0")}:${Number(device.productId).toString(16).padStart(4, "0")}`;
-    const detail = device.serialNumber
-      ? `${device.serialNumber}${device.interface == null ? "" : ` · interface ${device.interface}`}`
-      : `${identifiers}${device.interface == null ? ` · controller ${index + 1}` : ` · interface ${device.interface}`}`;
-    return { value: device.path, label: `${deviceLabel(device.name)} · ${detail}` };
+function teardownSession(session) {
+  if (!session) return;
+  clearInterval(session.performanceTimer);
+  clearTimeout(session.pollTimer);
+  cancelAnimationFrame(session.frame);
+  cancelAnimationFrame(session.audioFrame);
+  if (session.videoFrame && typeof session.video?.cancelVideoFrameCallback === "function") {
+    session.video.cancelVideoFrameCallback(session.videoFrame);
+  }
+  session.stream?.getTracks().forEach((track) => {
+    track.onended = null;
+    track.stop();
   });
-  if (options.length === 0) {
-    select.replaceChildren(new Option("No compatible controller found", ""));
-    select.disabled = true;
-    return;
-  }
-  select.replaceChildren(...options.map(({ value, label }) => new Option(label, value)));
-  select.disabled = deviceConnecting;
-  select.value = options.some((option) => option.value === currentPath)
-    ? currentPath
-    : state.device.connected && options.some((option) => option.value === state.device.devicePath)
-      ? state.device.devicePath
-      : "";
-}
-
-function renderProfile(profile) {
-  const position = profile?.position || "monitor-back";
-  const countSource = profile?.countSource === "saved profile"
-    ? "saved setup"
-    : state.device.connected
-      ? "detected"
-      : "last saved";
-  $("#settings-count").textContent = profile?.ledCount
-    ? `${profile.ledCount} LEDs · ${countSource}`
-    : "Not detected";
-  $("#settings-order").textContent = profile?.colorOrder || "Not configured";
-  $("#settings-layout").textContent = profile?.edgeCount
-    ? `${profile.edgeCount} sides · ${position.replaceAll("-", " ")}`
-    : "Not configured";
-}
-
-function makePixels(container, indices, edge) {
-  const sameLayout = container.children.length === indices.length &&
-    indices.every((index, position) => Number(container.children[position]?.dataset.ledIndex) === index);
-
-  if (!sameLayout) {
-    container.replaceChildren(...indices.map((index) => {
-      const pixel = document.createElement("button");
-      pixel.type = "button";
-      pixel.className = "led-pixel";
-      pixel.dataset.ledIndex = String(index);
-      pixel.setAttribute("aria-label", `Select LED ${index + 1}, ${edge} side`);
-      return pixel;
-    }));
-  }
-
-  for (const [position, index] of indices.entries()) {
-    const pixel = container.children[position];
-    const selected = window.ullLedSelection.isLedSelected(selectedLedIndices, index);
-    const color = calibratedColor(
-      screenSyncSession?.colors?.[index] ||
-        state.settings.ledColors?.[index] || state.settings.color,
-      state.settings.channelGains
-    );
-    const label = `Select LED ${index + 1}, ${edge} side${selected ? ", selected" : ""}`;
-
-    if (pixel.dataset.color !== color) {
-      pixel.style.backgroundColor = color;
-      pixel.dataset.color = color;
-    }
-    if (pixel.getAttribute("aria-label") !== label) pixel.setAttribute("aria-label", label);
-    if (pixel.getAttribute("aria-pressed") !== String(selected)) {
-      pixel.setAttribute("aria-pressed", String(selected));
-    }
-    pixel.classList.toggle("selected", selected);
-  }
-}
-
-function selectedColor() {
-  if (!selectedLedIndices?.size) return state.settings.color;
-  const first = selectedLedIndices.values().next().value;
-  return state.settings.ledColors?.[first] || state.settings.color;
-}
-
-function openSceneDialog(mode, scene = null) {
-  if (mode === "create" && state.settings.scenes.length >= 30) {
-    return toast("You can save up to 30 lighting setups.");
-  }
-  sceneDialogMode = { mode, id: scene?.id || null };
-  $("#scene-dialog-title").textContent = mode === "rename" ? "Rename this setup" : "Name this setup";
-  $("#scene-dialog-copy").textContent = mode === "rename"
-    ? "Choose a name that will help you find this lighting later."
-    : "This saves your current lighting without changing device or Screen Sync settings.";
-  $("#save-scene-name").textContent = mode === "rename" ? "Save name" : "Save setup";
-  $("#scene-name").value = scene?.name || "";
-  $("#scene-dialog").showModal();
-  $("#scene-name").focus();
-  if (mode === "rename") $("#scene-name").select();
-}
-
-function saveSceneName(event) {
-  event.preventDefault();
-  const isRename = sceneDialogMode?.mode === "rename";
-  const name = $("#scene-name").value.trim();
-  if (!name || name.length > 36) {
-    toast("Enter a setup name from 1 to 36 characters.");
-    $("#scene-name").focus();
-    return;
-  }
-  const scenes = [...state.settings.scenes];
-  if (sceneDialogMode?.mode === "rename") {
-    const sceneIndex = scenes.findIndex((scene) => scene.id === sceneDialogMode.id);
-    if (sceneIndex === -1) return toast("That setup no longer exists.");
-    scenes[sceneIndex] = { ...scenes[sceneIndex], name };
-  } else {
-    if (scenes.length >= 30) return toast("You can save up to 30 lighting setups.");
-    scenes.push(window.ullSceneData.sceneFromLighting(
-      `scene-${crypto.randomUUID()}`,
-      name,
-      state.settings
-    ));
-  }
-  queueSettings({ scenes }, true);
-  $("#scene-dialog").close();
-  sceneDialogMode = null;
-  toast(isRename ? "Setup renamed." : "Setup saved.");
-}
-
-function duplicateScene(scene) {
-  if (state.settings.scenes.length >= 30) return toast("You can save up to 30 lighting setups.");
-  const duplicate = window.ullSceneData.sceneFromLighting(
-    `scene-${crypto.randomUUID()}`,
-    `${scene.name} copy`.slice(0, 36),
-    scene
-  );
-  queueSettings({ scenes: [...state.settings.scenes, duplicate] }, true);
-  toast(`Copied ${scene.name}.`);
-}
-
-function confirmDeleteScene(scene) {
-  $("#delete-scene-name").textContent = `Delete "${scene.name}"? This cannot be undone.`;
-  $("#delete-scene-dialog").showModal();
-  $("#confirm-delete-scene").onclick = () => {
-    const scenes = state.settings.scenes.filter((entry) => entry.id !== scene.id);
-    queueSettings({ scenes }, true);
-    $("#delete-scene-dialog").close();
-    toast(`Deleted ${scene.name}.`);
-  };
-}
-
-async function applyScene(scene) {
-  if (screenSyncSession || screenSyncLifecycle.isStarting) {
-    await stopScreenSync("", true);
-  }
-  selectedLedIndices = new Set();
-  selectedLedAnchorIndex = null;
-  const lighting = window.ullSceneData.settingsFromScene(scene);
-  const profile = state.device.profile || state.settings.deviceProfile;
-  const ledCount = Number(profile?.ledCount);
-  if (Number.isInteger(ledCount) && ledCount > 0) {
-    lighting.ledColors = Object.fromEntries(
-      Object.entries(lighting.ledColors).filter(([index]) => Number(index) < ledCount)
+  stopTracks(session.audioStream);
+  if (session.audioContext && session.audioContext.state !== "closed") {
+    void session.audioContext.close().catch((error) =>
+      console.error("Could not close the Spotify audio analyzer:", error)
     );
   }
-  queueSettings(lighting, true);
-  toast(`Applied ${scene.name}.`);
-}
-
-function applyDetectedMovieFormat({ aspectRatio }) {
-  if (screenSyncSession?.mode !== "screen" || !Number.isFinite(aspectRatio) ||
-      aspectRatio < 1.78 || aspectRatio > 2.6) return;
-  screenSyncSession.detectedAspectRatio = Math.round(aspectRatio * 100) / 100;
-  const ratio = screenSyncSession.detectedAspectRatio;
-  toast(`Using ${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1 for this Screen Sync session.`);
-}
-
-function applyColor(color, all = false) {
-  if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
-  try {
-    queueSettings(window.ullLedSelection.fixedColorChanges(
-      state.settings.color,
-      state.settings.ledColors,
-      all ? null : selectedLedIndices,
-      color
-    ), true);
-  } catch (error) {
-    toast(error.message);
-  }
-}
-
-async function applyGradient() {
-  const profile = state.device.profile || state.settings.deviceProfile;
-  const ledCount = Number(profile?.ledCount);
-  if (!Number.isInteger(ledCount) || ledCount < 1 || ledCount > 253) {
-    return toast("Connect a controller with a detected LED count before applying a gradient.");
-  }
-  if (selectedLedIndices?.size === 0) return toast("Select at least one LED first.");
-  try {
-    const selectedCount = selectedLedIndices === null ? ledCount : selectedLedIndices.size;
-    const changes = window.ullLedSelection.gradientChanges(
-      state.settings.ledColors,
-      selectedLedIndices,
-      ledCount,
-      $("#gradient-start").value,
-      $("#gradient-end").value
-    );
-    if (screenSyncSession || screenSyncLifecycle.isStarting) {
-      await stopScreenSync("", true);
-    }
-    queueSettings(changes, true);
-    toast(`Applied a gradient across ${selectedCount} LEDs.`);
-  } catch (error) {
-    console.error("Could not apply LED gradient:", error);
-    toast(`Could not apply gradient: ${error.message}`);
-  }
-}
-
-function updatePreview() {
-  const settings = state.settings;
-  const channelGainIds = ["rgb-red", "rgb-green", "rgb-blue"];
-  const channelGainOutputIds = ["rgb-red-value", "rgb-green-value", "rgb-blue-value"];
-  channelGainIds.forEach((id, index) => {
-    $(`#${id}`).value = settings.channelGains[index];
-    $(`#${channelGainOutputIds[index]}`).textContent = `${settings.channelGains[index]}%`;
-  });
-  const profile = state.device.profile || settings.deviceProfile;
-  const count = Number.isInteger(profile?.ledCount) ? clamp(profile.ledCount, 1, 253) : 0;
-  const edgeCount = clamp(Number(profile?.edgeCount) || 3, 1, 4);
-  const layout = count
-    ? window.ullStripLayout.allocateEdgeIndices(count, edgeCount, profile?.installationMethod ?? 0)
-    : { counts: {}, indices: {} };
-
-  if (selectedLedIndices && count) {
-    selectedLedIndices = new Set([...selectedLedIndices].filter((index) => index < count));
-  }
-  if (selectedLedAnchorIndex !== null && selectedLedAnchorIndex >= count) {
-    selectedLedAnchorIndex = null;
-  }
-
-  const position = profile?.position || "monitor-back";
-  const positionLabels = {
-    "monitor-back": "Behind your monitor",
-    "monitor-front": "Around your screen",
-    top: "Above your screen",
-    desk: "On your desk"
-  };
-
-  ["top", "left", "right", "bottom"].forEach((edge) => {
-    const indices = layout.indices[edge] || [];
-    const container = $(`#led-${edge}`);
-    makePixels(container, indices, edge);
-    container.classList.toggle("hidden", indices.length === 0);
-    container.classList.toggle(
-      "selected",
-      window.ullLedSelection.isEdgeSelected(selectedLedIndices, indices)
-    );
-  });
-
-  $("#monitor").dataset.position = position;
-  $("#monitor").dataset.power = settings.power ? "on" : "off";
-  $("#preview-title").textContent = positionLabels[position] || positionLabels["monitor-back"];
-  document.documentElement.style.setProperty("--led-color", settings.color);
-  document.documentElement.style.setProperty("--led-opacity", settings.power ? String(settings.brightness / 100) : "0");
-  $("#preview-led-count").textContent = count
-    ? `${count} LEDs ${profile?.countSource === "saved profile"
-      ? "from saved setup"
-      : state.device.connected ? "detected" : "saved"}`
-    : "Waiting for controller";
-  if (selectedLedIndices === null) {
-    $("#selection-label").textContent = "All LEDs";
-  } else if (selectedLedIndices.size === 0) {
-    $("#selection-label").textContent = "No LEDs selected";
-  } else if (selectedLedIndices.size === 1) {
-    const index = selectedLedIndices.values().next().value;
-    const edge = Object.entries(layout.indices).find(([, indices]) => indices.includes(index))?.[0];
-    $("#selection-label").textContent = `LED ${index + 1}${edge ? ` · ${edge[0].toUpperCase()}${edge.slice(1)}` : ""}`;
-  } else {
-    $("#selection-label").textContent = `${selectedLedIndices.size} LEDs selected`;
-  }
-  const gradientButton = $("#apply-gradient");
-  const selectedCount = selectedLedIndices === null ? count : selectedLedIndices.size;
-  gradientButton.disabled = selectedCount === 0;
-  gradientButton.textContent = selectedCount
-    ? `Apply across ${selectedCount} ${selectedCount === 1 ? "LED" : "LEDs"}`
-    : "Apply gradient";
-
-  const color = selectedColor();
-  $("#color-picker").value = color;
-  $("#hex-color").value = color;
-  $("#brightness").value = settings.brightness;
-  $("#brightness-value").textContent = `${settings.brightness}%`;
-  $("#speed").value = settings.speed;
-  $("#speed-value").textContent = `${settings.speed}%`;
-  $("#effect").value = settings.effect;
-  const syncFps = clamp(Number(settings.syncFps) || 30, 5, 60);
-  $("#sync-fps-range").value = syncFps;
-  if (document.activeElement !== $("#sync-fps-number")) $("#sync-fps-number").value = syncFps;
-  $("#sync-fps-value").textContent = `${syncFps} FPS`;
-  $("#sync-content-mode").value = settings.syncContentMode || "display";
-  $("#sync-auto-detect").checked = settings.syncAutoDetect !== false;
-  $("#palette-tuning").classList.toggle("hidden", settings.effect !== "palette");
-  $("#speed-control").classList.toggle("hidden", settings.effect === "steady");
-  $("#power-toggle").setAttribute("aria-checked", String(settings.power));
-  $("#power-toggle").setAttribute("aria-label", `LED power: ${settings.power ? "on" : "off"}`);
-  $("#power-state").textContent = settings.power ? "On" : "Off";
-  const screenSyncPending = screenSyncLifecycle.isStarting && requestedSyncMode === "screen";
-  const spotifySyncPending = screenSyncLifecycle.isStarting && requestedSyncMode === "spotify";
-  const resumePending = (
-    settings.resumeScreenSync && autoSyncAttempted && !screenSyncSession && !screenSyncError
-  );
-  $("#screen-sync-toggle").textContent = screenSyncLifecycle.isStopping
-    ? "Stopping…"
-    : screenSyncSession?.mode === "screen" || screenSyncPending
-      ? "Stop"
-      : resumePending ? "Starting…" : "Start";
-  $("#screen-sync-toggle").disabled = screenSyncLifecycle.isStopping ||
-    (screenSyncLifecycle.isStarting && !screenSyncPending);
-  $("#screen-sync-toggle").classList.toggle(
-    "syncing",
-    Boolean(screenSyncSession?.mode === "screen" || screenSyncPending || resumePending)
-  );
-  $("#screen-sync-description").textContent = screenSyncSession
-    ? screenSyncSession.mode === "spotify" ? "Spotify Sync is active" : "Matching the primary display"
-    : screenSyncPending
-      ? "Starting display capture…"
-      : resumePending
-      ? "Resuming display capture…"
-    : screenSyncError || (settings.resumeScreenSync
-      ? "Will resume automatically when ULLeds starts"
-      : "Match LEDs to your display");
-  $("#spotify-sync-toggle").textContent = screenSyncLifecycle.isStopping
-    ? "Stopping…"
-    : screenSyncSession?.mode === "spotify" || spotifySyncPending
-      ? "Stop"
-      : "Start";
-  $("#spotify-sync-toggle").disabled = screenSyncLifecycle.isStopping ||
-    (screenSyncLifecycle.isStarting && !spotifySyncPending);
-  $("#spotify-sync-toggle").classList.toggle(
-    "syncing",
-    Boolean(screenSyncSession?.mode === "spotify" || spotifySyncPending)
-  );
-  $("#spotify-sync-description").textContent = screenSyncSession?.mode === "spotify"
-    ? "Reading Spotify cover art on this PC"
-    : spotifySyncError || "Use colors from the currently playing track";
-
-  if (screenSyncSession) {
-    const signature = stripLayoutSignature(layout);
-    if (screenSyncSession.layoutSignature !== signature) {
-      screenSyncSession.layout = layout;
-      screenSyncSession.layoutSignature = signature;
-      screenSyncSession.colors = null;
-    }
-    screenSyncSession.pixelElements = [...document.querySelectorAll(".led-pixel")];
-  }
-
-  updateRangeFills();
-}
-
-function renderScenes() {
-  const root = $("#scene-grid");
-  root.replaceChildren();
-  const scenes = state.settings.scenes || [];
-  $("#export-scenes").disabled = scenes.length === 0;
-
-  if (!scenes.length) {
-    const empty = document.createElement("div");
-    empty.className = "scene-empty";
-    const heading = document.createElement("h3");
-    heading.textContent = "Save a setup for later";
-    const copy = document.createElement("p");
-    copy.textContent = "Your current color, brightness, effect, speed, palette, and individual LED colors will be saved together.";
-    const save = document.createElement("button");
-    save.className = "secondary-btn";
-    save.type = "button";
-    save.textContent = "Save current setup";
-    save.addEventListener("click", () => openSceneDialog("create"));
-    empty.append(heading, copy, save);
-    root.append(empty);
-    return;
-  }
-
-  scenes.forEach((scene) => {
-    const item = document.createElement("article");
-    item.className = "scene-item";
-
-    const ribbon = document.createElement("div");
-    ribbon.className = "scene-ribbon";
-    const previewColors = scene.effect === "palette"
-      ? scene.palette
-      : Object.values(scene.ledColors).slice(0, 8);
-    const colors = previewColors.length ? previewColors : [scene.color];
-    ribbon.style.background = `linear-gradient(90deg, ${colors.map((color, index) =>
-      `${color} ${(index / colors.length) * 100}% ${((index + 1) / colors.length) * 100}%`
-    ).join(", ")})`;
-    ribbon.setAttribute("aria-hidden", "true");
-
-    const details = document.createElement("div");
-    details.className = "scene-details";
-    const name = document.createElement("h3");
-    name.textContent = scene.name;
-    const summary = document.createElement("p");
-    const effectName = {
-      steady: "Solid",
-      breathe: "Breathe",
-      spectrum: "Spectrum",
-      palette: "Palette drift"
-    }[scene.effect];
-    const speed = scene.effect === "steady" ? "" : ` · ${scene.speed}% speed`;
-    const individualColors = Object.keys(scene.ledColors).length;
-    const perLed = individualColors ? ` · ${individualColors} individual LEDs` : "";
-    summary.textContent = `${effectName}${speed} · ${scene.brightness}% brightness${perLed}`;
-    details.append(name, summary);
-
-    const actions = document.createElement("div");
-    actions.className = "scene-actions";
-    const addAction = (label, className, handler) => {
-      const button = document.createElement("button");
-      button.className = className;
-      button.type = "button";
-      button.textContent = label;
-      button.setAttribute("aria-label", `${label} ${scene.name}`);
-      button.addEventListener("click", handler);
-      actions.append(button);
-    };
-    addAction("Apply", "primary-btn scene-apply", () => applyScene(scene));
-    addAction("Rename", "ghost-btn scene-action", () => openSceneDialog("rename", scene));
-    addAction("Duplicate", "ghost-btn scene-action", () => duplicateScene(scene));
-    addAction("Delete", "ghost-btn scene-action scene-delete", () => confirmDeleteScene(scene));
-
-    item.append(ribbon, details, actions);
-    root.append(item);
-  });
-}
-
-function renderPalette() {
-  const root = $("#palette-swatches");
-  root.replaceChildren();
-
-  state.settings.palette.forEach((color, index) => {
-    const input = document.createElement("input");
-    input.type = "color";
-    input.className = "palette-color";
-    input.value = color;
-    input.setAttribute("aria-label", `Palette color ${index + 1}`);
-    input.addEventListener("input", () => {
-      const palette = [...state.settings.palette];
-      palette[index] = input.value;
-      queueSettings({ palette });
-    });
-    root.append(input);
-  });
-}
-
-function render() {
-  $("#app-version").textContent = state.version || "—";
-  renderUpdates();
-  $("#start-with-windows").checked = state.settings.startWithWindows;
-  $("#resume-screen-sync").checked = state.settings.resumeScreenSync;
-  renderScenes();
-  renderPalette();
-  renderConnection();
-  updatePreview();
-}
-
-function selectPreviewPosition(event) {
-  const pixel = event.target.closest(".led-pixel");
-  const edge = pixel?.closest(".led-edge") || event.target.closest(".led-edge");
-  if (!edge) return;
-
-  if (pixel) {
-    const index = Number(pixel.dataset.ledIndex);
-    if (event.shiftKey && selectedLedAnchorIndex !== null) {
-      selectedLedIndices = window.ullLedSelection.selectLedRange(selectedLedAnchorIndex, index);
-    } else {
-      selectedLedIndices = window.ullLedSelection.selectLed(
-        selectedLedIndices,
-        index,
-        event.ctrlKey || event.metaKey
-      );
-    }
-    selectedLedAnchorIndex = index;
-  } else {
-    const profile = state.device.profile || state.settings.deviceProfile;
-    const count = Number(profile?.ledCount);
-    if (!Number.isInteger(count)) return;
-    const layout = window.ullStripLayout.allocateEdgeIndices(
-      count,
-      Number(profile?.edgeCount) || 3,
-      profile?.installationMethod ?? 0
-    );
-    selectedLedIndices = new Set(layout.indices[edge.dataset.edge] || []);
-    selectedLedAnchorIndex = null;
-  }
-  updatePreview();
 }
 
 function stopScreenSync(message = "", clearResumePreference = false) {
-  const pending = screenSyncLifecycle.stop(() => {
-    screenSyncGeneration += 1;
-    requestedSyncMode = null;
-    const session = screenSyncSession;
-    screenSyncSession = null;
-    screenSyncError = "";
-    if (session) {
-      if (session.performanceTimer) clearInterval(session.performanceTimer);
-      if (session.pollTimer) clearTimeout(session.pollTimer);
-      if (session.frame) cancelAnimationFrame(session.frame);
-      if (session.audioFrame) cancelAnimationFrame(session.audioFrame);
-      if (session.videoFrame && session.video &&
-          typeof session.video.cancelVideoFrameCallback === "function") {
-        session.video.cancelVideoFrameCallback(session.videoFrame);
-      }
-      session.stream?.getTracks().forEach((track) => {
-        track.onended = null;
-        track.stop();
-      });
-      session.audioStream?.getTracks().forEach((track) => track.stop());
-      if (session.audioContext && session.audioContext.state !== "closed") {
-        void session.audioContext.close().catch((error) =>
-          console.error("Could not close the Spotify audio analyzer:", error)
-        );
-      }
-    }
+  const pending = sync.lifecycle.stop(() => {
+    sync.generation += 1;
+    sync.requestedMode = null;
+    const session = sync.session;
+    sync.session = null;
+    sync.screenError = "";
+    teardownSession(session);
   }, async () => {
     try {
       await window.ull.stopScreenSync();
@@ -962,6 +906,7 @@ function stopScreenSync(message = "", clearResumePreference = false) {
       toast(`Could not stop LED sync: ${error.message}`);
     }
   });
+
   updatePreview();
   if (message) toast(message);
   return pending.then(() => {
@@ -975,35 +920,47 @@ function stopScreenSync(message = "", clearResumePreference = false) {
   });
 }
 
+async function ensurePowerOn() {
+  if (state.settings.power) return;
+  await saveSettingsNow({ power: true });
+  render();
+}
+
+function createFrameSender(session, stoppedMessage) {
+  return window.ullScreenSync.createLatestFrameSender({
+    send: (colors) => window.ull.sendScreenSyncColors(colors),
+    isActive: () => sync.session === session,
+    getColors: () => session.colors,
+    onError: (error) => stopScreenSync(`${stoppedMessage}: ${error.message}`)
+  });
+}
+
+/* --- Screen Sync ---------------------------------------------------------- */
+
 function startScreenSync(options = {}) {
-  requestedSyncMode = "screen";
-  const pending = screenSyncLifecycle.start(() => runScreenSyncStart(options));
+  sync.requestedMode = "screen";
+  const pending = sync.lifecycle.start(() => runScreenSyncStart(options));
   updatePreview();
   return pending.catch((error) => {
     toast(`Could not start screen sync: ${error.message}`);
   }).finally(() => {
-    if (requestedSyncMode === "screen") requestedSyncMode = null;
+    if (sync.requestedMode === "screen") sync.requestedMode = null;
     updatePreview();
   });
 }
 
 async function runScreenSyncStart({ automatic = false } = {}) {
-  const generation = ++screenSyncGeneration;
+  const generation = ++sync.generation;
+  const cancelled = () => generation !== sync.generation;
+
   if (!state.device.connected) return toast("Connect the LED controller before starting screen sync.");
   if (!navigator.mediaDevices?.getUserMedia) {
     return toast("Screen sharing is not available in this app environment.");
   }
-
-  const profile = state.device.profile || state.settings.deviceProfile;
+  const profile = currentProfile();
   const ledCount = Number(profile?.ledCount);
   if (!Number.isInteger(ledCount)) return toast("The controller has not reported its LED count.");
-
-  const edgeCount = clamp(Number(profile?.edgeCount) || 3, 1, 4);
-  const layout = window.ullStripLayout.allocateEdgeIndices(
-    ledCount,
-    edgeCount,
-    profile?.installationMethod ?? 0
-  );
+  const layout = buildLayout(ledCount, profile);
 
   let stream;
   let hardwareSyncStarted = false;
@@ -1015,26 +972,16 @@ async function runScreenSyncStart({ automatic = false } = {}) {
         window.ullScreenSync.createDesktopCaptureConstraints(id, state.settings.syncFps)
       )
     );
-    if (!state.settings.power) {
-      const result = await window.ull.updateSettings({ power: true });
-      state.settings = result.settings;
-      state.device = result;
-      render();
-    }
+    await ensurePowerOn();
     stream = await capture;
-    if (generation !== screenSyncGeneration) {
-      stream.getTracks().forEach((track) => track.stop());
-      return;
-    }
-    const video = document.createElement("video");
+    if (cancelled()) return stopTracks(stream);
+
+    const video = h("video");
     video.muted = true;
     video.playsInline = true;
     video.srcObject = stream;
     await video.play();
-    if (generation !== screenSyncGeneration) {
-      stream.getTracks().forEach((track) => track.stop());
-      return;
-    }
+    if (cancelled()) return stopTracks(stream);
 
     if (!stream.getVideoTracks().length) throw new Error("The display capture did not provide a video track.");
     if (stream.getAudioTracks().length) {
@@ -1045,7 +992,7 @@ async function runScreenSyncStart({ automatic = false } = {}) {
     }
 
     const scale = Math.min(1, 320 / Math.max(video.videoWidth, video.videoHeight));
-    const canvas = document.createElement("canvas");
+    const canvas = h("canvas");
     canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
     canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
     const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -1053,22 +1000,18 @@ async function runScreenSyncStart({ automatic = false } = {}) {
 
     await window.ull.startScreenSync();
     hardwareSyncStarted = true;
-    if (generation !== screenSyncGeneration) {
-      stream.getTracks().forEach((track) => track.stop());
-      return;
-    }
-    const savedSettings = await window.ull.updateSettings({ resumeScreenSync: true });
-    if (generation !== screenSyncGeneration) {
-      stream.getTracks().forEach((track) => track.stop());
-      return;
-    }
-    state.settings = savedSettings.settings;
-    state.device = savedSettings;
+    if (cancelled()) return stopTracks(stream);
+
+    const saved = await window.ull.updateSettings({ resumeScreenSync: true });
+    if (cancelled()) return stopTracks(stream);
+    state.settings = saved.settings;
+    state.device = saved;
 
     const session = {
       mode: "screen",
       stream,
       video,
+      canvas,
       context,
       letterboxTracker: window.ullScreenSync.createLetterboxStability(),
       movieFormatPromptGate: window.ullScreenSync.createMovieFormatPromptGate(),
@@ -1076,123 +1019,24 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       frame: 0,
       videoFrame: 0,
       lastSample: 0,
-      performanceWindowStartedAt: performance.now(),
-      performanceCallbackCount: 0,
-      performanceSampleCount: 0,
-      performanceSampleTotalMs: 0,
-      performanceSampleMaxMs: 0,
-      performanceTimer: null,
       colors: null,
       layout,
       layoutSignature: stripLayoutSignature(layout)
     };
-    screenSyncSession = session;
-    session.performanceTimer = window.setInterval(() => {
-      if (screenSyncSession !== session) return;
-      const now = performance.now();
-      const windowMs = now - session.performanceWindowStartedAt;
-      window.ull.recordScreenSyncPerformance({
-        windowMs,
-        callbackCount: session.performanceCallbackCount,
-        sampleCount: session.performanceSampleCount,
-        sampleTotalMs: session.performanceSampleTotalMs,
-        sampleMaxMs: session.performanceSampleMaxMs
-      });
-      session.performanceWindowStartedAt = now;
-      session.performanceCallbackCount = 0;
-      session.performanceSampleCount = 0;
-      session.performanceSampleTotalMs = 0;
-      session.performanceSampleMaxMs = 0;
-    }, 1000);
-    screenSyncError = "";
-    const sendLatestFrame = window.ullScreenSync.createLatestFrameSender({
-      send: (colors) => window.ull.sendScreenSyncColors(colors),
-      isActive: () => screenSyncSession === session,
-      getColors: () => session.colors,
-      onError: (error) => stopScreenSync(`Screen sync stopped: ${error.message}`)
-    });
+    sync.session = session;
+    startPerformanceReporting(session);
+    sync.screenError = "";
 
+    const sendLatestFrame = createFrameSender(session, "Screen sync stopped");
     stream.getVideoTracks()[0].onended = () => {
-      if (screenSyncSession === session) stopScreenSync("Screen sharing ended.");
+      if (sync.session === session) stopScreenSync("Screen sharing ended.");
     };
-
-    const sampleFrame = (now) => {
-      if (screenSyncSession !== session) return;
-      session.performanceCallbackCount += 1;
-      if (typeof video.requestVideoFrameCallback === "function") {
-        session.videoFrame = video.requestVideoFrameCallback(sampleFrame);
-      } else {
-        session.frame = requestAnimationFrame(sampleFrame);
-      }
-      const sampleFps = clamp(Number(state.settings.syncFps) || 30, 5, 60);
-      if (!window.ullScreenSync.isSampleFrameDue(session.lastSample, now, sampleFps) ||
-          video.readyState < 2) return;
-      session.lastSample = now;
-      session.performanceSampleCount += 1;
-      const sampleStartedAt = performance.now();
-      try {
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-        if (state.settings.syncAutoDetect !== false) {
-          const ratio = window.ullScreenSync.detectLetterboxAspectRatio(
-            pixels,
-            canvas.width,
-            canvas.height
-          );
-          const stableRatio = session.letterboxTracker.update(ratio, now);
-          if (session.detectedAspectRatio !== null &&
-              session.letterboxTracker.isMissingStable()) {
-            session.detectedAspectRatio = null;
-            toast("Widescreen ended; Screen Sync returned to your saved picture area.");
-          }
-          const manualRatio = state.settings.syncContentMode === "cinema235" ? 2.35 : null;
-          if (stableRatio !== null &&
-              (manualRatio === null || Math.abs(manualRatio - stableRatio) > 0.05) &&
-              session.movieFormatPromptGate.shouldPrompt(stableRatio)) {
-            window.ull.notifyMovieFormat(stableRatio);
-          }
-        } else {
-          session.letterboxTracker.reset();
-        }
-        const sampledColors = window.ullScreenSync.sampleStripColors(
-          pixels,
-          canvas.width,
-          canvas.height,
-          session.layout,
-          session.detectedAspectRatio ||
-            (state.settings.syncContentMode === "cinema235" ? 2.35 : null)
-        );
-        session.colors = sampledColors;
-
-        session.pixelElements.forEach((pixel) => {
-          const color = session.colors[Number(pixel.dataset.ledIndex)];
-          if (pixel.dataset.color !== color) {
-            pixel.style.backgroundColor = color;
-            pixel.dataset.color = color;
-          }
-        });
-
-        void sendLatestFrame();
-      } catch (error) {
-        stopScreenSync(`Screen sync stopped: ${error.message}`);
-      } finally {
-        const sampleDuration = performance.now() - sampleStartedAt;
-        session.performanceSampleTotalMs += sampleDuration;
-        session.performanceSampleMaxMs = Math.max(
-          session.performanceSampleMaxMs,
-          sampleDuration
-        );
-      }
-    };
-
-    session.frame = requestAnimationFrame(sampleFrame);
+    session.frame = requestAnimationFrame(createScreenSampler(session, sendLatestFrame));
     updatePreview();
   } catch (error) {
-    const sessionOwnsStream = screenSyncSession?.stream === stream;
-    if (!sessionOwnsStream) {
-      stream?.getTracks().forEach((track) => track.stop());
-    }
-    if (!sessionOwnsStream && (hardwareSyncStarted || automatic) && !screenSyncLifecycle.isStopping) {
+    const sessionOwnsStream = sync.session?.stream === stream;
+    if (!sessionOwnsStream) stopTracks(stream);
+    if (!sessionOwnsStream && (hardwareSyncStarted || automatic) && !sync.lifecycle.isStopping) {
       try {
         await window.ull.stopScreenSync();
       } catch (stopError) {
@@ -1200,12 +1044,13 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       }
     }
     if (sessionOwnsStream) stopScreenSync();
+
     const message = automatic
       ? `Could not resume screen sync: ${error.message}. Start it manually from Lighting.`
       : error.name === "NotAllowedError"
         ? "Screen sharing was canceled or blocked."
         : `Could not start screen sync: ${error.message}`;
-    if (automatic) screenSyncError = message;
+    if (automatic) sync.screenError = message;
     updatePreview();
     toast(message);
   } finally {
@@ -1213,113 +1058,175 @@ async function runScreenSyncStart({ automatic = false } = {}) {
   }
 }
 
-function applyDeviceState(device) {
-  state.device = device;
-  const profile = device.connected && device.profile;
-  if (!device.connected && screenSyncSession) stopScreenSync("Controller disconnected.");
-  if (profile?.ledCount) {
-    const hadProfile = Boolean(state.settings.deviceProfile);
-    state.settings.deviceProfile = profile;
-    state.settings.ledCount = profile.ledCount;
-    state.settings.devicePath = device.devicePath;
-    if (!hadProfile && profile.color) state.settings.color = profile.color;
-  }
-}
-
-async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
-  if (!artwork?.contentType || !artwork.data) {
-    throw new Error("Spotify has no cover art available for the current track.");
-  }
-  const image = new Image();
-  image.src = `data:${artwork.contentType};base64,${artwork.data}`;
-  await image.decode();
-  if (screenSyncSession !== session) return;
-
-  const canvas = document.createElement("canvas");
-  canvas.width = 48;
-  canvas.height = 48;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("Could not read Spotify cover art.");
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  session.palette = window.ullSpotifySync.createSpotifySyncColors(
-    context.getImageData(0, 0, canvas.width, canvas.height).data,
-    5
-  );
-  session.artworkData = artwork.data;
-  renderSpotifyAudioFrame(session, performance.now(), sendLatestFrame);
-}
-
-function renderSpotifyAudioFrame(session, now, sendLatestFrame) {
-  if (screenSyncSession !== session || !session.palette) return;
-  session.colors = window.ullSpotifySync.createSpotifyReactiveColors(
-    session.palette,
-    session.audioLevels,
-    session.layout.ledCount,
-    Math.max(0, now - session.startedAt) / 1000
-  );
-  session.pixelElements.forEach((pixel) => {
-    const color = session.colors[Number(pixel.dataset.ledIndex)];
-    if (pixel.dataset.color !== color) {
-      pixel.style.backgroundColor = color;
-      pixel.dataset.color = color;
-    }
+function startPerformanceReporting(session) {
+  const resetWindow = (now) => Object.assign(session, {
+    performanceWindowStartedAt: now,
+    performanceCallbackCount: 0,
+    performanceSampleCount: 0,
+    performanceSampleTotalMs: 0,
+    performanceSampleMaxMs: 0
   });
-  void sendLatestFrame();
+  resetWindow(performance.now());
+
+  session.performanceTimer = window.setInterval(() => {
+    if (sync.session !== session) return;
+    const now = performance.now();
+    window.ull.recordScreenSyncPerformance({
+      windowMs: now - session.performanceWindowStartedAt,
+      callbackCount: session.performanceCallbackCount,
+      sampleCount: session.performanceSampleCount,
+      sampleTotalMs: session.performanceSampleTotalMs,
+      sampleMaxMs: session.performanceSampleMaxMs
+    });
+    resetWindow(now);
+  }, 1000);
 }
 
-function sampleSpotifyAudio(session, now, sendLatestFrame) {
-  if (screenSyncSession !== session) return;
-  session.analyser.getFloatFrequencyData(session.frequencyData);
-  session.audioLevels = window.ullSpotifySync.analyzeSpotifySpectrum(
-    session.frequencyData,
-    session.audioContext.sampleRate,
-    session.analyser.fftSize
-  );
-  renderSpotifyAudioFrame(session, now, sendLatestFrame);
-  session.audioFrame = requestAnimationFrame((nextFrame) =>
-    sampleSpotifyAudio(session, nextFrame, sendLatestFrame)
-  );
+const manualPictureRatio = () => (state.settings.syncContentMode === "cinema235" ? 2.35 : null);
+
+function createScreenSampler(session, sendLatestFrame) {
+  const { video, canvas, context } = session;
+
+  const sampleFrame = (now) => {
+    if (sync.session !== session) return;
+    session.performanceCallbackCount += 1;
+    if (typeof video.requestVideoFrameCallback === "function") {
+      session.videoFrame = video.requestVideoFrameCallback(sampleFrame);
+    } else {
+      session.frame = requestAnimationFrame(sampleFrame);
+    }
+
+    const fps = clamp(Number(state.settings.syncFps) || FPS.fallback, FPS.min, FPS.max);
+    if (!window.ullScreenSync.isSampleFrameDue(session.lastSample, now, fps) || video.readyState < 2) return;
+    session.lastSample = now;
+    session.performanceSampleCount += 1;
+
+    const startedAt = performance.now();
+    try {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      trackLetterbox(session, pixels, now);
+      session.colors = window.ullScreenSync.sampleStripColors(
+        pixels,
+        canvas.width,
+        canvas.height,
+        session.layout,
+        session.detectedAspectRatio || manualPictureRatio()
+      );
+      paintSessionPixels(session);
+      void sendLatestFrame();
+    } catch (error) {
+      stopScreenSync(`Screen sync stopped: ${error.message}`);
+    } finally {
+      const duration = performance.now() - startedAt;
+      session.performanceSampleTotalMs += duration;
+      session.performanceSampleMaxMs = Math.max(session.performanceSampleMaxMs, duration);
+    }
+  };
+
+  return sampleFrame;
 }
 
-async function pollSpotifyArtwork(session, sendLatestFrame) {
-  if (screenSyncSession !== session) return;
-  try {
-    const artwork = await window.ull.getSpotifyArtwork();
-    if (screenSyncSession !== session) return;
-    if (artwork && artwork.data !== session.artworkData) {
-      await applySpotifyArtwork(session, artwork, sendLatestFrame);
-    }
-  } catch (error) {
-    if (screenSyncSession === session) {
-      console.error("Could not refresh Spotify cover art:", error);
-    }
-  } finally {
-    if (screenSyncSession === session) {
-      session.pollTimer = window.setTimeout(
-        () => void pollSpotifyArtwork(session, sendLatestFrame),
-        1500
+/** Watch for stable letterbox bars and offer the detected movie format. */
+function trackLetterbox(session, pixels, now) {
+  if (state.settings.syncAutoDetect === false) {
+    session.letterboxTracker.reset();
+    return;
+  }
+  const { canvas } = session;
+  const ratio = window.ullScreenSync.detectLetterboxAspectRatio(pixels, canvas.width, canvas.height);
+  const stableRatio = session.letterboxTracker.update(ratio, now);
+
+  if (session.detectedAspectRatio !== null && session.letterboxTracker.isMissingStable()) {
+    session.detectedAspectRatio = null;
+    toast("Widescreen ended; Screen Sync returned to your saved picture area.");
+  }
+
+  const manual = manualPictureRatio();
+  if (stableRatio !== null &&
+      (manual === null || Math.abs(manual - stableRatio) > 0.05) &&
+      session.movieFormatPromptGate.shouldPrompt(stableRatio)) {
+    window.ull.notifyMovieFormat(stableRatio);
+  }
+}
+
+function applyDetectedMovieFormat({ aspectRatio }) {
+  if (sync.session?.mode !== "screen" || !Number.isFinite(aspectRatio) ||
+      aspectRatio < 1.78 || aspectRatio > 2.6) return;
+  const ratio = Math.round(aspectRatio * 100) / 100;
+  sync.session.detectedAspectRatio = ratio;
+  toast(`Using ${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1 for this Screen Sync session.`);
+}
+
+function maybeResumeScreenSync() {
+  if (sync.autoAttempted || !state.settings.resumeScreenSync || !state.device.connected) return;
+  sync.autoAttempted = true;
+  updatePreview();
+  void startScreenSync({ automatic: true });
+}
+
+/* --- Spotify Sync --------------------------------------------------------- */
+
+function startSpotifySync() {
+  if (!state.device.connected) {
+    toast("Connect the LED controller before starting Spotify Sync.");
+    return Promise.resolve(false);
+  }
+  if (sync.lifecycle.isStarting || sync.lifecycle.isStopping) return Promise.resolve(false);
+  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") {
+    toast("Desktop audio capture is not available in this app environment.");
+    return Promise.resolve(false);
+  }
+
+  const closeAudioContext = (context) => {
+    if (context && context.state !== "closed") {
+      void context.close().catch((error) =>
+        console.error("Could not close the Spotify audio analyzer:", error)
       );
     }
+  };
+
+  let audioCapture;
+  let audioContext;
+  let audioReady;
+  try {
+    audioCapture = navigator.mediaDevices.getDisplayMedia({ audio: true, video: { frameRate: 1 } });
+    audioContext = new AudioContext();
+    audioReady = audioContext.resume();
+  } catch (error) {
+    void audioCapture?.then(stopTracks);
+    void audioReady?.catch(() => {});
+    closeAudioContext(audioContext);
+    toast(`Could not start desktop audio capture: ${error.message}`);
+    return Promise.resolve(false);
   }
+
+  sync.requestedMode = "spotify";
+  const pending = sync.lifecycle.start(() => runSpotifySyncStart(audioCapture, audioContext, audioReady));
+  updatePreview();
+  return pending.catch((error) => {
+    void audioCapture.then(stopTracks, () => {});
+    closeAudioContext(audioContext);
+    sync.spotifyError = error.message;
+    toast(`Could not start Spotify Sync: ${error.message}`);
+  }).finally(() => {
+    if (sync.requestedMode === "spotify") sync.requestedMode = null;
+    updatePreview();
+  });
 }
 
 async function runSpotifySyncStart(audioCapture, audioContext, audioReady) {
-  const generation = ++screenSyncGeneration;
+  const generation = ++sync.generation;
+  const cancelled = () => generation !== sync.generation;
+
   if (!state.device.connected) throw new Error("Connect the LED controller before starting Spotify Sync.");
   if (typeof window.ull.getSpotifyArtwork !== "function") {
     throw new Error("Spotify cover-art reading is not available in this app environment.");
   }
-
-  const profile = state.device.profile || state.settings.deviceProfile;
+  const profile = currentProfile();
   const ledCount = Number(profile?.ledCount);
-  if (!Number.isInteger(ledCount)) {
-    throw new Error("The controller has not reported its LED count.");
-  }
-  const layout = window.ullStripLayout.allocateEdgeIndices(
-    ledCount,
-    clamp(Number(profile?.edgeCount) || 3, 1, 4),
-    profile?.installationMethod ?? 0
-  );
+  if (!Number.isInteger(ledCount)) throw new Error("The controller has not reported its LED count.");
+  const layout = buildLayout(ledCount, profile);
 
   let session;
   let audioStream;
@@ -1327,37 +1234,27 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady) {
   updatePreview();
 
   try {
-    const [artwork, stream] = await Promise.all([
-      window.ull.getSpotifyArtwork(),
-      audioCapture,
-      audioReady
-    ]);
+    const [artwork, stream] = await Promise.all([window.ull.getSpotifyArtwork(), audioCapture, audioReady]);
     audioStream = stream;
-    if (!artwork) {
-      throw new Error("Start a track in the Spotify desktop app before enabling Spotify Sync.");
-    }
+    if (!artwork) throw new Error("Start a track in the Spotify desktop app before enabling Spotify Sync.");
     if (!stream.getAudioTracks().length) {
       throw new Error("Windows did not provide desktop audio. Check the system audio capture permission.");
     }
-    if (generation !== screenSyncGeneration) {
-      stream.getTracks().forEach((track) => track.stop());
+    if (cancelled()) {
+      stopTracks(stream);
       await audioContext.close();
       return;
     }
+
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 2048;
     analyser.smoothingTimeConstant = 0.72;
     audioContext.createMediaStreamSource(stream).connect(analyser);
 
-    if (!state.settings.power) {
-      const result = await window.ull.updateSettings({ power: true });
-      state.settings = result.settings;
-      state.device = result;
-      render();
-    }
+    await ensurePowerOn();
     await window.ull.startScreenSync("spotify");
     hardwareSyncStarted = true;
-    if (generation !== screenSyncGeneration) {
+    if (cancelled()) {
       await window.ull.stopScreenSync();
       return;
     }
@@ -1377,306 +1274,192 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady) {
       layout,
       layoutSignature: stripLayoutSignature(layout)
     };
-    screenSyncSession = session;
-    spotifySyncError = "";
-    const sendLatestFrame = window.ullScreenSync.createLatestFrameSender({
-      send: (colors) => window.ull.sendScreenSyncColors(colors),
-      isActive: () => screenSyncSession === session,
-      getColors: () => session.colors,
-      onError: (error) => stopScreenSync(`Spotify Sync stopped: ${error.message}`)
-    });
+    sync.session = session;
+    sync.spotifyError = "";
+
+    const sendLatestFrame = createFrameSender(session, "Spotify Sync stopped");
     updatePreview();
     await applySpotifyArtwork(session, artwork, sendLatestFrame);
-    session.audioFrame = requestAnimationFrame((now) =>
-      sampleSpotifyAudio(session, now, sendLatestFrame)
-    );
-    session.pollTimer = window.setTimeout(
-      () => void pollSpotifyArtwork(session, sendLatestFrame),
-      1500
-    );
+    session.audioFrame = requestAnimationFrame((now) => sampleSpotifyAudio(session, now, sendLatestFrame));
+    session.pollTimer = window.setTimeout(() => void pollSpotifyArtwork(session, sendLatestFrame), 1500);
     toast("Spotify Sync is active. Music response uses local desktop audio.");
   } catch (error) {
-    if (screenSyncSession === session) {
+    if (sync.session === session) {
       await stopScreenSync();
-    } else if (hardwareSyncStarted && !screenSyncLifecycle.isStopping) {
+    } else if (hardwareSyncStarted && !sync.lifecycle.isStopping) {
       try {
         await window.ull.stopScreenSync();
       } catch (stopError) {
         console.error("Could not stop LED sync after Spotify Sync startup failed:", stopError);
       }
     }
-    if (screenSyncSession !== session) {
-      audioStream?.getTracks().forEach((track) => track.stop());
-      if (audioContext && audioContext.state !== "closed") {
-        await audioContext.close();
-      }
+    if (sync.session !== session) {
+      stopTracks(audioStream);
+      if (audioContext && audioContext.state !== "closed") await audioContext.close();
     }
     throw error;
   }
 }
 
-function startSpotifySync() {
-  if (!state.device.connected) {
-    toast("Connect the LED controller before starting Spotify Sync.");
-    return Promise.resolve(false);
+async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
+  if (!artwork?.contentType || !artwork.data) {
+    throw new Error("Spotify has no cover art available for the current track.");
   }
-  if (screenSyncLifecycle.isStarting || screenSyncLifecycle.isStopping) return Promise.resolve(false);
-  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") {
-    toast("Desktop audio capture is not available in this app environment.");
-    return Promise.resolve(false);
-  }
+  const image = new Image();
+  image.src = `data:${artwork.contentType};base64,${artwork.data}`;
+  await image.decode();
+  if (sync.session !== session) return;
 
-  let audioCapture;
-  let audioContext;
-  let audioReady;
-  try {
-    audioCapture = navigator.mediaDevices.getDisplayMedia({
-      audio: true,
-      video: { frameRate: 1 }
-    });
-    audioContext = new AudioContext();
-    audioReady = audioContext.resume();
-  } catch (error) {
-    void audioCapture?.then((stream) => stream.getTracks().forEach((track) => track.stop()));
-    void audioReady?.catch(() => {});
-    if (audioContext && audioContext.state !== "closed") {
-      void audioContext.close().catch((closeError) =>
-        console.error("Could not close the Spotify audio analyzer:", closeError)
-      );
-    }
-    toast(`Could not start desktop audio capture: ${error.message}`);
-    return Promise.resolve(false);
-  }
-  requestedSyncMode = "spotify";
-  const pending = screenSyncLifecycle.start(() => runSpotifySyncStart(audioCapture, audioContext, audioReady));
-  updatePreview();
-  return pending.catch((error) => {
-    void audioCapture.then(
-      (stream) => stream.getTracks().forEach((track) => track.stop()),
-      () => {}
-    );
-    if (audioContext.state !== "closed") {
-      void audioContext.close().catch((closeError) =>
-        console.error("Could not close the Spotify audio analyzer:", closeError)
-      );
-    }
-    spotifySyncError = error.message;
-    toast(`Could not start Spotify Sync: ${error.message}`);
-  }).finally(() => {
-    if (requestedSyncMode === "spotify") requestedSyncMode = null;
-    updatePreview();
-  });
+  const canvas = h("canvas");
+  canvas.width = 48;
+  canvas.height = 48;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("Could not read Spotify cover art.");
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  session.palette = window.ullSpotifySync.createSpotifySyncColors(
+    context.getImageData(0, 0, canvas.width, canvas.height).data,
+    5
+  );
+  session.artworkData = artwork.data;
+  renderSpotifyFrame(session, performance.now(), sendLatestFrame);
 }
 
-async function scanDevices() {
-  $("#device-label").textContent = "Scanning for the controller…";
-  try {
-    const result = await window.ull.scanDevices();
-    detectedDevices = result.devices || [];
-    applyDeviceState(result);
-    render();
-    if (!state.settings.onboarded && $("#setup-dialog").open && wizardStep === 0) {
-      setWizardStep(0);
-    }
-    if (!state.device.connected && !result.error) {
-      toast(detectedDevices.length ? "Controller found but not connected." : "No supported USB controller found.");
-    }
-  } catch (error) {
-    state.device = { connected: false, error: error.message };
-    renderConnection();
-    toast(`Scan failed: ${error.message}`);
-  }
+function renderSpotifyFrame(session, now, sendLatestFrame) {
+  if (sync.session !== session || !session.palette) return;
+  session.colors = window.ullSpotifySync.createSpotifyReactiveColors(
+    session.palette,
+    session.audioLevels,
+    session.layout.ledCount,
+    Math.max(0, now - session.startedAt) / 1000
+  );
+  paintSessionPixels(session);
+  void sendLatestFrame();
 }
 
-async function connectSelectedDevice(devicePath) {
-  if (!devicePath || deviceConnecting) return;
-  deviceConnecting = true;
-  connectingDevicePath = devicePath;
-  renderDeviceSelector();
+function sampleSpotifyAudio(session, now, sendLatestFrame) {
+  if (sync.session !== session) return;
+  session.analyser.getFloatFrequencyData(session.frequencyData);
+  session.audioLevels = window.ullSpotifySync.analyzeSpotifySpectrum(
+    session.frequencyData,
+    session.audioContext.sampleRate,
+    session.analyser.fftSize
+  );
+  renderSpotifyFrame(session, now, sendLatestFrame);
+  session.audioFrame = requestAnimationFrame((next) => sampleSpotifyAudio(session, next, sendLatestFrame));
+}
+
+async function pollSpotifyArtwork(session, sendLatestFrame) {
+  if (sync.session !== session) return;
   try {
-    const device = await window.ull.connectDevice(devicePath);
-    applyDeviceState(device);
-    render();
-    if (!device.connected) {
-      toast(device.error || "Could not connect to that controller.");
-    } else {
-      toast(`Connected to ${deviceLabel(device.name)}.`);
+    const artwork = await window.ull.getSpotifyArtwork();
+    if (sync.session !== session) return;
+    if (artwork && artwork.data !== session.artworkData) {
+      await applySpotifyArtwork(session, artwork, sendLatestFrame);
     }
   } catch (error) {
-    toast(`Could not connect to the selected controller: ${error.message}`);
+    if (sync.session === session) console.error("Could not refresh Spotify cover art:", error);
   } finally {
-    deviceConnecting = false;
-    connectingDevicePath = "";
-    renderDeviceSelector();
+    if (sync.session === session) {
+      session.pollTimer = window.setTimeout(() => void pollSpotifyArtwork(session, sendLatestFrame), 1500);
+    }
   }
 }
 
-function switchView(name) {
-  document.querySelectorAll(".tab").forEach((item) => {
-    const active = item.dataset.view === name;
-    item.classList.toggle("active", active);
-    item.setAttribute("aria-selected", String(active));
-    item.tabIndex = active ? 0 : -1;
-  });
-  document.querySelectorAll(".view").forEach((panel) => {
-    panel.classList.toggle("hidden", panel.id !== `view-${name}`);
-  });
-  window.scrollTo({ top: 0 });
+
+/* ==========================================================================
+   9. Updates and release notes
+   ========================================================================== */
+
+const IDLE_PROGRESS = Object.freeze({ phase: "idle", percent: null, transferred: 0, total: 0 });
+
+function setUpdatePhase(phase, extra = {}) {
+  updates.progress = { ...IDLE_PROGRESS, phase, ...extra };
 }
 
 function renderUpdates() {
-  const source = state.settings.updateSource === "local" ? "local" : "github";
-  const localSelected = source === "local";
-  document.querySelectorAll('input[name="update-source"]').forEach((input) => {
-    input.checked = input.value === source;
+  const local = state.settings.updateSource === "local";
+  $$('input[name="update-source"]').forEach((input) => {
+    input.checked = input.value === (local ? "local" : "github");
   });
   $("#update-folder-label").textContent = state.settings.updateFolder || "No folder selected";
-  $("#local-update-controls").classList.toggle("hidden", !localSelected);
-  $("#github-update-note").classList.toggle("hidden", localSelected);
-  $("#check-updates").disabled = updateCheckInProgress;
+  $("#local-update-controls").classList.toggle("hidden", !local);
+  $("#github-update-note").classList.toggle("hidden", local);
+  $("#check-updates").disabled = updates.busy;
 }
 
-function setupReleaseCarousel() {
-  const entries = [...document.querySelectorAll(".release-entry")];
-  if (entries.length === 0) return;
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** unit).toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
 
-  const markers = $("#release-progress-markers");
-  const olderButton = $("#release-older");
-  const newerButton = $("#release-newer");
-  const position = $("#release-position");
-  const selectedIndex = selectedReleaseVersion
-    ? entries.findIndex((entry) =>
-      entry.querySelector("h3").textContent.match(/\d+\.\d+\.\d+/)?.[0] === selectedReleaseVersion
-    )
-    : -1;
-  let currentIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  let previousIndex = null;
-  markers.replaceChildren();
-  markers.style.setProperty("--release-count", String(entries.length));
+function formatUpdateProgress({ percent, transferred, total }) {
+  const amount = `${formatBytes(transferred)}${total > 0 ? ` of ${formatBytes(total)}` : " downloaded"}`;
+  return Number.isFinite(percent) ? `${amount} · ${Math.round(percent)}%` : amount;
+}
 
-  function showRelease(index) {
-    currentIndex = clamp(index, 0, entries.length - 1);
-    selectedReleaseVersion = entries[currentIndex].querySelector("h3").textContent
-      .match(/\d+\.\d+\.\d+/)?.[0] || null;
-    entries.forEach((entry, entryIndex) => {
-      entry.hidden = entryIndex !== currentIndex;
-      const marker = markers.children[entryIndex];
-      marker.setAttribute("aria-current", entryIndex === currentIndex ? "step" : "false");
-      marker.tabIndex = entryIndex === currentIndex ? 0 : -1;
-    });
-    if (previousIndex !== null && previousIndex !== currentIndex &&
-        !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      const direction = currentIndex > previousIndex ? 1 : -1;
-      entries[currentIndex].animate(
-        [
-          { opacity: 0, transform: `translateX(${direction * 8}px)` },
-          { opacity: 1, transform: "translateX(0)" }
-        ],
-        { duration: 200, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
-      );
-    }
-    position.textContent = `${currentIndex + 1}/${entries.length}`;
-    previousIndex = currentIndex;
+function showUpdateMessage(message, error = false, readyToInstall = false) {
+  const root = $("#update-message");
+  root.classList.remove("hidden");
+  root.classList.toggle("error", error);
+  $("#update-status-text").textContent = message;
+
+  const { phase, percent } = updates.progress;
+  const active = phase === "checking" || phase === "downloading" || phase === "installing";
+  const progress = $("#update-progress");
+  const detail = $("#update-progress-detail");
+  progress.classList.toggle("hidden", !active);
+  detail.classList.toggle("hidden", !active);
+  progress.classList.toggle("indeterminate", active && percent === null);
+
+  if (active && Number.isFinite(percent)) {
+    const value = clamp(percent, 0, 100);
+    $("#update-progress-fill").style.width = `${value}%`;
+    progress.setAttribute("aria-valuenow", String(Math.round(value)));
+  } else {
+    $("#update-progress-fill").style.width = active ? "35%" : "0";
+    progress.removeAttribute("aria-valuenow");
   }
 
-  entries.forEach((entry, index) => {
-    const header = entry.querySelector("header");
-    const version = header.querySelector("h3").textContent.match(/1\.0\.\d+/)?.[0];
-    if (!version) throw new Error("A changelog entry is missing its version.");
+  detail.textContent = phase === "checking"
+    ? "Connecting to the selected update source…"
+    : phase === "installing"
+      ? "ULLeds will reopen automatically. Please wait; do not launch it manually."
+      : active ? formatUpdateProgress(updates.progress) : "";
 
-    const marker = document.createElement("button");
-    marker.type = "button";
-    marker.className = "release-progress-marker";
-    marker.setAttribute("aria-label", `Show ULLeds ${version}`);
-    marker.addEventListener("click", () => showRelease(index));
-    marker.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        const nextIndex = (index - 1 + entries.length) % entries.length;
-        showRelease(nextIndex);
-        markers.children[nextIndex].focus();
-      } else if (event.key === "ArrowRight") {
-        event.preventDefault();
-        const nextIndex = (index + 1) % entries.length;
-        showRelease(nextIndex);
-        markers.children[nextIndex].focus();
-      }
-    });
-    markers.append(marker);
-  });
+  $("#update-actions").replaceChildren(...(readyToInstall
+    ? [h("button", { class: "btn btn-primary", type: "button", text: "Restart and update", onclick: installUpdate })]
+    : []));
+}
 
-  newerButton.onclick = () => showRelease((currentIndex - 1 + entries.length) % entries.length);
-  olderButton.onclick = () => showRelease((currentIndex + 1) % entries.length);
-  showRelease(currentIndex);
+function showUpdateReady(version) {
+  setUpdatePhase("ready");
+  showUpdateMessage(`ULLeds ${version} is ready. Your saved settings will be kept.`, false, true);
+}
+
+/** Shared handling for "an update is available" results. */
+function showUpdateAvailable(result) {
+  if (result.downloaded || updates.progress.phase === "ready") {
+    showUpdateReady(result.version);
+    return;
+  }
+  if (updates.progress.phase !== "downloading") setUpdatePhase("downloading");
+  showUpdateMessage(`Downloading ULLeds ${result.version}…`);
 }
 
 function selectUpdateSource(source) {
   if (!["github", "local"].includes(source)) throw new TypeError("Unsupported update source.");
   queueSettings({ updateSource: source }, true);
   renderUpdates();
-  if (source === "github") {
-    showUpdateMessage("Updates will be checked against the public ULLeds GitHub Releases.");
-  } else if (state.settings.updateFolder) {
-    showUpdateMessage(`Local update folder: ${state.settings.updateFolder}`);
-  } else {
-    showUpdateMessage("Choose the folder containing the ULLeds update package.");
-  }
-}
-
-function showUpdateMessage(message, error = false, readyToInstall = false) {
-  const root = $("#update-message");
-  root.classList.remove("hidden", "error");
-  root.classList.toggle("error", error);
-  $("#update-status-text").textContent = message;
-
-  const progress = $("#update-progress");
-  const fill = $("#update-progress-fill");
-  const detail = $("#update-progress-detail");
-  const isActive = updateState.phase === "checking" ||
-    updateState.phase === "downloading" ||
-    updateState.phase === "installing";
-  progress.classList.toggle("hidden", !isActive);
-  detail.classList.toggle("hidden", !isActive);
-  progress.classList.toggle("indeterminate", isActive && updateState.percent === null);
-  if (isActive && Number.isFinite(updateState.percent)) {
-    const percent = clamp(updateState.percent, 0, 100);
-    fill.style.width = `${percent}%`;
-    progress.setAttribute("aria-valuenow", String(Math.round(percent)));
-  } else {
-    fill.style.width = isActive ? "35%" : "0";
-    progress.removeAttribute("aria-valuenow");
-  }
-  detail.textContent = updateState.phase === "checking"
-    ? "Connecting to the selected update folder…"
-    : updateState.phase === "installing"
-      ? "ULLeds will reopen automatically. Please wait; do not launch it manually."
-    : isActive
-      ? formatUpdateProgress(updateState)
-      : "";
-
-  const actions = $("#update-actions");
-  actions.replaceChildren();
-  if (readyToInstall) {
-    const button = document.createElement("button");
-    button.className = "primary-btn";
-    button.type = "button";
-    button.textContent = "Restart and update";
-    button.addEventListener("click", installUpdate);
-    actions.append(button);
-  }
-}
-
-function formatBytes(bytes) {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const amount = bytes / (1024 ** unitIndex);
-  return `${amount.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
-}
-
-function formatUpdateProgress({ percent, transferred, total }) {
-  const amount = `${formatBytes(transferred)}${total > 0 ? ` of ${formatBytes(total)}` : " downloaded"}`;
-  return Number.isFinite(percent) ? `${amount} · ${Math.round(percent)}%` : amount;
+  showUpdateMessage(
+    source === "github"
+      ? "Updates will be checked against the public ULLeds GitHub Releases."
+      : state.settings.updateFolder
+        ? `Local update folder: ${state.settings.updateFolder}`
+        : "Choose the folder containing the ULLeds update package."
+  );
 }
 
 async function chooseUpdateFolder() {
@@ -1693,207 +1476,399 @@ async function chooseUpdateFolder() {
 }
 
 async function checkUpdates() {
-  const source = state.settings.updateSource === "local" ? "local" : "github";
-  if (source === "local" && !state.settings.updateFolder) {
+  const local = state.settings.updateSource === "local";
+  if (local && !state.settings.updateFolder) {
     showUpdateMessage("Choose the folder containing the ULLeds update package.");
     return;
   }
-  if (updateCheckInProgress) return;
-  updateCheckInProgress = true;
-  const checkButton = $("#check-updates");
-  checkButton.disabled = true;
-  checkButton.textContent = "Checking…";
-  updateState = { phase: "checking", percent: null, transferred: 0, total: 0 };
-  showUpdateMessage(source === "local"
-    ? "Checking the local update folder…"
-    : "Checking GitHub Releases…");
+  if (updates.busy) return;
+
+  updates.busy = true;
+  const button = $("#check-updates");
+  button.disabled = true;
+  button.textContent = "Checking…";
+  setUpdatePhase("checking");
+  showUpdateMessage(local ? "Checking the local update folder…" : "Checking GitHub Releases…");
+
   try {
     const result = await window.ull.checkUpdates();
     if (result.available) {
-      if (result.downloaded || updateState.phase === "ready") {
-        updateState = { phase: "ready", percent: null, transferred: 0, total: 0 };
-        showUpdateMessage(`ULLeds ${result.version} is ready. Your saved settings will be kept.`, false, true);
-      } else {
-        if (updateState.phase !== "downloading") {
-          updateState = { phase: "downloading", percent: null, transferred: 0, total: 0 };
-        }
-        showUpdateMessage(`Downloading ULLeds ${result.version}…`);
-      }
+      showUpdateAvailable(result);
     } else if (result.upToDate) {
-      updateState = { phase: "idle", percent: null, transferred: 0, total: 0 };
+      setUpdatePhase("idle");
       showUpdateMessage(`ULLeds ${result.version} is up to date.`);
     } else {
-      updateState = { phase: "error", percent: null, transferred: 0, total: 0 };
+      setUpdatePhase("error");
       showUpdateMessage(result.error || "No update is available.", Boolean(result.error));
     }
   } catch (error) {
-    updateState = { phase: "error", percent: null, transferred: 0, total: 0 };
+    setUpdatePhase("error");
     showUpdateMessage(`Update check failed: ${error.message}`, true);
   } finally {
-    updateCheckInProgress = false;
-    checkButton.disabled = false;
-    checkButton.textContent = "Check for updates";
+    updates.busy = false;
+    button.disabled = false;
+    button.textContent = "Check for updates";
     renderUpdates();
   }
 }
 
 async function installUpdate() {
-  updateState = { phase: "installing", percent: null, transferred: 0, total: 0 };
+  setUpdatePhase("installing");
   showUpdateMessage("Installing the update and restarting ULLeds…");
-  const button = $("#update-actions").querySelector("button");
+  const button = $("#update-actions button");
   if (button) button.disabled = true;
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   try {
     const result = await window.ull.installUpdate();
-    if (result.installing) showUpdateMessage(`Restarting to update ULLeds to ${result.version}…`);
-    else {
-      updateState = { phase: "error", percent: null, transferred: 0, total: 0 };
+    if (result.installing) {
+      showUpdateMessage(`Restarting to update ULLeds to ${result.version}…`);
+    } else {
+      setUpdatePhase("error");
       showUpdateMessage(result.error || "No update is available.", Boolean(result.error));
     }
   } catch (error) {
-    updateState = { phase: "error", percent: null, transferred: 0, total: 0 };
+    setUpdatePhase("error");
     showUpdateMessage(`Could not install the update: ${error.message}`, true);
   }
 }
 
+/** Install a specific published release (Update or Downgrade button). */
+async function startReleaseUpdate(version, button) {
+  if (updates.busy) return false;
+  updates.busy = true;
+  switchView("updates");
+  if (button) button.disabled = true;
+  setUpdatePhase("checking");
+  showUpdateMessage(`Preparing ULLeds ${version}…`);
+
+  try {
+    const result = await window.ull.installRelease(version);
+    if (result.available) {
+      showUpdateAvailable(result);
+      return true;
+    }
+    setUpdatePhase(result.upToDate ? "idle" : "error");
+    showUpdateMessage(result.error || `ULLeds ${result.version} is already installed.`, Boolean(result.error));
+    return false;
+  } catch (error) {
+    setUpdatePhase("error");
+    showUpdateMessage(`Could not prepare ULLeds ${version}: ${error.message}`, true);
+    return false;
+  } finally {
+    updates.busy = false;
+    if (button) button.disabled = false;
+    renderUpdates();
+  }
+}
+
+/* --- Startup update banner ------------------------------------------------ */
+
+function dismissVersionNotice() {
+  clearTimeout(versionNoticeTimer);
+  $("#version-notice").classList.add("hidden");
+}
+
+function showVersionNotice(installer) {
+  const setupDialog = $("#setup-dialog");
+  if (setupDialog.open) {
+    pendingVersionNotice = installer;
+    setupDialog.addEventListener("close", () => {
+      if (!pendingVersionNotice) return;
+      const pending = pendingVersionNotice;
+      pendingVersionNotice = null;
+      showVersionNotice(pending);
+    }, { once: true });
+    return;
+  }
+
+  $("#version-notice-title").textContent = `ULLeds ${installer.version} is available`;
+  const button = $("#version-notice-update");
+  button.onclick = () => {
+    void startReleaseUpdate(installer.version, button).then((started) => {
+      if (started) dismissVersionNotice();
+    });
+  };
+  $("#version-notice").classList.remove("hidden");
+  clearTimeout(versionNoticeTimer);
+  versionNoticeTimer = setTimeout(dismissVersionNotice, VERSION_NOTICE_MS);
+}
+
+/* --- Release notes -------------------------------------------------------- */
+
+const compareReleaseVersions = (a, b) => window.ullGithubReleases.compareVersions(a, b);
+
+/** Built-in changelog from the JSON block in index.html, newest first. */
+function loadBuiltinChangelog() {
+  const data = JSON.parse($("#changelog-data").textContent);
+  const entries = data.releases.map(({ version, notes }) => ({
+    version,
+    categories: Object.entries(notes).map(([name, items]) => ({ name, items }))
+  }));
+  for (const version of data.legacy.versions) {
+    entries.push({ version, categories: [{ name: "History", items: [data.legacy.note] }] });
+  }
+  return entries;
+}
+
+/** Keep only well-formed { name, items[] } categories with real text. */
+function cleanCategories(categories) {
+  if (!Array.isArray(categories)) return [];
+  return categories
+    .filter((category) => typeof category?.name === "string" && Array.isArray(category.items))
+    .map((category) => ({
+      name: category.name,
+      items: category.items.filter((item) => typeof item === "string" && item.trim())
+    }))
+    .filter((category) => category.items.length > 0);
+}
+
+function releaseEntries() {
+  const byVersion = new Map(releases.builtin.map((entry) => [entry.version, entry]));
+  for (const version of releases.published?.keys() ?? []) {
+    if (!byVersion.has(version)) byVersion.set(version, { version, categories: [] });
+  }
+  return [...byVersion.values()].sort((a, b) => compareReleaseVersions(b.version, a.version));
+}
+
+function releaseBadge(version) {
+  const isInstalled = version === state.version;
+  if (!releases.installers) return isInstalled ? "Current" : "";
+  if (version === releases.latest?.version) return isInstalled ? "Current" : "Latest";
+  return isInstalled ? "Installed" : "";
+}
+
+function releaseDate(release) {
+  const iso = typeof release?.date === "string" && !Number.isNaN(Date.parse(release.date)) ? release.date : null;
+  if (iso) {
+    const text = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+      .format(new Date(iso));
+    return h("time", { class: "release-date", datetime: iso, text });
+  }
+  return releases.published ? h("span", { class: "release-date", text: "Date unavailable" }) : null;
+}
+
+function releaseAction(version) {
+  const installer = releases.installers?.get(version);
+  if (!installer || !state.version) return null;
+  const comparison = compareReleaseVersions(version, state.version);
+  if (comparison === 0) return null;
+  const label = comparison > 0 ? "Update" : "Downgrade";
+  const button = h("button", {
+    class: "btn btn-sm",
+    type: "button",
+    text: label,
+    "aria-label": `${label} to ULLeds ${version}`
+  });
+  button.addEventListener("click", () => void startReleaseUpdate(version, button));
+  return button;
+}
+
+function buildReleaseEntry(entry) {
+  const { version } = entry;
+  const published = releases.published?.get(version);
+  const fromGithub = cleanCategories(published?.categories);
+  const categories = fromGithub.length ? fromGithub : cleanCategories(entry.categories);
+  const badge = releaseBadge(version);
+  const legacy = releases.published && !published;
+
+  return h("article", { class: "panel release", hidden: true },
+    h("header", { class: "release-head" },
+      h("h3", { text: `ULLeds ${version}` }),
+      badge && h("span", { class: "badge", text: badge }),
+      legacy && h("span", { class: "badge badge-quiet", text: "Legacy" }),
+      releaseAction(version),
+      releaseDate(published)
+    ),
+    ...categories.map(({ name, items }) =>
+      h("div", { class: "release-category" },
+        h("strong", { text: name }),
+        h("ul", {}, ...items.map((item) => h("li", { text: item })))
+      )
+    )
+  );
+}
+
+function renderReleases() {
+  const entries = releaseEntries();
+  releases.versions = entries.map((entry) => entry.version);
+  releases.previousIndex = null;
+
+  $("#release-track").replaceChildren(...entries.map(buildReleaseEntry));
+  const selected = releases.versions.indexOf(releases.selected);
+  showRelease(selected >= 0 ? selected : 0);
+}
+
+function showRelease(index) {
+  const count = releases.versions.length;
+  if (count === 0) return;
+  const current = clamp(index, 0, count - 1);
+  const entries = [...$("#release-track").children];
+
+  entries.forEach((entry, i) => { entry.hidden = i !== current; });
+
+  const previous = releases.previousIndex;
+  if (previous !== null && previous !== current &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const direction = current > previous ? 1 : -1;
+    entries[current].animate(
+      [{ opacity: 0, transform: `translateX(${direction * 8}px)` }, { opacity: 1, transform: "translateX(0)" }],
+      { duration: 200, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
+    );
+  }
+
+  releases.selected = releases.versions[current];
+  releases.previousIndex = current;
+  const position = $("#release-position");
+  position.value = String(current + 1);
+  $("#release-total").textContent = String(count);
+  $("#release-newer").hidden = current === 0;
+  $("#release-older").hidden = current === count - 1;
+}
+
+const stepRelease = (delta) => {
+  const count = releases.versions.length;
+  if (count) showRelease(releases.previousIndex + delta);
+};
+
+function commitReleaseJump() {
+  const position = $("#release-position");
+  const raw = position.value.trim();
+  const requested = Number(raw);
+  const count = releases.versions.length;
+  if (/^\d+$/.test(raw) && Number.isSafeInteger(requested) && requested >= 1 && requested <= count) {
+    showRelease(requested - 1);
+  } else {
+    position.value = String(releases.previousIndex + 1);
+  }
+}
+
+async function loadReleaseDownloads() {
+  const status = $("#release-status");
+  try {
+    const [installers, history] = await Promise.all([
+      window.ull.listReleaseDownloads(),
+      window.ull.listReleaseHistory()
+    ]);
+    if (!Array.isArray(installers)) throw new Error("GitHub returned an invalid release list.");
+    if (!Array.isArray(history)) throw new Error("GitHub returned an invalid release history.");
+
+    releases.installers = new Map(installers.map((installer) => [installer.version, installer]));
+    releases.latest = installers[0] ?? null;
+    releases.published = new Map(
+      history
+        .filter((release) => typeof release?.version === "string" && /^\d+\.\d+\.\d+$/.test(release.version))
+        .map((release) => [release.version, release])
+    );
+    status.classList.add("hidden");
+    renderReleases();
+
+    if (releases.latest && state.version && compareReleaseVersions(releases.latest.version, state.version) > 0) {
+      showVersionNotice(releases.latest);
+    }
+  } catch (error) {
+    console.error("Could not load GitHub release downloads:", error);
+    status.textContent = "Could not load releases from GitHub. Showing the built-in release notes.";
+    status.classList.remove("hidden");
+  }
+}
+
+
+/* ==========================================================================
+   10. Setup wizard and reset
+   ========================================================================== */
+
+const WIZARD_OPTIONS = {
+  edgeCount: [1, 2, 3, 4].map((n) => [String(n), plural(n, "side")]),
+  installationMethod: [
+    ["0", "Bottom left → over top → bottom right"],
+    ["1", "Bottom right → over top → bottom left"]
+  ],
+  colorOrder: ["RGB", "GRB", "RBG", "GBR", "BRG", "BGR"].map((order) => [order, order]),
+  position: [
+    ["monitor-back", "Behind the monitor"],
+    ["monitor-front", "Around the screen"],
+    ["top", "Above the screen"],
+    ["desk", "On the desk"]
+  ]
+};
+
+function wizardField(label, setting, value) {
+  const select = h("select", { dataset: { setting } },
+    ...WIZARD_OPTIONS[setting].map(([optionValue, text]) => new Option(text, optionValue))
+  );
+  select.value = String(value);
+  return h("label", { class: "field" }, h("span", { text: label }), select);
+}
+
 function setWizardStep(step) {
   wizardStep = clamp(step, 0, 2);
-  document.querySelectorAll(".wizard-step").forEach((item, index) => {
-    item.classList.toggle("active", index <= wizardStep);
-  });
+  $$("#setup-dialog .steps span").forEach((item, index) => item.classList.toggle("active", index <= wizardStep));
   $("#wizard-back").classList.toggle("hidden", wizardStep === 0);
 
+  const title = $("#wizard-title");
+  const copy = $("#wizard-copy");
+  const next = $("#wizard-next");
   const content = $("#wizard-content");
-  content.replaceChildren();
+  const detectedCount = state.device.connected ? state.device.profile?.ledCount : null;
 
   if (wizardStep === 0) {
-    const current = state.device.profile || state.settings.deviceProfile || {};
-    $("#wizard-title").textContent = current.matchedBy === "device path"
-      ? "The strip profile was found"
-      : "Set up your strip profile";
-    $("#wizard-copy").textContent = current.matchedBy === "device path"
+    const current = currentProfile() || {};
+    const matched = current.matchedBy === "device path";
+    title.textContent = matched ? "The strip profile was found" : "Set up your strip profile";
+    copy.textContent = matched
       ? "ULLeds matched your controller to its saved strip layout. The LED count is read directly from the controller."
       : "ULLeds reads the LED count directly from your controller. Set the physical layout and color order here.";
+    next.textContent = "Save profile";
 
-    const fields = document.createElement("div");
-    fields.className = "wizard-fields";
-
-    const count = document.createElement("div");
-    count.className = "wizard-count";
-    const countLabel = document.createElement("span");
-    countLabel.textContent = "LED count";
-    count.append(countLabel);
-    const detectedCount = state.device.connected ? state.device.profile?.ledCount : null;
-    const countValue = document.createElement("strong");
-    countValue.textContent = Number.isInteger(detectedCount)
-      ? `${detectedCount} LEDs detected`
-      : "Connect controller to detect";
-    count.append(countValue);
-    fields.append(count);
-
-    const addField = (labelText, control) => {
-      const field = document.createElement("label");
-      field.className = "wizard-field";
-      field.append(document.createTextNode(labelText), control);
-      fields.append(field);
-    };
-
-    const edgeCount = document.createElement("select");
-    edgeCount.dataset.setting = "edgeCount";
-    [1, 2, 3, 4].forEach((value) => {
-      const option = document.createElement("option");
-      option.value = String(value);
-      option.textContent = `${value} ${value === 1 ? "side" : "sides"}`;
-      edgeCount.append(option);
-    });
-    edgeCount.value = String(current.edgeCount || 3);
-    addField("Lit sides", edgeCount);
-
-    const installationMethod = document.createElement("select");
-    installationMethod.dataset.setting = "installationMethod";
-    [
-      ["0", "Bottom left → over top → bottom right"],
-      ["1", "Bottom right → over top → bottom left"]
-    ].forEach(([value, label]) => {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = label;
-      installationMethod.append(option);
-    });
-    installationMethod.value = String(current.installationMethod ?? 0);
-    addField("Strip start and direction", installationMethod);
-
-    const colorOrder = document.createElement("select");
-    colorOrder.dataset.setting = "colorOrder";
-    ["RGB", "GRB", "RBG", "GBR", "BRG", "BGR"].forEach((value) => {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = value;
-      colorOrder.append(option);
-    });
-    colorOrder.value = current.colorOrder || "RGB";
-    addField("LED color order", colorOrder);
-
-    const position = document.createElement("select");
-    position.dataset.setting = "position";
-    [
-      ["monitor-back", "Behind the monitor"],
-      ["monitor-front", "Around the screen"],
-      ["top", "Above the screen"],
-      ["desk", "On the desk"]
-    ].forEach(([value, label]) => {
-      const option = document.createElement("option");
-      option.value = value;
-      option.textContent = label;
-      position.append(option);
-    });
-    position.value = current.position || "monitor-back";
-    addField("Strip position", position);
-
-    const hint = document.createElement("p");
-    hint.className = "wizard-hint";
-    hint.textContent = current.matchedBy
-      ? `Imported from your saved ${deviceLabel(current.name)} setup.`
-      : "These physical details are not part of the controller's USB data.";
-    fields.append(hint);
-
-    content.append(fields);
-    $("#wizard-next").textContent = "Save profile";
+    content.replaceChildren(h("div", { class: "form-grid" },
+      h("div", { class: "callout full" },
+        h("span", { text: "LED count" }),
+        h("strong", {
+          text: Number.isInteger(detectedCount) ? `${detectedCount} LEDs detected` : "Connect controller to detect"
+        })
+      ),
+      wizardField("Lit sides", "edgeCount", current.edgeCount || 3),
+      wizardField("Strip start and direction", "installationMethod", current.installationMethod ?? 0),
+      wizardField("LED color order", "colorOrder", current.colorOrder || "RGB"),
+      wizardField("Strip position", "position", current.position || "monitor-back"),
+      h("p", {
+        class: "hint full",
+        text: current.matchedBy
+          ? `Imported from your saved ${deviceLabel(current.name)} setup.`
+          : "These physical details are not part of the controller’s USB data."
+      })
+    ));
   } else if (wizardStep === 1) {
-    $("#wizard-title").textContent = "Connect your LED controller";
-    $("#wizard-copy").textContent = "Connect the USB controller, then scan. ULLeds will apply your current settings when it connects.";
+    title.textContent = "Connect your LED controller";
+    copy.textContent = "Connect the USB controller, then scan. ULLeds will apply your current settings when it connects.";
+    next.textContent = "Finish setup";
 
-    const status = document.createElement("div");
-    status.className = "wizard-device";
-    status.textContent = state.device.connected
-      ? `${deviceLabel(state.device.name)} is connected and ready.`
-      : state.device.error || "No controller connected yet.";
-    content.append(status);
-
-    const scan = document.createElement("button");
-    scan.className = "secondary-btn";
-    scan.type = "button";
-    scan.textContent = "Scan now";
-    scan.addEventListener("click", async () => {
-      await scanDevices();
-      setWizardStep(1);
-    });
-    content.append(scan);
-
-    $("#wizard-next").textContent = "Finish setup";
+    content.replaceChildren(h("div", { class: "dialog-body" },
+      h("div", { class: "callout" },
+        state.device.connected
+          ? `${deviceLabel(state.device.name)} is connected and ready.`
+          : state.device.error || "No controller connected yet."
+      ),
+      h("button", {
+        class: "btn",
+        type: "button",
+        text: "Scan now",
+        onclick: async () => {
+          await scanDevices();
+          setWizardStep(1);
+        }
+      })
+    ));
   } else {
-    $("#wizard-title").textContent = "You're ready to make it yours";
-    $("#wizard-copy").textContent = state.device.connected
+    title.textContent = "You’re ready to make it yours";
+    copy.textContent = state.device.connected
       ? "Your controller is connected. Pick a color, save a scene, or try a moving effect."
       : "You can connect your controller later. Your choices are saved on this PC.";
+    next.textContent = "Start using ULLeds";
 
-    $("#wizard-next").textContent = "Start using ULLeds";
-
-    const finish = document.createElement("div");
-    finish.className = "wizard-device";
-    const detectedCount = state.device.connected ? state.device.profile?.ledCount : null;
-    finish.textContent = `${Number.isInteger(detectedCount) ? `${detectedCount} LEDs detected` : "LED count unavailable"} · ${state.settings.brightness}% brightness`;
-    content.append(finish);
+    content.replaceChildren(h("div", { class: "callout" },
+      `${Number.isInteger(detectedCount) ? `${detectedCount} LEDs detected` : "LED count unavailable"} · ${state.settings.brightness}% brightness`
+    ));
   }
 }
 
@@ -1902,21 +1877,53 @@ function openSetup() {
   $("#setup-dialog").showModal();
 }
 
-function openResetConfirmation() {
-  $("#reset-dialog").showModal();
+async function advanceWizard() {
+  try {
+    if (wizardStep === 0) {
+      await scanDevices();
+      const detectedCount = state.device.connected ? state.device.profile?.ledCount : null;
+      if (!Number.isInteger(detectedCount)) {
+        return toast("Connect the controller so ULLeds can detect the LED count.");
+      }
+      const field = (name) => $(`[data-setting="${name}"]`).value;
+      await saveSettingsNow({
+        deviceProfile: {
+          name: deviceLabel(state.device.profile?.name || state.settings.deviceProfile?.name),
+          ledCount: detectedCount,
+          edgeCount: Number(field("edgeCount")),
+          installationMethod: Number(field("installationMethod")),
+          colorOrder: field("colorOrder"),
+          position: field("position"),
+          matchedBy: "manual",
+          color: state.settings.color
+        }
+      });
+      render();
+      setWizardStep(1);
+    } else if (wizardStep === 1) {
+      setWizardStep(2);
+    } else {
+      await window.ull.updateSettings({ onboarded: true });
+      state.settings.onboarded = true;
+      $("#setup-dialog").close();
+      render();
+    }
+  } catch (error) {
+    toast(`Setup could not be saved: ${error.message}`);
+  }
 }
 
 async function resetAllData() {
   const button = $("#confirm-reset");
   button.disabled = true;
   button.textContent = "Resetting…";
-  clearTimeout(settingsTimer);
-  settingsTimer = null;
-  settingsQueue = {};
-  if (settingsFlushPromise) await settingsFlushPromise;
-  settingsQueue = {};
+  clearTimeout(queue.timer);
+  queue.timer = null;
+  queue.changes = {};
+  if (queue.flushing) await queue.flushing;
+  queue.changes = {};
   stopScreenSync();
-  autoSyncAttempted = true;
+  sync.autoAttempted = true;
 
   try {
     const result = await window.ull.resetData();
@@ -1924,16 +1931,14 @@ async function resetAllData() {
     state.device = result.device;
     selectedLedIndices = new Set();
     selectedLedAnchorIndex = null;
-    screenSyncError = "";
+    sync.screenError = "";
     $("#reset-dialog").close();
     render();
     openSetup();
-    const resetMessage = result.removedLegacyProfiles.length
+    const message = result.removedLegacyProfiles.length
       ? "All ULLeds data and imported legacy profiles were reset."
       : "All ULLeds data was reset.";
-    toast(result.device.connected
-      ? resetMessage
-      : `${resetMessage} The controller is not connected; scan again after setup.`);
+    toast(result.device.connected ? message : `${message} The controller is not connected; scan again after setup.`);
   } catch (error) {
     toast(`Could not reset ULLeds data: ${error.message}`);
   } finally {
@@ -1942,60 +1947,33 @@ async function resetAllData() {
   }
 }
 
-function bindEvents() {
-  setupReleaseCarousel();
 
-  $("#apply-gradient").addEventListener("click", () => void applyGradient());
+/* ==========================================================================
+   11. Event binding
+   ========================================================================== */
 
-  document.querySelectorAll(".tab").forEach((item) => {
-    item.addEventListener("click", () => switchView(item.dataset.view));
+/** Wire a control so changing it queues one setting. */
+function bindSetting(selector, key, { event = "input", immediate = false, read } = {}) {
+  $(selector).addEventListener(event, (e) => {
+    const value = read ? read(e.target) : Number(e.target.value);
+    queueSettings({ [key]: value }, immediate);
   });
+}
+
+function bindNavigation() {
+  $$(".tab").forEach((tab) => tab.addEventListener("click", () => switchView(tab.dataset.view)));
 
   $(".tabs").addEventListener("keydown", (event) => {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
-    const tabs = [...document.querySelectorAll(".tab")].filter((tab) => tab.offsetWidth > 0);
+    const tabs = $$(".tab").filter((tab) => tab.offsetWidth > 0);
     const current = tabs.indexOf(document.activeElement);
     if (current === -1) return;
     event.preventDefault();
-    const next = tabs[(current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
+    const step = event.key === "ArrowRight" ? 1 : -1;
+    const next = tabs[(current + step + tabs.length) % tabs.length];
     next.focus();
     switchView(next.dataset.view);
   });
-
-  document.addEventListener("input", (event) => {
-    if (event.target instanceof HTMLInputElement && event.target.type === "range") {
-      updateRangeFill(event.target);
-    }
-  });
-  document.addEventListener("change", (event) => {
-    if (event.target instanceof HTMLInputElement && event.target.type === "range") {
-      clearTimeout(settingsTimer);
-      settingsTimer = null;
-      void flushSettingsQueue();
-    }
-  });
-
-  $("#monitor").addEventListener("click", selectPreviewPosition);
-  $("#monitor").addEventListener("keydown", (event) => {
-    if ((event.key === "Enter" || event.key === " ") && event.target.classList.contains("led-edge")) {
-      event.preventDefault();
-      selectPreviewPosition(event);
-    }
-  });
-
-  $("#select-all").addEventListener("click", () => {
-    selectedLedIndices = null;
-    selectedLedAnchorIndex = null;
-    updatePreview();
-  });
-
-  $("#deselect-all").addEventListener("click", () => {
-    selectedLedIndices = new Set();
-    selectedLedAnchorIndex = null;
-    updatePreview();
-  });
-
-  $("#scan-device").addEventListener("click", scanDevices);
 
   $("#window-minimize").addEventListener("click", () => window.ull.minimizeWindow());
   $("#window-maximize").addEventListener("click", () => window.ull.toggleMaximizeWindow());
@@ -2005,35 +1983,56 @@ function bindEvents() {
       document.body.classList.toggle("is-maximized", Boolean(isMaximized));
     });
   }
-  $("#controller-select").addEventListener("change", (event) => {
-    void connectSelectedDevice(event.target.value);
+
+  document.addEventListener("input", (event) => {
+    if (event.target instanceof HTMLInputElement && event.target.type === "range") {
+      updateRangeFill(event.target);
+    }
   });
-  $("#open-setup").addEventListener("click", openSetup);
-  $("#reset-all-data").addEventListener("click", openResetConfirmation);
-  $("#confirm-reset").addEventListener("click", resetAllData);
-  $("#version-notice-dismiss").addEventListener("click", dismissVersionNotice);
+  // Releasing a slider saves right away instead of waiting for the debounce.
+  document.addEventListener("change", (event) => {
+    if (event.target instanceof HTMLInputElement && event.target.type === "range") {
+      clearTimeout(queue.timer);
+      queue.timer = null;
+      void flushSettingsQueue();
+    }
+  });
+}
+
+function bindLighting() {
+  $("#monitor").addEventListener("click", selectPreviewPosition);
+  $("#monitor").addEventListener("keydown", (event) => {
+    if ((event.key === "Enter" || event.key === " ") && event.target.classList.contains("led-edge")) {
+      event.preventDefault();
+      selectPreviewPosition(event);
+    }
+  });
+  $("#select-all").addEventListener("click", () => setSelection(null));
+  $("#deselect-all").addEventListener("click", () => setSelection(new Set()));
 
   $("#power-toggle").addEventListener("click", () => {
-    if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
+    void stopActiveSync();
     queueSettings({ power: !state.settings.power }, true);
   });
 
   $("#color-picker").addEventListener("input", (event) => applyColor(event.target.value));
   $("#hex-color").addEventListener("change", (event) => {
     const value = event.target.value.trim();
-    if (/^#[\da-f]{6}$/i.test(value)) applyColor(value.toLowerCase());
-    else {
+    if (/^#[\da-f]{6}$/i.test(value)) {
+      applyColor(value.toLowerCase());
+    } else {
       event.target.value = selectedColor();
       toast("Enter a color in #RRGGBB format.");
     }
   });
+  $("#apply-gradient").addEventListener("click", () => void applyGradient());
 
-  $("#brightness").addEventListener("input", (event) => {
-    queueSettings({ brightness: Number(event.target.value) });
-  });
+  bindSetting("#brightness", "brightness");
+  bindSetting("#speed", "speed");
+  bindSetting("#effect", "effect", { event: "change", immediate: true, read: (el) => el.value });
 
-  ["rgb-red", "rgb-green", "rgb-blue"].forEach((id, index) => {
-    $(`#${id}`).addEventListener("input", (event) => {
+  ["red", "green", "blue"].forEach((name, index) => {
+    $(`#rgb-${name}`).addEventListener("input", (event) => {
       const channelGains = [...state.settings.channelGains];
       channelGains[index] = Number(event.target.value);
       queueSettings({ channelGains });
@@ -2043,59 +2042,22 @@ function bindEvents() {
     queueSettings({ channelGains: [100, 100, 100] }, true);
   });
 
-  $("#effect").addEventListener("change", (event) => {
-    queueSettings({ effect: event.target.value }, true);
-  });
-
-  $("#speed").addEventListener("input", (event) => {
-    queueSettings({ speed: Number(event.target.value) });
-  });
-
-  $("#sync-fps-range").addEventListener("input", (event) => {
-    queueSettings({ syncFps: Number(event.target.value) });
-  });
-  $("#sync-fps-number").addEventListener("input", (event) => {
-    const value = Number(event.target.value);
-    if (Number.isInteger(value) && value >= 5 && value <= 60) {
-      queueSettings({ syncFps: value });
+  $("#add-palette-color").addEventListener("click", () => {
+    if (state.settings.palette.length >= MAX_PALETTE_COLORS) {
+      return toast("A palette can have up to eight colors.");
     }
-  });
-  $("#sync-fps-number").addEventListener("change", (event) => {
-    const value = Number(event.target.value);
-    if (!Number.isInteger(value) || value < 5 || value > 60) {
-      event.target.value = state.settings.syncFps;
-      toast("Screen Sync FPS must be from 5 to 60.");
-    }
-  });
-  $("#sync-content-mode").addEventListener("change", (event) => {
-    queueSettings({ syncContentMode: event.target.value }, true);
-  });
-  $("#sync-auto-detect").addEventListener("change", (event) => {
-    queueSettings({ syncAutoDetect: event.target.checked }, true);
-    if (!event.target.checked && screenSyncSession?.mode === "screen") {
-      screenSyncSession?.letterboxTracker.reset();
-      screenSyncSession.detectedAspectRatio = null;
-      screenSyncSession.movieFormatPromptGate.reset();
-    }
+    queueSettings({ palette: [...state.settings.palette, state.settings.color] }, true);
   });
 
-  $("#screen-sync-toggle").addEventListener("click", () => {
-    if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
-    else startScreenSync();
-  });
-  $("#spotify-sync-toggle").addEventListener("click", () => {
-    if (screenSyncSession || screenSyncLifecycle.isStarting) stopScreenSync("", true);
-    else startSpotifySync();
-  });
+  const toggleSync = (start) => () => {
+    if (syncIsActive()) void stopScreenSync("", true);
+    else start();
+  };
+  $("#screen-sync-toggle").addEventListener("click", toggleSync(() => startScreenSync()));
+  $("#spotify-sync-toggle").addEventListener("click", toggleSync(() => startSpotifySync()));
+}
 
-  $("#start-with-windows").addEventListener("change", (event) => {
-    queueSettings({ startWithWindows: event.target.checked }, true);
-  });
-  $("#resume-screen-sync").addEventListener("change", (event) => {
-    queueSettings({ resumeScreenSync: event.target.checked }, true);
-    if (!event.target.checked && screenSyncSession) stopScreenSync();
-  });
-
+function bindScenes() {
   $("#save-scene").addEventListener("click", () => openSceneDialog("create"));
   $("#import-scenes").addEventListener("click", importScenes);
   $("#export-scenes").addEventListener("click", exportScenes);
@@ -2105,79 +2067,96 @@ function bindEvents() {
     sceneDialogMode = null;
   });
   $("#cancel-delete-scene").addEventListener("click", () => $("#delete-scene-dialog").close());
-  $("#add-palette-color").addEventListener("click", () => {
-    if (state.settings.palette.length >= 8) return toast("A palette can have up to eight colors.");
-    queueSettings({ palette: [...state.settings.palette, state.settings.color] }, true);
+}
+
+function bindDeviceSettings() {
+  $("#scan-device").addEventListener("click", scanDevices);
+  $("#controller-select").addEventListener("change", (event) => void connectSelectedDevice(event.target.value));
+  $("#open-setup").addEventListener("click", openSetup);
+  $("#reset-all-data").addEventListener("click", () => $("#reset-dialog").showModal());
+  $("#confirm-reset").addEventListener("click", resetAllData);
+
+  bindSetting("#sync-fps-range", "syncFps");
+  $("#sync-fps-number").addEventListener("input", (event) => {
+    const value = Number(event.target.value);
+    if (Number.isInteger(value) && value >= FPS.min && value <= FPS.max) queueSettings({ syncFps: value });
+  });
+  $("#sync-fps-number").addEventListener("change", (event) => {
+    const value = Number(event.target.value);
+    if (!Number.isInteger(value) || value < FPS.min || value > FPS.max) {
+      event.target.value = state.settings.syncFps;
+      toast(`Screen Sync FPS must be from ${FPS.min} to ${FPS.max}.`);
+    }
+  });
+  bindSetting("#sync-content-mode", "syncContentMode", { event: "change", immediate: true, read: (el) => el.value });
+
+  $("#sync-auto-detect").addEventListener("change", (event) => {
+    queueSettings({ syncAutoDetect: event.target.checked }, true);
+    const session = sync.session;
+    if (!event.target.checked && session?.mode === "screen") {
+      session.letterboxTracker.reset();
+      session.detectedAspectRatio = null;
+      session.movieFormatPromptGate.reset();
+    }
   });
 
-  document.querySelectorAll('input[name="update-source"]').forEach((input) => {
+  bindSetting("#start-with-windows", "startWithWindows", { event: "change", immediate: true, read: (el) => el.checked });
+  $("#resume-screen-sync").addEventListener("change", (event) => {
+    queueSettings({ resumeScreenSync: event.target.checked }, true);
+    if (!event.target.checked && sync.session) stopScreenSync();
+  });
+}
+
+function bindUpdates() {
+  $$('input[name="update-source"]').forEach((input) => {
     input.addEventListener("change", () => selectUpdateSource(input.value));
   });
   $("#choose-update-folder").addEventListener("click", chooseUpdateFolder);
   $("#check-updates").addEventListener("click", checkUpdates);
+  $("#version-notice-dismiss").addEventListener("click", dismissVersionNotice);
 
-  $("#wizard-back").addEventListener("click", () => setWizardStep(wizardStep - 1));
-  $("#wizard-next").addEventListener("click", async () => {
-    try {
-      if (wizardStep === 0) {
-        await scanDevices();
-        const detectedCount = state.device.connected ? state.device.profile?.ledCount : null;
-        if (!Number.isInteger(detectedCount)) {
-          return toast("Connect the controller so ULLeds can detect the LED count.");
-        }
-        const profile = {
-          name: deviceLabel(state.device.profile?.name || state.settings.deviceProfile?.name),
-          ledCount: detectedCount,
-          edgeCount: Number($('[data-setting="edgeCount"]').value),
-          installationMethod: Number($('[data-setting="installationMethod"]').value),
-          colorOrder: $('[data-setting="colorOrder"]').value,
-          position: $('[data-setting="position"]').value,
-          matchedBy: "manual",
-          color: state.settings.color
-        };
-        const saved = await window.ull.updateSettings({ deviceProfile: profile });
-        state.settings = saved.settings;
-        state.device = saved;
-        render();
-        setWizardStep(1);
-      } else if (wizardStep === 1) {
-        setWizardStep(2);
-      } else {
-        await window.ull.updateSettings({ onboarded: true });
-        state.settings.onboarded = true;
-        $("#setup-dialog").close();
-        render();
-      }
-    } catch (error) {
-      toast(`Setup could not be saved: ${error.message}`);
+  $("#release-newer").addEventListener("click", () => stepRelease(-1));
+  $("#release-older").addEventListener("click", () => stepRelease(1));
+  $("#release-position").addEventListener("change", commitReleaseJump);
+  $("#release-position").addEventListener("focus", (event) => event.currentTarget.select());
+  $("#release-position").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitReleaseJump();
+      event.currentTarget.blur();
+    } else if (event.key === "Escape") {
+      event.currentTarget.value = String(releases.previousIndex + 1);
+      event.currentTarget.blur();
     }
   });
+}
 
+function bindWizard() {
+  $("#wizard-back").addEventListener("click", () => setWizardStep(wizardStep - 1));
+  $("#wizard-next").addEventListener("click", advanceWizard);
+}
+
+/** Messages pushed from the main process. */
+function bindMainProcessEvents() {
   window.ull.onDeviceStatus((device) => {
     applyDeviceState(device);
     render();
-    if (!device.connected) autoSyncAttempted = false;
+    if (!device.connected) sync.autoAttempted = false;
     else maybeResumeScreenSync();
   });
   window.ull.onMovieFormatApplied(applyDetectedMovieFormat);
 
   window.ull.onUpdateProgress((progress) => {
-    updateState = {
-      phase: "downloading",
+    setUpdatePhase("downloading", {
       percent: Number.isFinite(progress.percent) ? progress.percent : null,
       transferred: Number.isFinite(progress.transferred) ? progress.transferred : 0,
       total: Number.isFinite(progress.total) ? progress.total : 0
-    };
+    });
     showUpdateMessage("Downloading update…");
   });
-
-  window.ull.onUpdateDownloaded(({ version }) => {
-    updateState = { phase: "ready", percent: null, transferred: 0, total: 0 };
-    showUpdateMessage(`ULLeds ${version} is ready. Your saved settings will be kept.`, false, true);
-  });
-
+  window.ull.onUpdateDownloaded(({ version }) => showUpdateReady(version));
   window.ull.onUpdateError(({ message }) => {
-    updateState = { phase: "error", percent: null, transferred: 0, total: 0 };
+    setUpdatePhase("error");
     showUpdateMessage(`Update failed: ${message}`, true);
   });
 
@@ -2193,10 +2172,11 @@ function bindEvents() {
     checkUpdates();
   });
 
+  // Last chance to persist pending changes synchronously.
   window.addEventListener("beforeunload", () => {
-    clearTimeout(settingsTimer);
-    const pending = settingsQueue;
-    settingsQueue = {};
+    clearTimeout(queue.timer);
+    const pending = queue.changes;
+    queue.changes = {};
     if (Object.keys(pending).length === 0) return;
     try {
       const response = window.ull.flushSettings(pending);
@@ -2209,13 +2189,31 @@ function bindEvents() {
   });
 }
 
+function bindEvents() {
+  bindNavigation();
+  bindLighting();
+  bindScenes();
+  bindDeviceSettings();
+  bindUpdates();
+  bindWizard();
+  bindMainProcessEvents();
+}
+
+
+/* ==========================================================================
+   12. Startup
+   ========================================================================== */
+
 async function start() {
   bindEvents();
   updateMonitorAspectRatio();
   window.addEventListener("resize", updateMonitorAspectRatio);
+
   try {
+    releases.builtin = loadBuiltinChangelog();
     state = await window.ull.initialState();
     render();
+    renderReleases();
     void loadReleaseDownloads();
     if (!state.settings.onboarded) openSetup();
     void scanDevices().then(maybeResumeScreenSync).catch((error) => {
@@ -2225,13 +2223,6 @@ async function start() {
   } catch (error) {
     toast(`ULLeds could not load: ${error.message}`);
   }
-}
-
-function maybeResumeScreenSync() {
-  if (autoSyncAttempted || !state.settings.resumeScreenSync || !state.device.connected) return;
-  autoSyncAttempted = true;
-  updatePreview();
-  void startScreenSync({ automatic: true });
 }
 
 start();

@@ -14,6 +14,42 @@ function decodeHtmlEntities(value) {
 
 function extractReleaseNotes(html) {
   if (typeof html !== "string") throw new TypeError("In-app release notes must be HTML text.");
+  const changelogData = html.match(/<script\b(?=[^>]*\bid="changelog-data")(?=[^>]*\btype="application\/json")[^>]*>([\s\S]*?)<\/script>/i);
+  if (changelogData) {
+    const data = JSON.parse(changelogData[1]);
+    if (!Array.isArray(data.releases)) throw new Error("The in-app changelog has no release list.");
+    const entries = data.releases.map(({ version, notes }) => {
+      if (typeof version !== "string" || !/^1\.0\.\d+$/.test(version) ||
+          !notes || typeof notes !== "object" || Array.isArray(notes)) {
+        throw new Error("An in-app release note entry is invalid.");
+      }
+      const categories = Object.entries(notes).map(([name, items]) => {
+        if (typeof name !== "string" || !Array.isArray(items) || items.length === 0 ||
+            items.some((item) => typeof item !== "string" || !item.trim())) {
+          throw new Error(`Release ${version} has an invalid category.`);
+        }
+        return { name, items: items.map((item) => item.trim()) };
+      });
+      if (categories.length === 0) throw new Error(`Release ${version} has no notes.`);
+      return { version, categories };
+    });
+    if (data.legacy) {
+      if (typeof data.legacy.note !== "string" || !data.legacy.note.trim() ||
+          !Array.isArray(data.legacy.versions) ||
+          data.legacy.versions.some((version) =>
+            typeof version !== "string" || !/^1\.0\.\d+$/.test(version))) {
+        throw new Error("The in-app legacy release notes are invalid.");
+      }
+      entries.push(...data.legacy.versions.map((version) => ({
+        version,
+        categories: [{ name: "History", items: [data.legacy.note.trim()] }]
+      })));
+    }
+    const versions = entries.map((entry) => entry.version);
+    if (new Set(versions).size !== versions.length) throw new Error("Duplicate in-app release versions found.");
+    return entries;
+  }
+
   const entries = [];
   const articlePattern = /<article\b[^>]*class="card release-entry"[^>]*>([\s\S]*?)<\/article>/g;
   for (const article of html.matchAll(articlePattern)) {
