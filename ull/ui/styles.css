@@ -684,7 +684,6 @@ main {
 
 .view-narrow {
   width: 100%;
-  max-width: 1120px;
   margin-inline: auto;
 }
 

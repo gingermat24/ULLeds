@@ -15,6 +15,19 @@ test("the detected LED count has no editable renderer control", () => {
   assert.doesNotMatch(app, /data-setting=["']ledCount["']/);
 });
 
+test("Device and Updates views expand to the full available content width", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const narrowViews = [...html.matchAll(/<section\b[^>]*class="([^"]*)"[^>]*id="view-(settings|updates)"/g)];
+  const narrowRule = css.match(/\.view-narrow\s*\{([^}]*)\}/);
+
+  assert.equal(narrowViews.length, 2);
+  assert.ok(narrowViews.every(([, classes]) => classes.split(/\s+/).includes("view-narrow")));
+  assert.ok(narrowRule, "Device and Updates should share the narrow-view layout rule");
+  assert.match(narrowRule[1], /width:\s*100%/);
+  assert.doesNotMatch(narrowRule[1], /max-width\s*:\s*(?!none\b)[^;]+/);
+});
+
 test("renderer selectors resolve to unique elements in the page", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
@@ -437,7 +450,8 @@ test("Device and Updates views use available width without enlarging the LED pre
   const monitorRule = css.match(/\.monitor\s*\{([^}]+)\}/)?.[1] || "";
   const narrowViewRule = css.match(/\.view-narrow\s*\{([^}]+)\}/)?.[1] || "";
 
-  assert.match(narrowViewRule, /width:\s*100%;[^}]*max-width:\s*1120px/);
+  assert.match(narrowViewRule, /width:\s*100%/);
+  assert.doesNotMatch(narrowViewRule, /max-width\s*:\s*(?!none\b)[^;]+/);
   assert.match(monitorRule, /width:\s*min\(100%,\s*calc\(\(100dvh - 330px\) \* var\(--monitor-aspect-ratio, 1\.7778\)\)\)/);
   assert.doesNotMatch(monitorRule, /780px/);
 });
