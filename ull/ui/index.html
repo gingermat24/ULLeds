@@ -66,10 +66,7 @@
           <div class="preview-stage">
             <div class="monitor" id="monitor">
               <div class="monitor-screen" aria-hidden="true"></div>
-              <div class="led-edge led-top" id="led-top" data-edge="top" tabindex="0" role="group" aria-label="Top LED strip"></div>
-              <div class="led-edge led-left" id="led-left" data-edge="left" tabindex="0" role="group" aria-label="Left LED strip"></div>
-              <div class="led-edge led-right" id="led-right" data-edge="right" tabindex="0" role="group" aria-label="Right LED strip"></div>
-              <div class="led-edge led-bottom hidden" id="led-bottom" data-edge="bottom" tabindex="0" role="group" aria-label="Bottom LED strip"></div>
+              <div class="led-layout" id="led-layout" role="group" aria-label="LED layout preview"></div>
             </div>
           </div>
 
@@ -460,6 +457,9 @@
     "versions": ["1.0.11", "1.0.10", "1.0.9", "1.0.8", "1.0.7", "1.0.6", "1.0.5", "1.0.4", "1.0.3", "1.0.2", "1.0.1", "1.0.0"]
   },
   "releases": [
+    { "version": "1.0.80", "notes": {
+      "New": ["Arrange every detected LED manually around your screen with drag placement, position controls, and layout rotation."],
+      "Improved": ["LED numbers follow the controller's physical order, and Screen Sync samples each manually placed position. Existing strip profiles keep their current layout and sampling behavior."] } },
     { "version": "1.0.79", "notes": {
       "Fixed": ["Device and Updates now expand to the available window width on large displays, matching Lighting and Scenes."] } },
     { "version": "1.0.78", "notes": {

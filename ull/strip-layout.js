@@ -51,6 +51,75 @@ function allocateEdgeIndices(ledCount, edgeCount, installationMethod = 0) {
   return { ledCount, edgeCount, counts, indices };
 }
 
-const stripLayout = Object.freeze({ allocateEdgeIndices });
+function createDefaultLedPositions(ledCount, edgeCount, installationMethod = 0) {
+  const allocation = allocateEdgeIndices(ledCount, edgeCount, installationMethod);
+  const positions = Array(ledCount);
+
+  for (const [edge, indices] of Object.entries(allocation.indices)) {
+    indices.forEach((ledIndex, position) => {
+      const along = (position + 0.5) / indices.length * 100;
+      positions[ledIndex] = edge === "top"
+        ? { x: along, y: 6, edge }
+        : edge === "bottom"
+          ? { x: along, y: 94, edge }
+          : edge === "left"
+            ? { x: 6, y: along, edge }
+            : { x: 94, y: along, edge };
+    });
+  }
+
+  return positions;
+}
+
+function createStripLayout(ledCount, profile = {}) {
+  const requestedEdgeCount = Number(profile.edgeCount);
+  const edgeCount = Number.isInteger(requestedEdgeCount) &&
+      requestedEdgeCount >= 1 && requestedEdgeCount <= 4
+    ? requestedEdgeCount
+    : 3;
+  const installationMethod = profile.installationMethod === 1 ? 1 : 0;
+  const fallback = allocateEdgeIndices(ledCount, edgeCount, installationMethod);
+  const positions = profile.ledPositions === undefined
+    ? createDefaultLedPositions(ledCount, edgeCount, installationMethod)
+    : profile.ledPositions;
+
+  if (!Array.isArray(positions) || positions.length !== ledCount ||
+      positions.some((position) =>
+        !position || typeof position !== "object" || Array.isArray(position) ||
+        !Number.isFinite(position.x) || position.x < 0 || position.x > 100 ||
+        !Number.isFinite(position.y) || position.y < 0 || position.y > 100 ||
+        !["top", "left", "right", "bottom"].includes(position.edge))) {
+    throw new TypeError("LED positions must match the controller's LED count.");
+  }
+
+  const indices = { top: [], left: [], right: [], bottom: [] };
+  positions.forEach(({ edge }, ledIndex) => indices[edge].push(ledIndex));
+  for (const [edge, edgeIndices] of Object.entries(indices)) {
+    edgeIndices.sort((a, b) => {
+      const horizontal = edge === "top" || edge === "bottom";
+      return horizontal
+        ? positions[a].x - positions[b].x
+        : positions[a].y - positions[b].y;
+    });
+    if (!edgeIndices.length) delete indices[edge];
+  }
+
+  const counts = Object.fromEntries(
+    Object.entries(indices).map(([edge, edgeIndices]) => [edge, edgeIndices.length])
+  );
+  return {
+    ledCount,
+    edgeCount: fallback.edgeCount,
+    counts,
+    indices,
+    positions: positions.map(({ x, y, edge }) => ({ x, y, edge }))
+  };
+}
+
+const stripLayout = Object.freeze({
+  allocateEdgeIndices,
+  createDefaultLedPositions,
+  createStripLayout
+});
 if (typeof module !== "undefined" && module.exports) module.exports = stripLayout;
 else globalThis.ullStripLayout = stripLayout;

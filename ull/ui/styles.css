@@ -844,7 +844,6 @@ body.is-maximized .window-btn .glyph-restore {
 
 /* Preview */
 .preview {
-  --rail: clamp(9px, 1.4cqi, 16px);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -897,6 +896,7 @@ body.is-maximized .window-btn .glyph-restore {
 .monitor-screen {
   position: absolute;
   inset: 6px;
+  z-index: 0;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: #060607;
@@ -906,6 +906,7 @@ body.is-maximized .window-btn .glyph-restore {
   content: "LEDs off";
   position: absolute;
   inset: 0;
+  z-index: 2;
   display: grid;
   place-items: center;
   color: var(--faint);
@@ -915,47 +916,29 @@ body.is-maximized .window-btn .glyph-restore {
   pointer-events: none;
 }
 
-.led-edge {
+.led-layout {
   position: absolute;
-  display: grid;
-  gap: clamp(2px, 0.25cqi, 3px);
-  border-radius: var(--r);
-  cursor: pointer;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
 }
-
-.led-edge:focus-visible {
-  outline-offset: 3px;
-}
-
-.led-top,
-.led-bottom {
-  inset-inline: 0;
-  height: var(--rail);
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(4px, 1fr);
-}
-
-.led-left,
-.led-right {
-  inset-block: 0;
-  width: var(--rail);
-  grid-auto-flow: row;
-  grid-auto-rows: minmax(4px, 1fr);
-}
-
-.led-top { top: calc(-1 * var(--rail) - 3px); }
-.led-bottom { bottom: calc(-1 * var(--rail) - 3px); }
-.led-left { left: calc(-1 * var(--rail) - 3px); }
-.led-right { right: calc(-1 * var(--rail) - 3px); }
 
 .led-pixel {
+  position: absolute;
+  display: grid;
+  place-items: center;
   min-width: 0;
   min-height: 0;
   padding: 0;
   border: 0;
-  border-radius: clamp(2px, calc(var(--rail) * 0.18), var(--r));
+  border-radius: 50%;
   background: var(--led-color);
+  color: #fff;
+  font: 600 8px / 1 var(--mono);
+  text-shadow: 0 1px 2px #000;
   opacity: var(--led-opacity, 0.9);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
   transition: background-color 40ms linear, opacity 0.15s, filter 0.12s;
 }
 
@@ -964,8 +947,9 @@ body.is-maximized .window-btn .glyph-restore {
 }
 
 .led-pixel.selected {
-  position: relative;
-  z-index: 1;
+  z-index: 2;
+  width: 20px !important;
+  height: 20px !important;
   outline: 1.5px solid #fff;
   outline-offset: -1.5px;
 }
@@ -1471,81 +1455,124 @@ body.is-maximized .window-btn .glyph-restore {
   margin-top: calc(-1 * var(--s2));
 }
 
-.profile-layout-choices,
-.profile-direction-choices {
+.profile-canvas {
+  position: relative;
+  width: min(100%, 560px);
+  aspect-ratio: var(--monitor-aspect-ratio, 16 / 9);
+  margin-inline: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: #09090a;
+  touch-action: none;
+  user-select: none;
+}
+
+.profile-canvas-screen {
+  position: absolute;
+  inset: 6%;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #060607;
+  color: var(--faint);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+
+.profile-points {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.profile-order-segment {
+  position: absolute;
+  z-index: 0;
+  height: 1px;
+  background: rgb(255 255 255 / 0.24);
+  transform-origin: left center;
+  pointer-events: none;
+}
+
+.profile-led-dot {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 8px;
+  height: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.7);
+  border-radius: 50%;
+  background: #a7a7ac;
+  color: #fff;
+  font: 600 8px / 1 var(--mono);
+  transform: translate(-50%, -50%);
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
+.profile-led-dot:active {
+  cursor: grabbing;
+}
+
+.profile-led-dot.is-active {
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  border-color: #fff;
+  background: #3a3a3e;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.profile-led-dot:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.profile-position-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.profile-led-picker,
+.profile-rotation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--s2);
 }
 
-.profile-choice {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  align-items: center;
-  gap: var(--s3);
-  min-width: 0;
-  padding: var(--s3);
-  border: 1px solid var(--line);
-  border-radius: var(--r);
-  background: var(--surface);
-  cursor: pointer;
-  transition: border-color var(--fast), background var(--fast);
-}
-
-.profile-choice:hover {
-  border-color: var(--line-strong);
-}
-
-.profile-choice:has(input:checked) {
-  border-color: rgb(255 255 255 / 0.4);
-  background: var(--wash);
-}
-
-.profile-choice input {
-  accent-color: #fff;
-}
-
-.profile-layout-choice {
-  grid-template-columns: 16px 58px minmax(0, 1fr);
-}
-
-.profile-choice-copy {
-  display: grid;
-  gap: var(--s1);
-  min-width: 0;
-}
-
-.profile-choice-copy strong {
-  font-size: var(--fs-sm);
-  font-weight: 560;
-}
-
-.profile-choice-copy > span {
+.profile-led-picker > label {
   color: var(--muted);
-  font-size: var(--fs-xs);
-  line-height: 1.4;
+  font-size: var(--fs-sm);
 }
 
-.profile-diagram {
-  width: 58px;
-  height: 40px;
-  overflow: visible;
+.profile-index-input {
+  width: 72px;
 }
 
-.profile-diagram-screen {
-  fill: var(--raised);
-  stroke: var(--line-strong);
-  stroke-width: 1;
+.profile-led-total {
+  color: var(--muted);
+  font-size: var(--fs-sm);
 }
 
-.profile-diagram-edge {
-  stroke: var(--line-strong);
-  stroke-linecap: round;
-  stroke-width: 4;
+.profile-coordinate-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
 }
 
-.profile-diagram-edge.is-active {
-  stroke: var(--text);
+.profile-awaiting-device {
+  margin: 0;
 }
 
 .profile-advanced-content {
@@ -1764,16 +1791,15 @@ body.is-maximized .window-btn .glyph-restore {
 }
 
 @media (max-width: 520px) {
-  .profile-layout-choices,
-  .profile-direction-choices {
-    grid-template-columns: 1fr;
-  }
-
-  .profile-layout-choice {
-    grid-template-columns: 16px 58px minmax(0, 1fr);
-  }
-
-  .profile-count {
+  .profile-position-tools {
     align-items: flex-start;
+  }
+
+  .profile-rotation-actions {
+    width: 100%;
+  }
+
+  .profile-coordinate-controls {
+    grid-template-columns: 1fr;
   }
 }

@@ -348,6 +348,13 @@ function validateSettings(input) {
           !positions.has(profile.position) ||
           typeof profile.name !== "string" || !profile.name.trim() ||
           !["device path", "single connected controller", "manual"].includes(matchedBy) ||
+          (profile.ledPositions !== undefined &&
+            (!Array.isArray(profile.ledPositions) || profile.ledPositions.length !== ledCount ||
+              profile.ledPositions.some((position) =>
+                !position || typeof position !== "object" || Array.isArray(position) ||
+                !Number.isFinite(position.x) || position.x < 0 || position.x > 100 ||
+                !Number.isFinite(position.y) || position.y < 0 || position.y > 100 ||
+                !["top", "left", "right", "bottom"].includes(position.edge)))) ||
           ("color" in profile && profile.color !== null && !validColor(profile.color))) {
         throw new TypeError("Device profile details are invalid.");
       }
@@ -361,7 +368,12 @@ function validateSettings(input) {
         matchedBy,
         color: typeof profile.color === "string" && /^#[\da-f]{6}$/i.test(profile.color)
           ? profile.color.toLowerCase()
-          : null
+          : null,
+        ...(profile.ledPositions === undefined
+          ? {}
+          : {
+              ledPositions: profile.ledPositions.map(({ x, y, edge }) => ({ x, y, edge }))
+            })
       };
     } else {
       throw new TypeError("Device profile must be an object or null.");
@@ -710,6 +722,9 @@ async function connectDeviceNow(targetPath, knownDevices) {
       position: savedProfile?.position || "monitor-back",
       matchedBy: savedProfile?.matchedBy || "manual",
       color: savedProfile?.color || null,
+      ...(savedProfile?.ledPositions
+        ? { ledPositions: savedProfile.ledPositions }
+        : {}),
       countSource
     };
     connectedInfo = { ...selected, profile };

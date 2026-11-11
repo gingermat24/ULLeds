@@ -436,9 +436,8 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.match(css, /\.preview\s*\{[^}]*container-type:\s*inline-size/s);
-  assert.match(css, /--rail:\s*clamp\(9px,\s*1\.4cqi,\s*16px\)/);
-  assert.match(css, /\.led-edge\s*\{[^}]*gap:\s*clamp\(2px,\s*0\.25cqi,\s*3px\)/s);
-  assert.match(css, /\.led-pixel\s*\{[^}]*border-radius:\s*clamp\(2px,\s*calc\(var\(--rail\) \* 0\.18\),\s*var\(--r\)\)/s);
+  assert.match(css, /\.led-layout\s*\{[^}]*inset:\s*0/);
+  assert.match(css, /\.led-pixel\s*\{[^}]*position:\s*absolute;[^}]*border-radius:\s*50%/s);
   assert.match(css, /\.led-pixel\.selected\s*\{[^}]*outline:\s*1\.5px solid #fff;[^}]*outline-offset:\s*-1\.5px/s);
   assert.match(css, /\.led-pixel:focus-visible:not\(\.selected\)\s*\{\s+outline-offset: 1px;/);
   assert.match(css, /:focus-visible/);
@@ -477,7 +476,7 @@ test("Shift-click selects an inclusive LED range and selected focus keeps its se
   assert.match(bindEvents, /#apply-gradient"\)\.addEventListener\("click", \(\) => void applyGradient\(\)\)/);
   assert.doesNotMatch(startScreenSync, /apply-gradient/);
   assert.match(app, /isLedSelected\(selectedLedIndices, index\)/);
-  assert.match(app, /isEdgeSelected\(selectedLedIndices, indices\)/);
+  assert.match(app, /buildLayout\(count, profile\)\.indices\[edge\]/);
   assert.match(app, /fixedColorChanges\(/);
   assert.match(bindEvents, /#select-all"\)\.addEventListener\("click", \(\) => setSelection\(null\)\)/);
   assert.match(bindEvents, /#deselect-all"\)\.addEventListener\("click", \(\) => setSelection\(new Set\(\)\)\)/);
@@ -503,22 +502,21 @@ test("clicking the preview background or pressing Escape does not clear LED sele
       assert.fail("A click outside an LED should not change the preview");
     }
   };
-  const monitorKeydown = app.slice(
-    app.indexOf('$("#monitor").addEventListener("keydown"', bindStart),
-    app.indexOf('$("#select-all")', bindStart)
-  );
+  const bindEvents = app.slice(bindStart, bindEnd);
 
   assert.notEqual(selectStart, -1);
   assert.notEqual(selectEnd, -1);
   assert.notEqual(bindStart, -1);
   vm.runInNewContext(
-    `${app.slice(selectStart, selectEnd)}\nselectPreviewPosition({ target: { closest: () => null } });`,
+    `${app.slice(selectStart, selectEnd)}\nselectPreviewPosition({ target: {
+      closest: (selector) => selector === ".monitor-screen" ? {} : null
+    } });`,
     context
   );
 
   assert.equal(context.selectedLedIndices, selectedLedIndices);
-  assert.match(monitorKeydown, /event\.key === "Enter" \|\| event\.key === " "/);
-  assert.doesNotMatch(monitorKeydown, /Escape|selectedLedIndices\s*=/);
+  assert.match(bindEvents, /#monitor"\)\.addEventListener\("click", selectPreviewPosition\)/);
+  assert.doesNotMatch(bindEvents, /Escape|selectedLedIndices\s*=/);
 });
 
 test("Scenes save full lighting setups with explicit management actions", () => {
@@ -938,36 +936,27 @@ test("editing a connected strip profile updates the live connection profile and 
 
   assert.match(main, /if \(Object\.hasOwn\(changes, "deviceProfile"\) && connectedInfo\) \{\s+connectedInfo = \{\s+\.\.\.connectedInfo,\s+profile: settings\.deviceProfile\s+\?/);
   assert.match(main, /const savedProfile = settings\.devicePath === selected\.path && settings\.deviceProfile\?\.ledCount\s+\?\s+settings\.deviceProfile\s+:\s+selected\.profile\?\.ledCount/);
+  assert.match(main, /profile\.ledPositions\.length !== ledCount/);
+  assert.match(main, /ledPositions: profile\.ledPositions\.map\(\(\{ x, y, edge \}\) => \(\{ x, y, edge \}\)\)/);
+  assert.match(main, /\.\.\.\(savedProfile\?\.ledPositions/);
 });
 
-test("strip profile choices explain edge coverage and LED start direction", () => {
+test("strip profile editor supports manual placement, rotation, and direct coordinates", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
-  const start = app.indexOf("const PROFILE_EDGE_LAYOUTS = [");
-  const end = app.indexOf("\nfunction renderProfileDirectionChoices", start);
-  const context = {};
 
-  vm.runInNewContext(`${app.slice(start, end)}; globalThis.profileLabels = {
-    edgeCoverageLabel,
-    profileStartCorner,
-    profileDirectionOptions
-  };`, context);
-
-  assert.equal(context.profileLabels.edgeCoverageLabel(1), "Top only");
-  assert.equal(context.profileLabels.edgeCoverageLabel(2), "Top + left");
-  assert.equal(context.profileLabels.edgeCoverageLabel(3), "Top, left + right");
-  assert.equal(context.profileLabels.edgeCoverageLabel(4), "All four sides");
-  assert.equal(context.profileLabels.profileStartCorner(1, 0), "top-left");
-  assert.equal(context.profileLabels.profileStartCorner(3, 1), "bottom-right");
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(context.profileLabels.profileDirectionOptions(3))),
-    [
-      ["Starts at bottom-left", "Up left, across the top left to right, then down right."],
-      ["Starts at bottom-right", "Up right, across the top right to left, then down left."]
-    ]
-  );
+  assert.match(app, /h\("legend", \{ text: "Arrange the LEDs" \}\)/);
+  assert.match(app, /All \$\{count\} controller LEDs are included/);
+  assert.match(app, /id: "profile-rotate-left"/);
+  assert.match(app, /id: "profile-rotate-right"/);
+  assert.match(app, /id: "profile-reset-layout"/);
+  assert.match(app, /id: "profile-x"/);
+  assert.match(app, /id: "profile-y"/);
+  assert.match(app, /setPointerCapture\(event\.pointerId\)/);
+  assert.match(app, /event\.key === "ArrowRight"/);
+  assert.doesNotMatch(app, /PROFILE_EDGE_LAYOUTS|profileDirectionOptions/);
 });
 
-test("strip profile editing is a single-page save with color order under Advanced", () => {
+test("strip profile editing includes the full detected count and keeps color order under Advanced", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
@@ -975,8 +964,9 @@ test("strip profile editing is a single-page save with color order under Advance
   assert.match(html, /id="profile-cancel"/);
   assert.match(html, /id="profile-save"/);
   assert.doesNotMatch(html, /wizard-back|wizard-next|class="steps"/);
-  assert.match(app, /h\("legend", \{ text: "Which sides have LEDs\?" \}\)/);
-  assert.match(app, /h\("legend", \{ text: "Where does LED 1 start\?" \}\)/);
+  assert.match(app, /ledPositions: profileEditorPositions\.map/);
+  assert.match(app, /if \(profileEditorPositions\.length !== detectedCount\)/);
+  assert.match(app, /The detected LED count cannot be changed/);
   assert.match(app, /h\("summary", \{ text: "Color order \(advanced\)" \}\)/);
   assert.match(app, /if \(setupOnboarding\) changes\.onboarded = true/);
   assert.match(app, /await saveSettingsNow\(changes\);\s+\$\("#setup-dialog"\)\.close\(\)/);
@@ -986,7 +976,7 @@ test("strip profile editing is a single-page save with color order under Advance
 test("screen sync uses an updated strip layout immediately after profile edits", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
-  assert.match(app, /const stripLayoutSignature = \(layout\) => JSON\.stringify\(\[layout\.ledCount, layout\.indices\]\)/);
+  assert.match(app, /JSON\.stringify\(\[layout\.ledCount, layout\.indices, layout\.positions\]\)/);
   assert.match(app, /if \(sync\.session\.layoutSignature !== signature\) \{\s+sync\.session\.layout = layout;\s+sync\.session\.layoutSignature = signature;\s+sync\.session\.colors = null;/);
   assert.match(app, /sync\.session\.layout = layout/);
 });
