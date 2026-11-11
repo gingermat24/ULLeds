@@ -19,9 +19,13 @@ test("renderer selectors resolve to unique elements in the page", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const ids = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]);
+  const generatedIds = new Set([
+    ...[...app.matchAll(/\bid:\s*["']([^"']+)["']/g)].map((match) => match[1]),
+    ...[...app.matchAll(/selectField\([^,\n]+,\s*["']([^"']+)["']/g)].map((match) => match[1])
+  ]);
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
   const missing = [...new Set([...app.matchAll(/\$\("#([\w-]+)/g)].map((match) => match[1]))]
-    .filter((id) => !ids.includes(id));
+    .filter((id) => !ids.includes(id) && !generatedIds.has(id));
 
   assert.deepEqual(duplicates, []);
   assert.deepEqual(missing, []);
@@ -53,6 +57,7 @@ test("renderer scripts load together and expose their APIs", () => {
   assert.equal(typeof context.ullSceneData?.sceneFromLighting, "function");
   assert.equal(typeof context.ullSpotifySync?.createSpotifySyncColors, "function");
   assert.equal(typeof context.ullGithubReleases?.getReleasedInstallers, "function");
+  assert.equal(typeof context.ullStartupMode?.isSyncStartupMode, "function");
 });
 
 test("release notes offer published version downloads and a compact startup update notice", () => {
@@ -109,7 +114,8 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(html, /Spotify Sync reads cover art and analyzes local desktop audio while active\. That includes all system sound, not only Spotify\. Nothing is recorded or uploaded\./);
   assert.match(app, /window\.ull\.getSpotifyArtwork\(\)/);
   assert.match(app, /createSpotifySyncColors\([\s\S]*\n\s+5\s*\)/);
-  assert.match(app, /getDisplayMedia\(\{\s+audio: true,\s+video: \{ frameRate: 1 \}/);
+  assert.match(app, /window\.ull\.screenSyncSource\(\)\.then\(\(\{ id \}\) =>\s+navigator\.mediaDevices\.getUserMedia\(/);
+  assert.match(app, /createDesktopAudioCaptureConstraints\(id\)/);
   assert.match(app, /new AudioContext\(\)/);
   assert.match(app, /analyser\.getFloatFrequencyData/);
   assert.match(app, /analyzeSpotifySpectrum/);
@@ -119,11 +125,11 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(app, /if \(artwork && artwork\.data !== session\.artworkData\)/);
   assert.match(app, /window\.ull\.startScreenSync\("spotify"\)/);
   assert.match(main, /ipcMain\.handle\("spotify-sync:artwork", \(\) => readSpotifyArtwork\(\)\)/);
-  assert.match(main, /setDisplayMediaRequestHandler\(async \(request, callback\)/);
-  assert.match(main, /callback\(\{ video: source, audio: "loopback" \}\)/);
+  assert.match(main, /settings\.startupMode = mode;\s+saveSettings\(\)/);
   assert.match(main, /execFile\(helperPath/);
   assert.match(main, /spotify-media\.exe/);
   assert.match(preload, /getSpotifyArtwork: \(\) => ipcRenderer\.invoke\("spotify-sync:artwork"\)/);
+  assert.match(preload, /screenSyncSource: \(\) => ipcRenderer\.invoke\("screen-sync:source"\)/);
   assert.match(preload, /startScreenSync: \(mode = "screen"\) => ipcRenderer\.invoke\("screen-sync:start", mode\)/);
   assert.match(app, /stopTracks\(audioStream\)/);
 });
@@ -181,14 +187,14 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(app, /root\.setProperty\("--led-opacity", settings\.power \? String\(settings\.brightness \/ 100\) : "0"\)/);
   assert.match(app, /\$\("#monitor"\)\.dataset\.power = settings\.power \? "on" : "off"/);
   assert.match(main, /ipcMain\.handle\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+const result = setSettings\(input, !powerChanged\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
-  assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\)\) return;/);
+  assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| isSyncStartupMode\(settings\.startupMode\)\)\) return;/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{[\s\S]*?if \(hidDevice\) \{[\s\S]*?writeColor\(settings\.color\)[\s\S]*?return;\s+\}/);
   const animation = main.slice(main.indexOf("function updateAnimation"), main.indexOf("function deviceState"));
   assert.match(animation, /settings\.effect === "steady"[\s\S]*?return;\s+\}\s+const interval/);
   assert.match(main, /ipcMain\.handle\("screen-sync:colors", \(_event, colors\) => \{\s+if \(!screenSyncActive \|\| !hidDevice \|\| !settings\.power\) return \{ active: false \};/);
-  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+dismissMovieFormatPrompt\(\);\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
-  assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \}/);
+  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+settings\.startupMode = "lighting";\s+saveSettings\(\);\s+dismissMovieFormatPrompt\(\);\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
+  assert.match(main, /function updateAnimation\(\{ waitForOutput = false \}/);
 });
 
 test("Windows session shutdown powers off connected LEDs without changing saved power", () => {
@@ -561,7 +567,7 @@ test("restart status tells users ULLeds will reopen automatically", () => {
   assert.match(app, /requestAnimationFrame\(\(\) => requestAnimationFrame\(resolve\)\)/);
 });
 
-test("saved color is restored at Windows sign-in and screen sync can resume automatically", () => {
+test("saved mode is restored at Windows sign-in and sync modes resume automatically", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
@@ -573,8 +579,10 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
   assert.match(main, /openAtLogin: settings\.startWithWindows/);
   assert.match(main, /args: \["--hidden"\]/);
   assert.match(main, /void scanAndConnect\(\)\.catch/);
+  assert.match(main, /if \(!startHidden \|\| isSyncStartupMode\(settings\.startupMode\)\) createWindow\(\)/);
   assert.match(html, /id="start-with-windows"/);
-  assert.match(html, /id="resume-screen-sync"/);
+  assert.doesNotMatch(html, /resume-screen-sync|Resume Screen Sync/);
+  assert.match(html, /last color or effect, power state, Screen Sync, or Spotify Sync is restored automatically/);
   assert.match(app, /window\.ull\.screenSyncSource\(\)\.then/);
   assert.match(app, /video\.requestVideoFrameCallback\(sampleFrame\)/);
   assert.match(app, /session\.video\.cancelVideoFrameCallback\(session\.videoFrame\)/);
@@ -589,25 +597,77 @@ test("saved color is restored at Windows sign-in and screen sync can resume auto
     app.slice(app.indexOf("async function runScreenSyncStart"), app.indexOf("function applyDeviceState")),
     /getDisplayMedia/
   );
-  assert.match(app, /maybeResumeScreenSync\(\)/);
-  assert.match(app, /Will resume automatically when ULLeds starts/);
+  assert.match(app, /function maybeRestoreStartupMode\(\)/);
+  assert.match(app, /if \(mode === "screen"\) void startScreenSync\(\{ automatic: true \}\);\s+else void startSpotifySync\(\{ automatic: true \}\)/);
+  assert.doesNotMatch(app.slice(app.indexOf("async function start()"), app.indexOf("\nstart();")), /scanDevices\(/);
+  assert.match(main, /if \(!startHidden \|\| isSyncStartupMode\(settings\.startupMode\)\) createWindow\(\)/);
 });
 
-test("saved Screen Sync preserves output only during reconnect and falls back when resume fails", () => {
+test("saved sync modes preserve output during reconnect and fall back when resume fails", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
-  assert.match(main, /function updateAnimation\(\{ preserveOutput = false, waitForOutput = false \} = \{\}\)/);
-  assert.match(main, /if \(!powerOff && \(screenSyncActive \|\| \(preserveOutput && settings\.resumeScreenSync\)\)\) return/);
-  assert.match(main, /updateAnimation\(\{ preserveOutput: settings\.resumeScreenSync \}\)/);
+  assert.match(main, /function updateAnimation\(\{ waitForOutput = false \} = \{\}\)/);
+  assert.match(main, /if \(!powerOff && \(screenSyncActive \|\| isSyncStartupMode\(settings\.startupMode\)\)\) return/);
+  assert.match(main, /settings\.startupMode = "lighting";\s+saveSettings\(\);/);
   assert.match(main, /parseDeviceLedCount\(response, messageId\)/);
   assert.match(main, /response\[offset \+ 3\] !== messageId \|\| response\[offset \+ 4\] !== 130/);
   assert.match(app, /const startingScreen = lifecycle\.isStarting && sync\.requestedMode === "screen"/);
   assert.match(app, /resumingNow \? "Starting…"/);
   assert.match(app, /startingScreen \? "Starting display capture…"/);
-  assert.match(app, /resuming \? "Resuming display capture…"/);
   assert.match(app, /!sessionOwnsStream && \(hardwareSyncStarted \|\| automatic\) && !sync\.lifecycle\.isStopping/);
-  assert.match(app, /sync\.autoAttempted = true;\s*updatePreview\(\);\s*void startScreenSync\(\{ automatic: true \}\)/);
+  assert.match(app, /const result = await window\.ull\.stopScreenSync\(\);\s+state\.settings\.startupMode = result\.startupMode;/);
+  assert.match(app, /runSpotifySyncStart\(audioCapture, audioContext, audioReady, automatic\)/);
+  assert.match(app, /\(hardwareSyncStarted \|\| automatic\) && !sync\.lifecycle\.isStopping\) \{\s+try \{\s+const result = await window\.ull\.stopScreenSync\(\);\s+state\.settings\.startupMode = result\.startupMode;/);
+  assert.match(app, /sync\.autoAttempted = true;\s+updatePreview\(\);\s+if \(mode === "screen"\) void startScreenSync\(\{ automatic: true \}\);\s+else void startSpotifySync\(\{ automatic: true \}\)/);
+});
+
+test("sync mode is saved only while active and manual stop restores the lighting mode", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const start = app.slice(app.indexOf("async function runScreenSyncStart"), app.indexOf("function startPerformanceReporting"));
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.doesNotMatch(start, /updateSettings\(\{\s*resumeScreenSync:\s*true\s*\}\)/);
+  assert.match(main, /settings\.startupMode = mode;\s+saveSettings\(\)/);
+  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+settings\.startupMode = "lighting";\s+saveSettings\(\)/);
+  assert.match(main, /if \(changes\.power === false\) settings\.startupMode = "lighting"/);
+});
+
+test("startup routes saved sync modes correctly and never resumes while powered off", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const start = app.indexOf("function maybeRestoreStartupMode()");
+  const end = app.indexOf("\n/* --- Spotify Sync", start);
+  let screenMode;
+  let spotifyMode;
+  const context = {
+    window: { ullStartupMode: require("../startup-mode") },
+    state: { settings: { startupMode: "lighting", power: true }, device: { connected: true } },
+    sync: { autoAttempted: false },
+    updatePreview() {},
+    startScreenSync(options) { screenMode = options.automatic; },
+    startSpotifySync(options) { spotifyMode = options.automatic; }
+  };
+  vm.runInNewContext(`${app.slice(start, end)}; globalThis.restore = maybeRestoreStartupMode;`, context);
+
+  context.restore();
+  assert.equal(screenMode, undefined);
+  assert.equal(spotifyMode, undefined);
+
+  context.state.settings.startupMode = "screen";
+  context.sync.autoAttempted = false;
+  context.restore();
+  assert.equal(screenMode, true);
+
+  context.state.settings.startupMode = "spotify";
+  context.sync.autoAttempted = false;
+  context.restore();
+  assert.equal(spotifyMode, true);
+
+  context.state.settings.startupMode = "screen";
+  context.state.settings.power = false;
+  context.sync.autoAttempted = false;
+  context.restore();
+  assert.equal(context.sync.autoAttempted, false);
 });
 
 test("LED channel calibration is exposed, saved, and applied to the preview", () => {
@@ -866,6 +926,49 @@ test("editing a connected strip profile updates the live connection profile and 
   assert.match(main, /const savedProfile = settings\.devicePath === selected\.path && settings\.deviceProfile\?\.ledCount\s+\?\s+settings\.deviceProfile\s+:\s+selected\.profile\?\.ledCount/);
 });
 
+test("strip profile choices explain edge coverage and LED start direction", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const start = app.indexOf("const PROFILE_EDGE_LAYOUTS = [");
+  const end = app.indexOf("\nfunction renderProfileDirectionChoices", start);
+  const context = {};
+
+  vm.runInNewContext(`${app.slice(start, end)}; globalThis.profileLabels = {
+    edgeCoverageLabel,
+    profileStartCorner,
+    profileDirectionOptions
+  };`, context);
+
+  assert.equal(context.profileLabels.edgeCoverageLabel(1), "Top only");
+  assert.equal(context.profileLabels.edgeCoverageLabel(2), "Top + left");
+  assert.equal(context.profileLabels.edgeCoverageLabel(3), "Top, left + right");
+  assert.equal(context.profileLabels.edgeCoverageLabel(4), "All four sides");
+  assert.equal(context.profileLabels.profileStartCorner(1, 0), "top-left");
+  assert.equal(context.profileLabels.profileStartCorner(3, 1), "bottom-right");
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(context.profileLabels.profileDirectionOptions(3))),
+    [
+      ["Starts at bottom-left", "Up left, across the top left to right, then down right."],
+      ["Starts at bottom-right", "Up right, across the top right to left, then down left."]
+    ]
+  );
+});
+
+test("strip profile editing is a single-page save with color order under Advanced", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+
+  assert.match(html, /id="profile-title"/);
+  assert.match(html, /id="profile-cancel"/);
+  assert.match(html, /id="profile-save"/);
+  assert.doesNotMatch(html, /wizard-back|wizard-next|class="steps"/);
+  assert.match(app, /h\("legend", \{ text: "Which sides have LEDs\?" \}\)/);
+  assert.match(app, /h\("legend", \{ text: "Where does LED 1 start\?" \}\)/);
+  assert.match(app, /h\("summary", \{ text: "Color order \(advanced\)" \}\)/);
+  assert.match(app, /if \(setupOnboarding\) changes\.onboarded = true/);
+  assert.match(app, /await saveSettingsNow\(changes\);\s+\$\("#setup-dialog"\)\.close\(\)/);
+  assert.doesNotMatch(app, /wizardStep|setWizardStep|advanceWizard/);
+});
+
 test("screen sync uses an updated strip layout immediately after profile edits", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
@@ -899,9 +1002,11 @@ test("startup UI appears before the controller scan completes", () => {
   assert.ok(start.indexOf("state = await window.ull.initialState()") < start.indexOf("render();"));
   assert.ok(start.indexOf("render();") < start.indexOf("renderReleases();"));
   assert.ok(start.indexOf("renderReleases();") < start.indexOf("void loadReleaseDownloads();"));
-  assert.ok(start.indexOf("void loadReleaseDownloads();") < start.indexOf("void scanDevices()"));
-  assert.match(start, /void scanDevices\(\)\.then\(maybeResumeScreenSync\)\.catch/);
-  assert.match(app, /if \(!state\.settings\.onboarded && \$\("#setup-dialog"\)\.open && wizardStep === 0\) \{\s+setWizardStep\(0\);/);
+  assert.ok(start.indexOf("void loadReleaseDownloads();") < start.indexOf("maybeRestoreStartupMode()"));
+  assert.match(start, /maybeRestoreStartupMode\(\)/);
+  assert.doesNotMatch(start, /scanDevices\(/);
+  assert.match(fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8"), /void scanAndConnect\(\)\.catch/);
+  assert.match(app, /if \(!state\.settings\.onboarded\) openSetup\(true\)/);
 });
 
 test("main-process controller discovery uses asynchronous HID enumeration", () => {

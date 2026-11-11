@@ -287,23 +287,17 @@
         <section class="group" aria-labelledby="group-startup">
           <div class="group-head">
             <h3 id="group-startup">Startup</h3>
-            <p>What ULLeds does when you sign in.</p>
+            <p>ULLeds remembers your previous LED mode and restores it when the app starts.</p>
           </div>
           <div class="panel list">
             <label class="row row-inline" for="start-with-windows">
               <span class="row-text">
                 <span class="row-title">Start with Windows</span>
-                <span class="row-desc">Restore your saved LED color after you sign in.</span>
+                <span class="row-desc">Launch ULLeds in the tray when you sign in.</span>
               </span>
               <input class="switch" id="start-with-windows" type="checkbox">
             </label>
-            <label class="row row-inline" for="resume-screen-sync">
-              <span class="row-text">
-                <span class="row-title">Resume Screen Sync</span>
-                <span class="row-desc">Sync the primary display automatically when ULLeds starts.</span>
-              </span>
-              <input class="switch" id="resume-screen-sync" type="checkbox">
-            </label>
+            <p class="hint">The last color or effect, power state, Screen Sync, or Spotify Sync is restored automatically.</p>
           </div>
         </section>
 
@@ -389,15 +383,14 @@
 <!-- ======================================================================
      Dialogs
      ====================================================================== -->
-<dialog class="dialog" id="setup-dialog">
+<dialog class="dialog dialog-profile" id="setup-dialog">
   <form method="dialog">
-    <div class="steps" aria-hidden="true"><span class="active"></span><span></span><span></span></div>
-    <h2 id="wizard-title">Set up your strip</h2>
-    <p class="dialog-copy" id="wizard-copy"></p>
-    <div id="wizard-content"></div>
+    <h2 id="profile-title">LED strip layout</h2>
+    <p class="dialog-copy" id="profile-copy"></p>
+    <div id="profile-content"></div>
     <div class="dialog-actions">
-      <button class="btn push-left hidden" id="wizard-back" type="button">Back</button>
-      <button class="btn btn-primary" id="wizard-next" type="button">Continue</button>
+      <button class="btn" id="profile-cancel" type="button">Cancel</button>
+      <button class="btn btn-primary" id="profile-save" type="button">Save profile</button>
     </div>
   </form>
 </dialog>
@@ -467,6 +460,9 @@
     "versions": ["1.0.11", "1.0.10", "1.0.9", "1.0.8", "1.0.7", "1.0.6", "1.0.5", "1.0.4", "1.0.3", "1.0.2", "1.0.1", "1.0.0"]
   },
   "releases": [
+    { "version": "1.0.78", "notes": {
+      "Improved": ["Simplified strip profile editing with clear edge-coverage diagrams, LED start direction choices, and color order under Advanced.", "Start-with-Windows launches faster for regular lighting and performs only one controller scan."],
+      "Fixed": ["ULLeds now restores the saved lighting or sync mode at startup, including Spotify Sync, and keeps LEDs off when the saved power state is off.", "Spotify Sync uses local desktop-audio capture so it can resume without a display-sharing prompt."] } },
     { "version": "1.0.77", "notes": {
       "Improved": ["Applied the redesigned interface across ULLeds, and made Device and Updates pages adapt to more of the available window width.", "Release notes now let you enter an update number directly, with previous and next arrows shown only when available."] } },
     { "version": "1.0.76", "notes": {
@@ -635,6 +631,7 @@
 <script src="../github-releases.js"></script>
 <script src="../scene-data.js"></script>
 <script src="../screen-sync-lifecycle.js"></script>
+<script src="../startup-mode.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

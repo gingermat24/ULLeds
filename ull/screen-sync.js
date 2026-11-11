@@ -21,6 +21,28 @@ function createDesktopCaptureConstraints(sourceId, maxFrameRate) {
   };
 }
 
+function createDesktopAudioCaptureConstraints(sourceId) {
+  if (typeof sourceId !== "string" || sourceId.length === 0) {
+    throw new TypeError("Desktop audio capture source is invalid.");
+  }
+  return {
+    audio: {
+      mandatory: {
+        chromeMediaSource: "desktop"
+      }
+    },
+    video: {
+      mandatory: {
+        chromeMediaSource: "desktop",
+        chromeMediaSourceId: sourceId,
+        maxFrameRate: 1,
+        maxWidth: 16,
+        maxHeight: 16
+      }
+    }
+  };
+}
+
 function isSampleFrameDue(lastSample, now, fps) {
   if (![lastSample, now, fps].every(Number.isFinite) ||
       lastSample < 0 || now < lastSample || fps < 5 || fps > 60) {
@@ -279,6 +301,7 @@ function createLatestFrameSender({ send, isActive, getColors, onError }) {
 
 const screenSync = Object.freeze({
   createDesktopCaptureConstraints,
+  createDesktopAudioCaptureConstraints,
   isSampleFrameDue,
   createMovieFormatPromptGate,
   createLetterboxStability,

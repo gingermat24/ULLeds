@@ -52,22 +52,32 @@ index in `settings.json`; selecting one LED, Ctrl-selecting multiple LEDs, or
 selecting a side changes only those LEDs. Selecting all returns to whole-strip
 color changes. Moving effects still animate as a uniform color.
 
-Screen sync captures the shared display at a bounded resolution, samples near
+Screen Sync captures the shared display at a bounded resolution, samples near
 each LED's corresponding screen edge, and eases the preview continuously.
 Hardware uses the controller's dedicated `SC` / action `128` sync-screen packet
 with its 16-bit length and addressable LED ranges, rather than ordinary `RB`
 static-color packets. Sampling and asynchronous HID writes run at up to 30 FPS.
 Unchanged colors are skipped and queued stale frames are replaced. Hidden-window
 renderer throttling is disabled so sync continues when the main window is hidden
-to the system tray. Electron's display-capture request handler selects the
-primary screen after the user starts sync.
+to the system tray. The main process selects the primary display and provides
+its capture-source ID through an allowlisted preload method. Spotify Sync uses
+the same desktop-capture path with low-resolution video and loopback audio to
+analyze local audio while applying the current track's cover-art colors.
 
 The app stores user preferences in `%APPDATA%\ULLeds\settings.json` to preserve
-existing settings through the rebrand and installer updates. Closing the window
-hides the app to the tray; choosing Quit ends sync and disconnects the HID
-device. Quitting does not send an off frame, so the controller retains its last
-output. A controller scan runs at startup, on request, and every five seconds
-while no controller is connected.
+existing settings through the rebrand and installer updates. It also stores a
+startup mode: ordinary lighting restores the saved color/effect and power
+state, while active Screen Sync or Spotify Sync is restarted after the
+controller connects. Turning power off or manually stopping sync returns the
+startup mode to ordinary lighting. The old Screen Sync resume preference is
+migrated for existing installations.
+
+Closing the window hides the app to the tray; choosing Quit ends sync and
+disconnects the HID device. Quitting does not send an off frame, so the
+controller retains its last output. At Windows sign-in, ordinary lighting modes
+defer creating the hidden renderer window; sync modes create it so capture can
+resume. A controller scan runs once at startup, on request, and every five
+seconds while no controller is connected.
 
 ## Updates
 

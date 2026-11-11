@@ -31,13 +31,6 @@ const EFFECT_LABELS = {
   palette: "Palette drift"
 };
 
-const POSITION_TITLES = {
-  "monitor-back": "Behind your monitor",
-  "monitor-front": "Around your screen",
-  top: "Above your screen",
-  desk: "On your desk"
-};
-
 let state = {
   settings: {
     color: "#008100",
@@ -59,7 +52,7 @@ let state = {
     syncContentMode: "display",
     syncAutoDetect: true,
     startWithWindows: true,
-    resumeScreenSync: false
+    startupMode: "lighting"
   },
   device: { connected: false, name: "", serialNumber: "" }
 };
@@ -97,7 +90,7 @@ const releases = {
   previousIndex: null
 };
 
-let wizardStep = 0;
+let setupOnboarding = false;
 let sceneDialogMode = null;
 let pendingVersionNotice = null;
 let toastTimer;
@@ -138,10 +131,6 @@ function buildLayout(ledCount, profile) {
 }
 
 const stripLayoutSignature = (layout) => JSON.stringify([layout.ledCount, layout.indices]);
-
-function plural(count, word) {
-  return `${count} ${word}${count === 1 ? "" : "s"}`;
-}
 
 function toast(message) {
   const element = $("#toast");
@@ -332,7 +321,6 @@ function renderDeviceSelector() {
 }
 
 function renderProfile(profile) {
-  const position = profile?.position || "monitor-back";
   const countSource = profile?.countSource === "saved profile"
     ? "saved setup"
     : state.device.connected ? "detected" : "last saved";
@@ -341,7 +329,7 @@ function renderProfile(profile) {
     : "Not detected";
   $("#settings-order").textContent = profile?.colorOrder || "Not configured";
   $("#settings-layout").textContent = profile?.edgeCount
-    ? `${profile.edgeCount} sides · ${position.replaceAll("-", " ")}`
+    ? `${edgeCoverageLabel(profile.edgeCount)} · starts ${profileStartCorner(profile.edgeCount, profile.installationMethod ?? 0)}`
     : "Not configured";
 }
 
@@ -352,9 +340,7 @@ async function scanDevices() {
     devices.list = result.devices || [];
     applyDeviceState(result);
     render();
-    if (!state.settings.onboarded && $("#setup-dialog").open && wizardStep === 0) {
-      setWizardStep(0);
-    }
+    if ($("#setup-dialog").open) updateProfileCount();
     if (!state.device.connected && !result.error) {
       toast(devices.list.length ? "Controller found but not connected." : "No supported USB controller found.");
     }
@@ -474,8 +460,6 @@ function updatePreview() {
 }
 
 function renderMonitor(settings, profile, count, layout) {
-  const position = profile?.position || "monitor-back";
-
   for (const edge of ["top", "left", "right", "bottom"]) {
     const indices = layout.indices[edge] || [];
     const container = $(`#led-${edge}`);
@@ -484,9 +468,8 @@ function renderMonitor(settings, profile, count, layout) {
     container.classList.toggle("selected", window.ullLedSelection.isEdgeSelected(selectedLedIndices, indices));
   }
 
-  $("#monitor").dataset.position = position;
   $("#monitor").dataset.power = settings.power ? "on" : "off";
-  $("#preview-title").textContent = POSITION_TITLES[position] || POSITION_TITLES["monitor-back"];
+  $("#preview-title").textContent = "LED layout preview";
 
   const root = document.documentElement.style;
   root.setProperty("--led-color", settings.color);
@@ -554,7 +537,10 @@ function renderSyncControls(settings) {
   const { lifecycle } = sync;
   const startingScreen = lifecycle.isStarting && sync.requestedMode === "screen";
   const startingSpotify = lifecycle.isStarting && sync.requestedMode === "spotify";
-  const resuming = settings.resumeScreenSync && sync.autoAttempted && !sync.session && !sync.screenError;
+  const restoringScreen = settings.startupMode === "screen" &&
+    sync.autoAttempted && !sync.session && !sync.screenError;
+  const restoringSpotify = settings.startupMode === "spotify" &&
+    sync.autoAttempted && !sync.session && !sync.spotifyError;
 
   const setToggle = (button, { active, starting, resumingNow = false }) => {
     button.textContent = lifecycle.isStopping
@@ -567,30 +553,29 @@ function renderSyncControls(settings) {
   setToggle($("#screen-sync-toggle"), {
     active: sync.session?.mode === "screen" || startingScreen,
     starting: startingScreen,
-    resumingNow: resuming
+    resumingNow: restoringScreen
   });
   setToggle($("#spotify-sync-toggle"), {
     active: sync.session?.mode === "spotify" || startingSpotify,
-    starting: startingSpotify
+    starting: startingSpotify,
+    resumingNow: restoringSpotify
   });
 
   $("#screen-sync-description").textContent = sync.session
     ? sync.session.mode === "spotify" ? "Spotify Sync is active" : "Matching the primary display"
     : startingScreen ? "Starting display capture…"
-    : resuming ? "Resuming display capture…"
-    : sync.screenError || (settings.resumeScreenSync
-      ? "Will resume automatically when ULLeds starts"
-      : "Match LEDs to your display");
+    : restoringScreen ? "Resuming display capture…"
+    : sync.screenError || "Match LEDs to your display";
 
   $("#spotify-sync-description").textContent = sync.session?.mode === "spotify"
     ? "Reading Spotify cover art on this PC"
+    : restoringSpotify ? "Resuming Spotify Sync…"
     : sync.spotifyError || "Use colors from the currently playing track";
 }
 
 function render() {
   $("#app-version").textContent = state.version || "—";
   $("#start-with-windows").checked = state.settings.startWithWindows;
-  $("#resume-screen-sync").checked = state.settings.resumeScreenSync;
   renderUpdates();
   renderScenes();
   renderPalette();
@@ -891,7 +876,7 @@ function teardownSession(session) {
   }
 }
 
-function stopScreenSync(message = "", clearResumePreference = false) {
+function stopScreenSync(message = "") {
   const pending = sync.lifecycle.stop(() => {
     sync.generation += 1;
     sync.requestedMode = null;
@@ -901,7 +886,8 @@ function stopScreenSync(message = "", clearResumePreference = false) {
     teardownSession(session);
   }, async () => {
     try {
-      await window.ull.stopScreenSync();
+      const result = await window.ull.stopScreenSync();
+      state.settings.startupMode = result.startupMode;
     } catch (error) {
       toast(`Could not stop LED sync: ${error.message}`);
     }
@@ -910,9 +896,6 @@ function stopScreenSync(message = "", clearResumePreference = false) {
   updatePreview();
   if (message) toast(message);
   return pending.then(() => {
-    if (clearResumePreference && state.settings.resumeScreenSync) {
-      queueSettings({ resumeScreenSync: false }, true);
-    }
     updatePreview();
   }, (error) => {
     updatePreview();
@@ -999,13 +982,9 @@ async function runScreenSyncStart({ automatic = false } = {}) {
     if (!context) throw new Error("Could not start screen color sampling.");
 
     await window.ull.startScreenSync();
+    state.settings.startupMode = "screen";
     hardwareSyncStarted = true;
     if (cancelled()) return stopTracks(stream);
-
-    const saved = await window.ull.updateSettings({ resumeScreenSync: true });
-    if (cancelled()) return stopTracks(stream);
-    state.settings = saved.settings;
-    state.device = saved;
 
     const session = {
       mode: "screen",
@@ -1038,7 +1017,8 @@ async function runScreenSyncStart({ automatic = false } = {}) {
     if (!sessionOwnsStream) stopTracks(stream);
     if (!sessionOwnsStream && (hardwareSyncStarted || automatic) && !sync.lifecycle.isStopping) {
       try {
-        await window.ull.stopScreenSync();
+        const result = await window.ull.stopScreenSync();
+        state.settings.startupMode = result.startupMode;
       } catch (stopError) {
         console.error("Could not stop screen sync after startup failed:", stopError);
       }
@@ -1158,22 +1138,25 @@ function applyDetectedMovieFormat({ aspectRatio }) {
   toast(`Using ${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1 for this Screen Sync session.`);
 }
 
-function maybeResumeScreenSync() {
-  if (sync.autoAttempted || !state.settings.resumeScreenSync || !state.device.connected) return;
+function maybeRestoreStartupMode() {
+  const mode = state.settings.startupMode;
+  if (sync.autoAttempted || !state.device.connected || !state.settings.power ||
+      !window.ullStartupMode.isSyncStartupMode(mode)) return;
   sync.autoAttempted = true;
   updatePreview();
-  void startScreenSync({ automatic: true });
+  if (mode === "screen") void startScreenSync({ automatic: true });
+  else void startSpotifySync({ automatic: true });
 }
 
 /* --- Spotify Sync --------------------------------------------------------- */
 
-function startSpotifySync() {
+function startSpotifySync({ automatic = false } = {}) {
   if (!state.device.connected) {
     toast("Connect the LED controller before starting Spotify Sync.");
     return Promise.resolve(false);
   }
   if (sync.lifecycle.isStarting || sync.lifecycle.isStopping) return Promise.resolve(false);
-  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") {
+  if (typeof navigator.mediaDevices?.getUserMedia !== "function") {
     toast("Desktop audio capture is not available in this app environment.");
     return Promise.resolve(false);
   }
@@ -1190,7 +1173,14 @@ function startSpotifySync() {
   let audioContext;
   let audioReady;
   try {
-    audioCapture = navigator.mediaDevices.getDisplayMedia({ audio: true, video: { frameRate: 1 } });
+    audioCapture = window.ull.screenSyncSource().then(({ id }) =>
+      navigator.mediaDevices.getUserMedia(
+        window.ullScreenSync.createDesktopAudioCaptureConstraints(id)
+      )
+    ).then((stream) => {
+      stream.getVideoTracks().forEach((track) => track.stop());
+      return stream;
+    });
     audioContext = new AudioContext();
     audioReady = audioContext.resume();
   } catch (error) {
@@ -1202,20 +1192,22 @@ function startSpotifySync() {
   }
 
   sync.requestedMode = "spotify";
-  const pending = sync.lifecycle.start(() => runSpotifySyncStart(audioCapture, audioContext, audioReady));
+  const pending = sync.lifecycle.start(() =>
+    runSpotifySyncStart(audioCapture, audioContext, audioReady, automatic)
+  );
   updatePreview();
   return pending.catch((error) => {
     void audioCapture.then(stopTracks, () => {});
     closeAudioContext(audioContext);
     sync.spotifyError = error.message;
-    toast(`Could not start Spotify Sync: ${error.message}`);
+    toast(`${automatic ? "Could not resume" : "Could not start"} Spotify Sync: ${error.message}`);
   }).finally(() => {
     if (sync.requestedMode === "spotify") sync.requestedMode = null;
     updatePreview();
   });
 }
 
-async function runSpotifySyncStart(audioCapture, audioContext, audioReady) {
+async function runSpotifySyncStart(audioCapture, audioContext, audioReady, automatic) {
   const generation = ++sync.generation;
   const cancelled = () => generation !== sync.generation;
 
@@ -1253,6 +1245,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady) {
 
     await ensurePowerOn();
     await window.ull.startScreenSync("spotify");
+    state.settings.startupMode = "spotify";
     hardwareSyncStarted = true;
     if (cancelled()) {
       await window.ull.stopScreenSync();
@@ -1286,9 +1279,10 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady) {
   } catch (error) {
     if (sync.session === session) {
       await stopScreenSync();
-    } else if (hardwareSyncStarted && !sync.lifecycle.isStopping) {
+    } else if ((hardwareSyncStarted || automatic) && !sync.lifecycle.isStopping) {
       try {
-        await window.ull.stopScreenSync();
+        const result = await window.ull.stopScreenSync();
+        state.settings.startupMode = result.startupMode;
       } catch (stopError) {
         console.error("Could not stop LED sync after Spotify Sync startup failed:", stopError);
       }
@@ -1774,143 +1768,229 @@ async function loadReleaseDownloads() {
 
 
 /* ==========================================================================
-   10. Setup wizard and reset
+   10. Strip profile and reset
    ========================================================================== */
 
-const WIZARD_OPTIONS = {
-  edgeCount: [1, 2, 3, 4].map((n) => [String(n), plural(n, "side")]),
-  installationMethod: [
-    ["0", "Bottom left → over top → bottom right"],
-    ["1", "Bottom right → over top → bottom left"]
-  ],
-  colorOrder: ["RGB", "GRB", "RBG", "GBR", "BRG", "BGR"].map((order) => [order, order]),
-  position: [
-    ["monitor-back", "Behind the monitor"],
-    ["monitor-front", "Around the screen"],
-    ["top", "Above the screen"],
-    ["desk", "On the desk"]
-  ]
-};
+const PROFILE_EDGE_LAYOUTS = [
+  { value: 1, title: "Top only", edges: ["top"] },
+  { value: 2, title: "Top + left", edges: ["top", "left"] },
+  { value: 3, title: "Top, left + right", edges: ["top", "left", "right"] },
+  { value: 4, title: "All four sides", edges: ["top", "left", "right", "bottom"] }
+];
 
-function wizardField(label, setting, value) {
-  const select = h("select", { dataset: { setting } },
-    ...WIZARD_OPTIONS[setting].map(([optionValue, text]) => new Option(text, optionValue))
-  );
-  select.value = String(value);
-  return h("label", { class: "field" }, h("span", { text: label }), select);
+function edgeCoverageLabel(edgeCount) {
+  return PROFILE_EDGE_LAYOUTS.find((layout) => layout.value === Number(edgeCount))?.title || "Not configured";
 }
 
-function setWizardStep(step) {
-  wizardStep = clamp(step, 0, 2);
-  $$("#setup-dialog .steps span").forEach((item, index) => item.classList.toggle("active", index <= wizardStep));
-  $("#wizard-back").classList.toggle("hidden", wizardStep === 0);
+function profileStartCorner(edgeCount, installationMethod) {
+  const horizontal = Number(edgeCount) === 1 ? "top" : "bottom";
+  const side = Number(installationMethod) === 1 ? "right" : "left";
+  return `${horizontal}-${side}`;
+}
 
-  const title = $("#wizard-title");
-  const copy = $("#wizard-copy");
-  const next = $("#wizard-next");
-  const content = $("#wizard-content");
-  const detectedCount = state.device.connected ? state.device.profile?.ledCount : null;
+function profileCount() {
+  const saved = currentProfile();
+  return state.device.connected && Number.isInteger(state.device.profile?.ledCount)
+    ? state.device.profile.ledCount
+    : Number.isInteger(saved?.ledCount)
+      ? saved.ledCount
+      : Number.isInteger(state.settings.ledCount) ? state.settings.ledCount : null;
+}
 
-  if (wizardStep === 0) {
-    const current = currentProfile() || {};
-    const matched = current.matchedBy === "device path";
-    title.textContent = matched ? "The strip profile was found" : "Set up your strip profile";
-    copy.textContent = matched
-      ? "ULLeds matched your controller to its saved strip layout. The LED count is read directly from the controller."
-      : "ULLeds reads the LED count directly from your controller. Set the physical layout and color order here.";
-    next.textContent = "Save profile";
+function updateProfileCount() {
+  const count = profileCount();
+  $("#profile-led-count").textContent = count
+    ? `${count} LEDs ${state.device.connected ? "detected" : "saved"}`
+    : "Not detected";
+  $("#profile-scan").textContent = state.device.connected ? "Scan again" : "Scan for controller";
+}
 
-    content.replaceChildren(h("div", { class: "form-grid" },
-      h("div", { class: "callout full" },
+function profileEdgeDiagram(activeEdges) {
+  const coordinates = {
+    top: [12, 8, 60, 8],
+    right: [60, 8, 60, 40],
+    bottom: [12, 40, 60, 40],
+    left: [12, 8, 12, 40]
+  };
+  const lines = Object.entries(coordinates).map(([edge, [x1, y1, x2, y2]]) =>
+    h("line", {
+      x1, y1, x2, y2,
+      class: `profile-diagram-edge${activeEdges.includes(edge) ? " is-active" : ""}`
+    })
+  );
+  return h("svg", { class: "profile-diagram", viewBox: "0 0 72 48", "aria-hidden": "true" },
+    h("rect", { x: 15, y: 11, width: 42, height: 26, rx: 2, class: "profile-diagram-screen" }),
+    ...lines
+  );
+}
+
+function profileChoice(name, value, title, description, checked, illustration = null) {
+  const input = h("input", { type: "radio", name, value: String(value) });
+  input.checked = checked;
+  return h("label", { class: `profile-choice${illustration ? " profile-layout-choice" : ""}` },
+    input,
+    illustration,
+    h("span", { class: "profile-choice-copy" },
+      h("strong", { text: title }),
+      h("span", { text: description })
+    )
+  );
+}
+
+function profileDirectionOptions(edgeCount) {
+  if (edgeCount === 1) {
+    return [
+      ["Top-left start", "Runs across the top from left to right."],
+      ["Top-right start", "Runs across the top from right to left."]
+    ];
+  }
+  const routes = {
+    2: [
+      ["Starts at bottom-left", "Up the left edge, then across the top from left to right."],
+      ["Starts at bottom-right", "Up the right edge, then across the top from right to left."]
+    ],
+    3: [
+      ["Starts at bottom-left", "Up left, across the top left to right, then down right."],
+      ["Starts at bottom-right", "Up right, across the top right to left, then down left."]
+    ],
+    4: [
+      ["Starts at bottom-left", "Up left, across the top, down right, then across the bottom right to left."],
+      ["Starts at bottom-right", "Up right, across the top, down left, then across the bottom left to right."]
+    ]
+  };
+  return routes[edgeCount] || routes[3];
+}
+
+function renderProfileDirectionChoices(edgeCount, selectedMethod) {
+  const container = $("#profile-direction-choices");
+  const options = profileDirectionOptions(edgeCount);
+  const leftStart = profileChoice(
+    "installationMethod", 0, options[0][0], options[0][1], selectedMethod === 0
+  );
+  const rightStart = profileChoice(
+    "installationMethod", 1, options[1][0], options[1][1], selectedMethod === 1
+  );
+  container.replaceChildren(leftStart, rightStart);
+}
+
+function selectField(label, id, setting, value, options) {
+  const select = h("select", { id, dataset: { setting } },
+    ...options.map(([optionValue, text]) => h("option", { value: optionValue, text }))
+  );
+  select.value = value;
+  return h("label", { class: "field", for: id }, h("span", { text: label }), select);
+}
+
+function renderProfileEditor() {
+  const current = currentProfile() || {};
+  const edgeCount = PROFILE_EDGE_LAYOUTS.some((layout) => layout.value === Number(current.edgeCount))
+    ? Number(current.edgeCount)
+    : 3;
+  const installationMethod = current.installationMethod === 1 ? 1 : 0;
+  const content = $("#profile-content");
+
+  $("#profile-title").textContent = setupOnboarding ? "Set up your LED strip" : "Edit strip layout";
+  $("#profile-copy").textContent = "Match the layout to how your LEDs are installed. ULLeds detects the LED count from your controller.";
+  $("#profile-save").textContent = setupOnboarding ? "Save and start using ULLeds" : "Save profile";
+  $("#profile-cancel").textContent = setupOnboarding ? "Set up later" : "Cancel";
+
+  content.replaceChildren(
+    h("div", { class: "profile-count" },
+      h("div", { class: "profile-count-copy" },
         h("span", { text: "LED count" }),
-        h("strong", {
-          text: Number.isInteger(detectedCount) ? `${detectedCount} LEDs detected` : "Connect controller to detect"
-        })
-      ),
-      wizardField("Lit sides", "edgeCount", current.edgeCount || 3),
-      wizardField("Strip start and direction", "installationMethod", current.installationMethod ?? 0),
-      wizardField("LED color order", "colorOrder", current.colorOrder || "RGB"),
-      wizardField("Strip position", "position", current.position || "monitor-back"),
-      h("p", {
-        class: "hint full",
-        text: current.matchedBy
-          ? `Imported from your saved ${deviceLabel(current.name)} setup.`
-          : "These physical details are not part of the controller’s USB data."
-      })
-    ));
-  } else if (wizardStep === 1) {
-    title.textContent = "Connect your LED controller";
-    copy.textContent = "Connect the USB controller, then scan. ULLeds will apply your current settings when it connects.";
-    next.textContent = "Finish setup";
-
-    content.replaceChildren(h("div", { class: "dialog-body" },
-      h("div", { class: "callout" },
-        state.device.connected
-          ? `${deviceLabel(state.device.name)} is connected and ready.`
-          : state.device.error || "No controller connected yet."
+        h("strong", { id: "profile-led-count", text: "Not detected" })
       ),
       h("button", {
         class: "btn",
+        id: "profile-scan",
         type: "button",
-        text: "Scan now",
-        onclick: async () => {
-          await scanDevices();
-          setWizardStep(1);
-        }
+        text: "Scan for controller",
+        onclick: scanDevices
       })
-    ));
-  } else {
-    title.textContent = "You’re ready to make it yours";
-    copy.textContent = state.device.connected
-      ? "Your controller is connected. Pick a color, save a scene, or try a moving effect."
-      : "You can connect your controller later. Your choices are saved on this PC.";
-    next.textContent = "Start using ULLeds";
-
-    content.replaceChildren(h("div", { class: "callout" },
-      `${Number.isInteger(detectedCount) ? `${detectedCount} LEDs detected` : "LED count unavailable"} · ${state.settings.brightness}% brightness`
-    ));
-  }
+    ),
+    h("fieldset", { class: "profile-section" },
+      h("legend", { text: "Which sides have LEDs?" }),
+      h("p", { class: "hint", text: "Choose the edges your strip covers. The pictures show exactly which edges each choice means." }),
+      h("div", { class: "profile-layout-choices" },
+        ...PROFILE_EDGE_LAYOUTS.map((layout) => profileChoice(
+          "edgeCount",
+          layout.value,
+          layout.title,
+          `${layout.value} ${layout.value === 1 ? "side" : "sides"}`,
+          edgeCount === layout.value,
+          profileEdgeDiagram(layout.edges)
+        ))
+      )
+    ),
+    h("fieldset", { class: "profile-section" },
+      h("legend", { text: "Where does LED 1 start?" }),
+      h("p", { class: "hint", text: "This sets the direction used for LED numbers, per-LED colors, and gradients." }),
+      h("div", { class: "profile-direction-choices", id: "profile-direction-choices" })
+    ),
+    h("details", { class: "disclosure profile-advanced" },
+      h("summary", { text: "Color order (advanced)" }),
+      h("div", { class: "profile-advanced-content" },
+        h("p", { class: "hint", text: "Most controllers use RGB. Change this only if colors appear in the wrong order." }),
+        selectField("LED color order", "profile-color-order", "colorOrder", current.colorOrder || "RGB",
+          ["RGB", "GRB", "RBG", "GBR", "BRG", "BGR"].map((order) => [order, order]))
+      )
+    )
+  );
+  updateProfileCount();
+  renderProfileDirectionChoices(edgeCount, installationMethod);
 }
 
-function openSetup() {
-  setWizardStep(0);
+function openSetup(onboarding = !state.settings.onboarded) {
+  setupOnboarding = onboarding;
+  renderProfileEditor();
   $("#setup-dialog").showModal();
 }
 
-async function advanceWizard() {
+async function saveProfile() {
   try {
-    if (wizardStep === 0) {
+    let current = currentProfile() || {};
+    let detectedCount = profileCount();
+    if (!Number.isInteger(detectedCount)) {
       await scanDevices();
-      const detectedCount = state.device.connected ? state.device.profile?.ledCount : null;
-      if (!Number.isInteger(detectedCount)) {
-        return toast("Connect the controller so ULLeds can detect the LED count.");
-      }
-      const field = (name) => $(`[data-setting="${name}"]`).value;
-      await saveSettingsNow({
-        deviceProfile: {
-          name: deviceLabel(state.device.profile?.name || state.settings.deviceProfile?.name),
-          ledCount: detectedCount,
-          edgeCount: Number(field("edgeCount")),
-          installationMethod: Number(field("installationMethod")),
-          colorOrder: field("colorOrder"),
-          position: field("position"),
-          matchedBy: "manual",
-          color: state.settings.color
-        }
-      });
-      render();
-      setWizardStep(1);
-    } else if (wizardStep === 1) {
-      setWizardStep(2);
-    } else {
-      await window.ull.updateSettings({ onboarded: true });
-      state.settings.onboarded = true;
-      $("#setup-dialog").close();
-      render();
+      current = currentProfile() || {};
+      detectedCount = profileCount();
     }
+    if (!Number.isInteger(detectedCount)) {
+      return toast("Connect your controller so ULLeds can detect the LED count.");
+    }
+
+    const field = (name) => $(`[name="${name}"]:checked`)?.value;
+    const changes = {
+      deviceProfile: {
+        name: deviceLabel(state.device.profile?.name || current.name),
+        ledCount: detectedCount,
+        edgeCount: Number(field("edgeCount")),
+        installationMethod: Number(field("installationMethod")),
+        colorOrder: $("#profile-color-order").value,
+        position: current.position || "monitor-back",
+        matchedBy: "manual",
+        color: state.settings.color
+      }
+    };
+    if (setupOnboarding) changes.onboarded = true;
+    await saveSettingsNow(changes);
+    $("#setup-dialog").close();
+    render();
+    toast("Strip profile saved.");
   } catch (error) {
-    toast(`Setup could not be saved: ${error.message}`);
+    toast(`Profile could not be saved: ${error.message}`);
   }
+}
+
+function bindProfileEditor() {
+  $("#profile-cancel").addEventListener("click", () => $("#setup-dialog").close());
+  $("#profile-save").addEventListener("click", saveProfile);
+  $("#profile-content").addEventListener("change", (event) => {
+    if (event.target.name === "edgeCount") {
+      const selectedMethod = Number($('[name="installationMethod"]:checked')?.value || 0);
+      renderProfileDirectionChoices(Number(event.target.value), selectedMethod);
+    }
+  });
 }
 
 async function resetAllData() {
@@ -2050,7 +2130,7 @@ function bindLighting() {
   });
 
   const toggleSync = (start) => () => {
-    if (syncIsActive()) void stopScreenSync("", true);
+    if (syncIsActive()) void stopScreenSync();
     else start();
   };
   $("#screen-sync-toggle").addEventListener("click", toggleSync(() => startScreenSync()));
@@ -2072,7 +2152,7 @@ function bindScenes() {
 function bindDeviceSettings() {
   $("#scan-device").addEventListener("click", scanDevices);
   $("#controller-select").addEventListener("change", (event) => void connectSelectedDevice(event.target.value));
-  $("#open-setup").addEventListener("click", openSetup);
+  $("#open-setup").addEventListener("click", () => openSetup(false));
   $("#reset-all-data").addEventListener("click", () => $("#reset-dialog").showModal());
   $("#confirm-reset").addEventListener("click", resetAllData);
 
@@ -2101,10 +2181,6 @@ function bindDeviceSettings() {
   });
 
   bindSetting("#start-with-windows", "startWithWindows", { event: "change", immediate: true, read: (el) => el.checked });
-  $("#resume-screen-sync").addEventListener("change", (event) => {
-    queueSettings({ resumeScreenSync: event.target.checked }, true);
-    if (!event.target.checked && sync.session) stopScreenSync();
-  });
 }
 
 function bindUpdates() {
@@ -2131,18 +2207,13 @@ function bindUpdates() {
   });
 }
 
-function bindWizard() {
-  $("#wizard-back").addEventListener("click", () => setWizardStep(wizardStep - 1));
-  $("#wizard-next").addEventListener("click", advanceWizard);
-}
-
 /** Messages pushed from the main process. */
 function bindMainProcessEvents() {
   window.ull.onDeviceStatus((device) => {
     applyDeviceState(device);
     render();
     if (!device.connected) sync.autoAttempted = false;
-    else maybeResumeScreenSync();
+    else maybeRestoreStartupMode();
   });
   window.ull.onMovieFormatApplied(applyDetectedMovieFormat);
 
@@ -2161,7 +2232,7 @@ function bindMainProcessEvents() {
   });
 
   window.ull.onDeviceScanRequest(scanDevices);
-  window.ull.onSetupRequest(openSetup);
+  window.ull.onSetupRequest(() => openSetup());
   window.ull.onUpdateFolderRequest(() => {
     switchView("updates");
     selectUpdateSource("local");
@@ -2195,7 +2266,7 @@ function bindEvents() {
   bindScenes();
   bindDeviceSettings();
   bindUpdates();
-  bindWizard();
+  bindProfileEditor();
   bindMainProcessEvents();
 }
 
@@ -2215,11 +2286,8 @@ async function start() {
     render();
     renderReleases();
     void loadReleaseDownloads();
-    if (!state.settings.onboarded) openSetup();
-    void scanDevices().then(maybeResumeScreenSync).catch((error) => {
-      console.error("Could not finish ULLeds startup:", error);
-      toast(`Could not finish starting ULLeds: ${error.message}`);
-    });
+    if (!state.settings.onboarded) openSetup(true);
+    maybeRestoreStartupMode();
   } catch (error) {
     toast(`ULLeds could not load: ${error.message}`);
   }

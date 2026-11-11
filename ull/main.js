@@ -36,6 +36,7 @@ const { createHidOutputQueue } = require("./hid-output");
 const { resetStoredData } = require("./reset-data");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
+const { normalizeStartupMode, isSyncStartupMode } = require("./startup-mode");
 const {
   normalizeScenes,
   createSceneBackup,
@@ -76,7 +77,7 @@ const DEFAULTS = Object.freeze({
   syncContentMode: "display",
   syncAutoDetect: true,
   startWithWindows: true,
-  resumeScreenSync: false
+  startupMode: "lighting"
 });
 const EFFECTS = new Set(["steady", "breathe", "spectrum", "palette"]);
 
@@ -172,7 +173,11 @@ function loadSettings() {
   if (!fs.existsSync(file)) return;
   try {
     const stored = JSON.parse(fs.readFileSync(file, "utf8"));
-    settings = { ...settings, ...validateSettings(stored) };
+    const restored = validateSettings(stored);
+    if (!Object.hasOwn(stored, "startupMode")) {
+      restored.startupMode = normalizeStartupMode(undefined, stored.resumeScreenSync === true);
+    }
+    settings = { ...settings, ...restored };
   } catch (error) {
     console.error("Could not load ULLeds settings:", error);
     dialog.showMessageBoxSync({
@@ -388,7 +393,12 @@ function validateSettings(input) {
     }
     next.updateSource = input.updateSource;
   }
-  for (const key of ["startWithWindows", "resumeScreenSync", "syncAutoDetect"]) {
+  if ("startupMode" in input) {
+    const mode = normalizeStartupMode(input.startupMode);
+    if (mode !== input.startupMode) throw new TypeError("Choose a supported startup lighting mode.");
+    next.startupMode = mode;
+  }
+  for (const key of ["startWithWindows", "syncAutoDetect"]) {
     if (key in input) {
       if (typeof input[key] !== "boolean") throw new TypeError(`${key} must be a boolean.`);
       next[key] = input[key];
@@ -515,7 +525,7 @@ async function writeScreenSyncColors(colors) {
   }
 }
 
-function updateAnimation({ preserveOutput = false, waitForOutput = false } = {}) {
+function updateAnimation({ waitForOutput = false } = {}) {
   if (animationTimer) {
     clearInterval(animationTimer);
     animationTimer = null;
@@ -524,7 +534,7 @@ function updateAnimation({ preserveOutput = false, waitForOutput = false } = {})
   // still winding down or an output restore is in progress. Otherwise the
   // lights can stay lit while the interface reports Off.
   const powerOff = !settings.power;
-  if (!powerOff && (screenSyncActive || (preserveOutput && settings.resumeScreenSync))) return;
+  if (!powerOff && (screenSyncActive || isSyncStartupMode(settings.startupMode))) return;
   if (!hidDevice || powerOff || settings.effect === "steady") {
     if (hidDevice) {
       const device = hidDevice;
@@ -713,7 +723,7 @@ async function connectDeviceNow(targetPath, knownDevices) {
     saveSettings();
     deviceError = "";
     stopDeviceWatcher();
-    updateAnimation({ preserveOutput: settings.resumeScreenSync });
+    updateAnimation();
     broadcastDeviceState();
     return { ...deviceState(), error: "" };
   } catch (error) {
@@ -753,6 +763,7 @@ function setSettings(input, updateOutput = true) {
   }
   const changes = validateSettings(input);
   settings = { ...settings, ...changes };
+  if (changes.power === false) settings.startupMode = "lighting";
   if (changes.syncAutoDetect === false) dismissMovieFormatPrompt();
   if (Object.hasOwn(changes, "deviceProfile") && connectedInfo) {
     connectedInfo = {
@@ -779,7 +790,7 @@ function setSettings(input, updateOutput = true) {
 
 function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) {
-    createWindow();
+    createWindow({ showWhenReady: true });
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -874,7 +885,7 @@ function createTray() {
   tray.on("double-click", showMainWindow);
 }
 
-function createWindow() {
+function createWindow({ showWhenReady = !startHidden } = {}) {
   mainWindow = new BrowserWindow({
     width: 1240,
     height: 760,
@@ -894,7 +905,7 @@ function createWindow() {
     }
   });
   mainWindow.once("ready-to-show", () => {
-    if (!startHidden) mainWindow.show();
+    if (showWhenReady) mainWindow.show();
   });
   mainWindow.on("query-session-end", (event) => {
     const shutdown = {
@@ -932,26 +943,6 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith("https://")) shell.openExternal(url);
     return { action: "deny" };
-  });
-  mainWindow.webContents.session.setDisplayMediaRequestHandler(async (request, callback) => {
-    if (!request.audioRequested || !request.videoRequested ||
-        request.frame?.url !== mainWindow?.webContents.getURL()) {
-      callback({});
-      return;
-    }
-    try {
-      const sources = await desktopCapturer.getSources({
-        types: ["screen"],
-        thumbnailSize: { width: 0, height: 0 }
-      });
-      const primaryDisplayId = String(screen.getPrimaryDisplay().id);
-      const source = sources.find((candidate) => candidate.display_id === primaryDisplayId) || sources[0];
-      if (!source) throw new Error("No display is available for desktop audio capture.");
-      callback({ video: source, audio: "loopback" });
-    } catch (error) {
-      console.error("Could not provide Spotify desktop audio capture:", error);
-      callback({});
-    }
   });
   mainWindow.loadFile(path.join(__dirname, "ui", "index.html"));
 }
@@ -1081,6 +1072,8 @@ ipcMain.handle("screen-sync:start", (_event, mode = "screen") => {
     ledCount: settings.deviceProfile.ledCount
   });
   dismissMovieFormatPrompt();
+  settings.startupMode = mode;
+  saveSettings();
   screenSyncActive = true;
   updateAnimation();
   return { active: true };
@@ -1105,13 +1098,15 @@ ipcMain.on("screen-sync:performance", (event, metrics) => {
 });
 ipcMain.handle("screen-sync:stop", async () => {
   screenSyncActive = false;
+  settings.startupMode = "lighting";
+  saveSettings();
   dismissMovieFormatPrompt();
   try {
     await updateAnimation({ waitForOutput: true });
   } finally {
     await screenSyncDiagnostics.stop("user");
   }
-  return { active: false };
+  return { active: false, startupMode: settings.startupMode };
 });
 ipcMain.handle("screen-sync:source", async () => {
   const sources = await desktopCapturer.getSources({
@@ -1467,7 +1462,7 @@ app.whenReady().then(async () => {
   configureLoginItem();
   Menu.setApplicationMenu(null);
   createTray();
-  createWindow();
+  if (!startHidden || isSyncStartupMode(settings.startupMode)) createWindow();
   void scanAndConnect().catch((error) => {
     console.error("Could not scan for the LED controller:", error);
     deviceError = error.message;
@@ -1477,7 +1472,7 @@ app.whenReady().then(async () => {
     if (!hidDevice) scheduleDeviceWatcher();
   });
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow({ showWhenReady: true });
   });
 }).catch((error) => {
   console.error("ULLeds failed to start:", error);

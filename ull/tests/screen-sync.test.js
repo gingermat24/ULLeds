@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   createDesktopCaptureConstraints,
+  createDesktopAudioCaptureConstraints,
   isSampleFrameDue,
   createMovieFormatPromptGate,
   createLetterboxStability,
@@ -26,6 +27,22 @@ test("screen sync bounds desktop capture resolution and honors the requested fra
       }
     }
   });
+});
+
+test("Spotify desktop loopback uses a tiny primary-display capture with audio enabled", () => {
+  assert.deepEqual(createDesktopAudioCaptureConstraints("screen:1:0"), {
+    audio: { mandatory: { chromeMediaSource: "desktop" } },
+    video: {
+      mandatory: {
+        chromeMediaSource: "desktop",
+        chromeMediaSourceId: "screen:1:0",
+        maxFrameRate: 1,
+        maxWidth: 16,
+        maxHeight: 16
+      }
+    }
+  });
+  assert.throws(() => createDesktopAudioCaptureConstraints(""), TypeError);
 });
 
 test("30 FPS sampling tolerates capture timestamp jitter without halving samples", () => {
