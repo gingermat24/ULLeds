@@ -12,7 +12,7 @@ const {
   createLatestFrameSender,
   sampleStripColors
 } = require("../screen-sync");
-const { allocateEdgeIndices, createStripLayout } = require("../strip-layout");
+const { allocateEdgeIndices } = require("../strip-layout");
 
 test("screen sync bounds desktop capture resolution and honors the requested frame rate", () => {
   assert.deepEqual(createDesktopCaptureConstraints("screen:1:0", 30), {
@@ -123,68 +123,6 @@ test("screen sync samples one color for each physical LED position", () => {
   assert.equal(colors.length, 75);
   assert.equal(colors.every((color) => color === "#1860b4"), true);
   assert.throws(() => sampleStripColors(pixels, 15, 12, layout), /image and strip layout/);
-});
-
-test("legacy profiles sample the same pixels before and after the position migration", () => {
-  const width = 160;
-  const height = 90;
-  const pixels = new Uint8ClampedArray(width * height * 4);
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      pixels.set([x, y, (x + 3 * y) % 256, 255], (y * width + x) * 4);
-    }
-  }
-
-  for (let edgeCount = 1; edgeCount <= 4; edgeCount += 1) {
-    for (let installationMethod = 0; installationMethod <= 1; installationMethod += 1) {
-      const oldLayout = allocateEdgeIndices(75, edgeCount, installationMethod);
-      const migratedLayout = createStripLayout(75, { edgeCount, installationMethod });
-      assert.deepEqual(
-        sampleStripColors(pixels, width, height, migratedLayout),
-        sampleStripColors(pixels, width, height, oldLayout)
-      );
-    }
-  }
-});
-
-test("screen sync samples manually placed coordinates for every physical LED", () => {
-  const width = 100;
-  const height = 100;
-  const pixels = new Uint8ClampedArray(width * height * 4);
-  const colors = [
-    [255, 0, 0],
-    [0, 255, 0],
-    [0, 0, 255],
-    [255, 255, 0]
-  ];
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const colorIndex = (y >= 50 ? 2 : 0) + (x >= 50 ? 1 : 0);
-      pixels.set([...colors[colorIndex], 255], (y * width + x) * 4);
-    }
-  }
-
-  const sampled = sampleStripColors(pixels, width, height, {
-    ledCount: 4,
-    indices: { top: [0], right: [1], bottom: [2], left: [3] },
-    positions: [
-      { x: 25, y: 25, edge: "top" },
-      { x: 75, y: 25, edge: "right" },
-      { x: 25, y: 75, edge: "bottom" },
-      { x: 75, y: 75, edge: "left" }
-    ]
-  });
-
-  assert.deepEqual(sampled, ["#ff0000", "#00ff00", "#0000ff", "#ffff00"]);
-});
-
-test("screen sync rejects malformed manual positions instead of silently reverting to edges", () => {
-  const pixels = new Uint8ClampedArray(4 * 4 * 4);
-  assert.throws(() => sampleStripColors(pixels, 4, 4, {
-    ledCount: 1,
-    indices: { top: [0] },
-    positions: [{ x: 50, y: 50, edge: "diagonal" }]
-  }), /image and strip layout/);
 });
 
 test("optimized screen sampling preserves the closest representative color", () => {

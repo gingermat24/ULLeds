@@ -1,116 +1,57 @@
+/* Widescreen prompt: same tokens and components as the main app.
+   This window sits over movies, so it is always dark. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0c;
+  --surface: #141416;
+  --surface-2: #1d1d20;
+  --surface-3: #29292d;
+  --text: #f3f3f4;
+  --muted: #a2a2a9;
+  --accent: #f3f3f4;
+  --on-accent: #0b0b0c;
+}
+
 html, body {
   width: 100%;
   height: 100%;
-  margin: 0;
   overflow: hidden;
   background: transparent;
 }
 
-body {
-  padding: 5px;
-}
+body { padding: var(--sp-1); }
 
 .prompt {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--sp-2) var(--sp-4);
   width: 100%;
   height: 100%;
-  padding: 10px 12px;
+  padding: var(--sp-3) var(--sp-4);
   overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 0.14);
-  border-radius: 10px;
-  background: #141415;
+  border-radius: var(--r);
+  background: var(--surface);
 }
 
-.copy { min-width: 0; }
-
-h1 {
-  margin: 0;
-  color: #F4F4F5;
-  font-size: 12.5px;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: -0.01em;
-}
-
-p {
-  margin: 3px 0 0;
-  color: var(--muted);
-  font-size: 11.5px;
-  line-height: 1.45;
-}
-
-.actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-}
-
-.actions .primary-btn,
-.actions .secondary-btn {
-  height: 32px;
-  padding: 0 11px;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 550;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.actions .primary-btn {
-  color: #0A0A0B;
-  background: #fff;
-  border-color: #fff;
-}
-.actions .primary-btn:hover:not(:disabled) {
-  color: #0A0A0B;
-  background: #dedede;
-  border-color: #dedede;
-}
-.actions .secondary-btn {
-  color: #F4F4F5;
-  background: rgb(255 255 255 / 0.06);
-  border-color: rgb(255 255 255 / 0.14);
-}
-.actions .secondary-btn:hover:not(:disabled) {
-  background: rgb(255 255 255 / 0.12);
-  border-color: rgb(255 255 255 / 0.26);
-}
+.copy { flex: 1 1 12rem; min-width: 0; }
+h1 { font-size: var(--fs-sm); font-weight: 600; line-height: 1.4; }
+p { color: var(--muted); font-size: var(--fs-xs); line-height: 1.45; }
+.actions { display: flex; flex: none; align-items: center; gap: var(--sp-2); }
 
 .timeout {
   position: absolute;
-  right: 12px;
-  bottom: 7px;
-  left: 12px;
-  height: 2px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: rgb(255 255 255 / 0.08);
+  inset: auto 0 0;
+  height: 0.125rem;
 }
-
 .timeout span {
   display: block;
   width: 100%;
   height: 100%;
   transform-origin: left center;
-  background: rgb(255 255 255 / 0.72);
+  background: var(--accent);
   animation: expire 5s linear forwards;
 }
-
-@keyframes expire {
-  to { transform: scaleX(0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .timeout span { animation: none; }
-}
-
-@media (max-width: 560px) {
-  .prompt { gap: 8px; padding: 8px; }
-  .actions { gap: 4px; }
-  .actions .primary-btn,
-  .actions .secondary-btn { padding: 0 8px; }
-}
+@keyframes expire { to { transform: scaleX(0); } }

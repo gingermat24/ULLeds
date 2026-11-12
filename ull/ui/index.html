@@ -3,16 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark light">
   <title>ULLeds</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div class="app">
 
-  <!-- ====================================================================
-       Top bar: navigation, controller status, window controls
-       ==================================================================== -->
+  <!-- Top bar -->
   <header class="topbar">
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button class="tab active" id="tab-light" data-view="light" role="tab" aria-selected="true" aria-controls="view-light">Lighting</button>
@@ -46,17 +44,28 @@
     </div>
   </header>
 
+  <!-- Update notice (in the page flow, not floating) -->
+  <aside class="update-banner hidden" id="version-notice" role="status" aria-live="polite">
+    <div class="update-banner-text">
+      <strong id="version-notice-title"></strong>
+      <span>Download the latest release installer.</span>
+    </div>
+    <button class="btn btn-primary btn-sm" id="version-notice-update" type="button">Update</button>
+    <button class="icon-btn" id="version-notice-dismiss" type="button" aria-label="Dismiss update notice">
+      <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" /></svg>
+    </button>
+    <div class="update-banner-timer" aria-hidden="true"><span></span></div>
+  </aside>
+
   <main>
 
-    <!-- ==================================================================
-         Lighting
-         ================================================================== -->
+    <!-- Lighting -->
     <section class="view" id="view-light" role="tabpanel" aria-labelledby="tab-light">
       <div class="lighting">
 
-        <section class="preview" aria-labelledby="preview-title">
-          <header class="preview-head">
-            <h2 id="preview-title">Behind your monitor</h2>
+        <section class="card preview" aria-labelledby="preview-title">
+          <header class="card-head">
+            <h2 class="title" id="preview-title">LED layout</h2>
             <div class="power">
               <span id="power-state">On</span>
               <button class="switch" id="power-toggle" type="button" role="switch" aria-checked="true" aria-label="LED power: on"></button>
@@ -66,7 +75,10 @@
           <div class="preview-stage">
             <div class="monitor" id="monitor">
               <div class="monitor-screen" aria-hidden="true"></div>
-              <div class="led-layout" id="led-layout" role="group" aria-label="LED layout preview"></div>
+              <div class="led-edge led-top" id="led-top" data-edge="top" tabindex="0" role="group" aria-label="Top LED strip"></div>
+              <div class="led-edge led-left" id="led-left" data-edge="left" tabindex="0" role="group" aria-label="Left LED strip"></div>
+              <div class="led-edge led-right" id="led-right" data-edge="right" tabindex="0" role="group" aria-label="Right LED strip"></div>
+              <div class="led-edge led-bottom hidden" id="led-bottom" data-edge="bottom" tabindex="0" role="group" aria-label="Bottom LED strip"></div>
             </div>
           </div>
 
@@ -82,24 +94,31 @@
           </footer>
         </section>
 
-        <aside class="controls panel" aria-label="Lighting controls">
+        <aside class="card controls" aria-label="Lighting controls">
 
-          <section class="control-section">
+          <section class="block">
+            <h3>Light</h3>
+
             <div class="field">
-              <div class="field-head">
-                <label for="color-picker">Color</label>
-                <small>Sets the Solid effect</small>
-              </div>
+              <label for="color-picker">Color</label>
               <div class="field-row">
                 <input class="swatch" id="color-picker" type="color" value="#008100" aria-label="Pick a color">
-                <input class="input input-mono" id="hex-color" type="text" value="#008100" maxlength="7" spellcheck="false" aria-label="Hex color">
+                <input class="input" id="hex-color" type="text" value="#008100" maxlength="7" spellcheck="false" aria-label="Hex color">
               </div>
+            </div>
+
+            <div class="field">
+              <div class="field-head">
+                <label for="brightness">Brightness</label>
+                <output id="brightness-value" for="brightness">50%</output>
+              </div>
+              <input id="brightness" type="range" min="0" max="100" value="50">
             </div>
 
             <details class="disclosure">
               <summary>Color gradient</summary>
               <div class="disclosure-body">
-                <p>Blend two colors in the order you selected the LEDs. Applying a gradient sets the Solid effect.</p>
+                <p>Blend two colors across the selected LEDs.</p>
                 <div class="gradient-colors">
                   <label for="gradient-start">Start
                     <input class="swatch" id="gradient-start" type="color" value="#008100">
@@ -111,21 +130,33 @@
                 <button class="btn" id="apply-gradient" type="button" disabled>Apply gradient</button>
               </div>
             </details>
-          </section>
 
-          <section class="control-section">
-            <div class="field">
-              <div class="field-head">
-                <label for="brightness">Brightness</label>
-                <output id="brightness-value" for="brightness">50%</output>
+            <details class="disclosure">
+              <summary>Channel balance</summary>
+              <div class="disclosure-body">
+                <p>Adjust if LEDs look different from the selected color.</p>
+                <div class="field">
+                  <div class="field-head"><label for="rgb-red">Red</label><output id="rgb-red-value" for="rgb-red">100%</output></div>
+                  <input id="rgb-red" type="range" min="50" max="150" value="100">
+                </div>
+                <div class="field">
+                  <div class="field-head"><label for="rgb-green">Green</label><output id="rgb-green-value" for="rgb-green">100%</output></div>
+                  <input id="rgb-green" type="range" min="50" max="150" value="100">
+                </div>
+                <div class="field">
+                  <div class="field-head"><label for="rgb-blue">Blue</label><output id="rgb-blue-value" for="rgb-blue">100%</output></div>
+                  <input id="rgb-blue" type="range" min="50" max="150" value="100">
+                </div>
+                <button class="btn btn-ghost btn-sm" id="reset-color-tuning" type="button">Reset balance</button>
               </div>
-              <input id="brightness" type="range" min="0" max="100" value="50">
-            </div>
+            </details>
           </section>
 
-          <section class="control-section">
+          <section class="block">
+            <h3>Effect</h3>
+
             <div class="field">
-              <label for="effect">Effect</label>
+              <label for="effect">Style</label>
               <select id="effect">
                 <option value="steady">Solid</option>
                 <option value="breathe">Breathe</option>
@@ -145,35 +176,15 @@
             <details class="disclosure hidden" id="palette-tuning">
               <summary>Effect palette</summary>
               <div class="disclosure-body">
-                <p>Palette drift cycles through these colors. They are saved with each scene.</p>
+                <p>Palette drift cycles these colors. Saved with each scene.</p>
                 <div class="palette-swatches" id="palette-swatches"></div>
                 <button class="btn btn-sm" id="add-palette-color" type="button">Add color</button>
               </div>
             </details>
-
-            <details class="disclosure">
-              <summary>Channel balance</summary>
-              <div class="disclosure-body">
-                <p>Adjust each channel if your LEDs look different from the selected color.</p>
-                <div class="field">
-                  <div class="field-head"><label for="rgb-red">Red</label><output id="rgb-red-value" for="rgb-red">100%</output></div>
-                  <input id="rgb-red" type="range" min="50" max="150" value="100">
-                </div>
-                <div class="field">
-                  <div class="field-head"><label for="rgb-green">Green</label><output id="rgb-green-value" for="rgb-green">100%</output></div>
-                  <input id="rgb-green" type="range" min="50" max="150" value="100">
-                </div>
-                <div class="field">
-                  <div class="field-head"><label for="rgb-blue">Blue</label><output id="rgb-blue-value" for="rgb-blue">100%</output></div>
-                  <input id="rgb-blue" type="range" min="50" max="150" value="100">
-                </div>
-                <button class="btn btn-ghost btn-sm" id="reset-color-tuning" type="button">Reset balance</button>
-              </div>
-            </details>
           </section>
 
-          <section class="control-section">
-            <div class="control-title">Sync</div>
+          <section class="block">
+            <h3>Sync</h3>
             <div class="list">
               <div class="row row-inline">
                 <div class="row-text">
@@ -185,21 +196,19 @@
               <div class="row row-inline">
                 <div class="row-text">
                   <span class="row-title">Spotify Sync</span>
-                  <span class="row-desc" id="spotify-sync-description">Use colors from the currently playing track</span>
+                  <span class="row-desc" id="spotify-sync-description">Colors from the current track</span>
                 </div>
                 <button class="btn sync-toggle" id="spotify-sync-toggle" type="button">Start</button>
               </div>
             </div>
-            <p class="sync-note">Spotify Sync reads cover art and analyzes local desktop audio while active. That includes all system sound, not only Spotify. Nothing is recorded or uploaded.</p>
+            <p class="sync-note">Spotify Sync reads cover art and analyzes local desktop audio. Nothing is recorded or uploaded.</p>
           </section>
 
         </aside>
       </div>
     </section>
 
-    <!-- ==================================================================
-         Scenes
-         ================================================================== -->
+    <!-- Scenes -->
     <section class="view hidden" id="view-scenes" role="tabpanel" aria-labelledby="tab-scenes">
       <header class="view-head">
         <h2>Scenes</h2>
@@ -209,14 +218,12 @@
           <button class="btn btn-primary" id="save-scene" type="button">Save current setup</button>
         </div>
       </header>
-      <p class="view-intro">A scene stores color, brightness, effect and per-LED colors. Import adds scenes you don’t have yet without replacing any. Export makes a backup you can move to another PC.</p>
+      <p class="view-intro">A scene stores color, brightness, effect and per-LED colors. Import adds new scenes without replacing existing ones.</p>
       <div class="scene-list" id="scene-grid" aria-live="polite"></div>
     </section>
 
-    <!-- ==================================================================
-         Device
-         ================================================================== -->
-    <section class="view view-narrow hidden" id="view-settings" role="tabpanel" aria-labelledby="tab-settings">
+    <!-- Device -->
+    <section class="view hidden" id="view-settings" role="tabpanel" aria-labelledby="tab-settings">
       <header class="view-head">
         <h2>Device</h2>
         <button class="btn" id="open-setup" type="button">Edit strip profile</button>
@@ -224,12 +231,12 @@
 
       <div class="groups">
 
-        <section class="group" aria-labelledby="group-controller">
+        <section class="card group" aria-labelledby="group-controller">
           <div class="group-head">
             <h3 id="group-controller">Controller</h3>
-            <p>Choose a connected controller and review its profile. Use the scan button in the header to refresh the list.</p>
+            <p class="hint">Choose a connected controller and review its profile.</p>
           </div>
-          <div class="panel list">
+          <div class="list">
             <div class="row is-stacked">
               <label class="row-title" for="controller-select">USB controller</label>
               <select id="controller-select">
@@ -243,16 +250,16 @@
           </div>
         </section>
 
-        <section class="group" aria-labelledby="group-sync">
+        <section class="card group" aria-labelledby="group-sync">
           <div class="group-head">
             <h3 id="group-sync">Screen Sync</h3>
-            <p>What part of the display to sample, and how often.</p>
+            <p class="hint">What part of the display to sample, and how often.</p>
           </div>
-          <div class="panel list">
+          <div class="list">
             <div class="row">
               <div class="row-text">
                 <label class="row-title" for="sync-content-mode">Picture area</label>
-                <span class="row-desc">Widescreen mode samples the picture and skips 2.35:1 letterbox bars.</span>
+                <span class="row-desc">Widescreen samples the picture and skips letterbox bars.</span>
               </div>
               <div class="row-control">
                 <select id="sync-content-mode">
@@ -264,122 +271,118 @@
             <div class="row">
               <div class="row-text">
                 <label class="row-title" for="sync-fps-range">Sync speed</label>
-                <span class="row-desc">Higher rates update more often and use more CPU. Default 30.</span>
+                <span class="row-desc">Higher rates use more CPU. Default 30.</span>
               </div>
               <div class="row-control">
                 <input id="sync-fps-range" type="range" min="5" max="60" step="1" value="30" aria-label="Screen Sync frames per second">
-                <input class="input input-mono input-number" id="sync-fps-number" type="number" min="5" max="60" step="1" value="30" aria-label="Frames per second">
+                <input class="input input-number" id="sync-fps-number" type="number" min="5" max="60" step="1" value="30" aria-label="Frames per second">
               </div>
             </div>
             <label class="row row-inline" for="sync-auto-detect">
               <span class="row-text">
                 <span class="row-title">Detect widescreen movies</span>
-                <span class="row-desc">Look for stable letterbox bars and ask before using the detected ratio.</span>
+                <span class="row-desc">Ask before using a stable detected ratio.</span>
               </span>
               <input class="switch" id="sync-auto-detect" type="checkbox">
             </label>
           </div>
         </section>
 
-        <section class="group" aria-labelledby="group-startup">
+        <section class="card group" aria-labelledby="group-startup">
           <div class="group-head">
             <h3 id="group-startup">Startup</h3>
-            <p>ULLeds remembers your previous LED mode and restores it when the app starts.</p>
+            <p class="hint">ULLeds restores your previous mode when it starts.</p>
           </div>
-          <div class="panel list">
+          <div class="list">
             <label class="row row-inline" for="start-with-windows">
               <span class="row-text">
                 <span class="row-title">Start with Windows</span>
-                <span class="row-desc">Launch ULLeds in the tray when you sign in.</span>
+                <span class="row-desc">Launch in the tray when you sign in.</span>
               </span>
               <input class="switch" id="start-with-windows" type="checkbox">
             </label>
-            <p class="hint">The last color or effect, power state, Screen Sync, or Spotify Sync is restored automatically.</p>
           </div>
         </section>
 
-        <section class="group group-danger" aria-labelledby="group-reset">
+        <section class="card group group-danger" aria-labelledby="group-reset">
           <div class="group-head">
             <h3 id="group-reset">Reset</h3>
+            <p class="hint">Clears scenes, colors, device and sync settings. The app stays installed.</p>
           </div>
-          <div class="panel list">
-            <div class="row">
-              <div class="row-text">
-                <span class="row-title">Reset ULLeds</span>
-                <span class="row-desc">Clears scenes, colors, device and sync settings, the update folder, and imported lighting profiles. ULLeds stays installed.</span>
-              </div>
-              <button class="btn btn-danger" id="reset-all-data" type="button">Reset all data</button>
-            </div>
+          <div>
+            <button class="btn btn-danger" id="reset-all-data" type="button">Reset all data</button>
           </div>
         </section>
 
       </div>
     </section>
 
-    <!-- ==================================================================
-         Updates
-         ================================================================== -->
-    <section class="view view-narrow hidden" id="view-updates" role="tabpanel" aria-labelledby="tab-updates">
+    <!-- Updates -->
+    <section class="view hidden" id="view-updates" role="tabpanel" aria-labelledby="tab-updates">
       <header class="view-head">
         <h2>Updates</h2>
         <span class="version">Version <strong id="app-version">—</strong></span>
       </header>
 
-      <div class="panel update-panel">
-        <div class="choices" role="radiogroup" aria-label="Update source">
-          <label class="choice" for="update-source-github">
-            <input id="update-source-github" type="radio" name="update-source" value="github">
-            <span><strong>GitHub Releases</strong><small>Latest public release</small></span>
-          </label>
-          <label class="choice" for="update-source-local">
-            <input id="update-source-local" type="radio" name="update-source" value="local">
-            <span><strong>Local folder</strong><small>An update package on this PC</small></span>
-          </label>
-        </div>
-
-        <p class="hint" id="github-update-note">Checks the public ULLeds GitHub Releases and downloads verified updates.</p>
-
-        <div class="update-actions-row hidden" id="local-update-controls">
-          <button class="btn" id="choose-update-folder" type="button">Choose folder</button>
-          <span class="folder-path" id="update-folder-label">No folder selected</span>
-        </div>
-
-        <div>
-          <button class="btn btn-primary" id="check-updates" type="button">Check for updates</button>
-        </div>
-
-        <div class="notice hidden" id="update-message" role="status" aria-live="polite">
-          <div id="update-status-text"></div>
-          <div class="progress hidden" id="update-progress" role="progressbar" aria-label="Update download progress" aria-valuemin="0" aria-valuemax="100">
-            <span id="update-progress-fill"></span>
+      <div class="updates">
+        <section class="card update-panel" aria-label="Check for updates">
+          <div class="choices" role="radiogroup" aria-label="Update source">
+            <label class="choice" for="update-source-github">
+              <input id="update-source-github" type="radio" name="update-source" value="github">
+              <span><strong>GitHub Releases</strong><small>Latest public release</small></span>
+            </label>
+            <label class="choice" for="update-source-local">
+              <input id="update-source-local" type="radio" name="update-source" value="local">
+              <span><strong>Local folder</strong><small>Package on this PC</small></span>
+            </label>
           </div>
-          <div class="progress-detail hidden" id="update-progress-detail"></div>
-          <div id="update-actions"></div>
-        </div>
-      </div>
 
-      <section class="releases" aria-labelledby="releases-title">
-        <header class="releases-head">
-          <h3 id="releases-title">Release notes</h3>
-          <nav class="release-nav" aria-label="Release navigation">
-            <button class="icon-btn" id="release-newer" type="button" aria-label="Newer release" aria-controls="release-track">&lt;</button>
-            <input class="release-position" id="release-position" type="text" inputmode="numeric" pattern="[0-9]*" value="1" aria-label="Release number" aria-describedby="release-total">
-            <span aria-hidden="true">/</span>
-            <span class="release-total" id="release-total">–</span>
-            <button class="icon-btn" id="release-older" type="button" aria-label="Older release" aria-controls="release-track">&gt;</button>
-          </nav>
-        </header>
-        <p class="hint hidden" id="release-status" role="status" aria-live="polite"></p>
-        <div id="release-track" aria-live="polite"></div>
-      </section>
+          <p class="hint" id="github-update-note">Checks public ULLeds GitHub Releases and downloads verified updates.</p>
+
+          <div class="update-actions-row hidden" id="local-update-controls">
+            <button class="btn" id="choose-update-folder" type="button">Choose folder</button>
+            <span class="folder-path" id="update-folder-label">No folder selected</span>
+          </div>
+
+          <div>
+            <button class="btn btn-primary" id="check-updates" type="button">Check for updates</button>
+          </div>
+
+          <div class="notice hidden" id="update-message" role="status" aria-live="polite">
+            <div id="update-status-text"></div>
+            <div class="progress hidden" id="update-progress" role="progressbar" aria-label="Update download progress" aria-valuemin="0" aria-valuemax="100">
+              <span id="update-progress-fill"></span>
+            </div>
+            <div class="progress-detail hidden" id="update-progress-detail"></div>
+            <div id="update-actions"></div>
+          </div>
+        </section>
+
+        <section class="card releases" aria-labelledby="releases-title">
+          <header class="releases-head">
+            <h3 id="releases-title">Release notes</h3>
+            <nav class="release-nav" aria-label="Release navigation">
+              <button class="icon-btn" id="release-newer" type="button" aria-label="Newer release" aria-controls="release-track">
+                <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M8.5 3L4.5 7l4 4" /></svg>
+              </button>
+              <input class="release-position" id="release-position" type="text" inputmode="numeric" pattern="[0-9]*" value="1" aria-label="Release number" aria-describedby="release-total">
+              <span aria-hidden="true">/</span>
+              <span class="release-total" id="release-total">–</span>
+              <button class="icon-btn" id="release-older" type="button" aria-label="Older release" aria-controls="release-track">
+                <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M5.5 3l4 4-4 4" /></svg>
+              </button>
+            </nav>
+          </header>
+          <p class="hint hidden" id="release-status" role="status" aria-live="polite"></p>
+          <div id="release-track" aria-live="polite"></div>
+        </section>
+      </div>
     </section>
 
   </main>
 </div>
 
-<!-- ======================================================================
-     Dialogs
-     ====================================================================== -->
+<!-- Dialogs -->
 <dialog class="dialog dialog-profile" id="setup-dialog">
   <form method="dialog">
     <h2 id="profile-title">LED strip layout</h2>
@@ -418,10 +421,10 @@
   </form>
 </dialog>
 
-<dialog class="dialog dialog-wide" id="reset-dialog">
+<dialog class="dialog" id="reset-dialog">
   <form method="dialog">
     <h2>Clear all saved data?</h2>
-    <p class="dialog-copy">This resets scenes, colors, preferences and the update folder, and removes imported lighting profiles. The active compatible controller stays connected and selected. Browser data and the app installation are kept.</p>
+    <p class="dialog-copy">This resets scenes, colors, preferences and the update folder. The active controller stays connected. Browser data and the app installation are kept.</p>
     <div class="dialog-actions">
       <button class="btn" id="cancel-reset" type="submit" value="cancel">Keep my data</button>
       <button class="btn btn-danger" id="confirm-reset" type="button">Delete and reset</button>
@@ -429,27 +432,9 @@
   </form>
 </dialog>
 
-<!-- ======================================================================
-     Overlays
-     ====================================================================== -->
-<aside class="update-banner hidden" id="version-notice" role="status" aria-live="polite">
-  <div class="update-banner-text">
-    <strong id="version-notice-title"></strong>
-    <span>Download the latest release installer.</span>
-  </div>
-  <button class="btn btn-primary btn-sm" id="version-notice-update" type="button">Update</button>
-  <button class="icon-btn" id="version-notice-dismiss" type="button" aria-label="Dismiss update notice">
-    <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" /></svg>
-  </button>
-  <div class="update-banner-timer" aria-hidden="true"><span></span></div>
-</aside>
-
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-<!-- ======================================================================
-     Built-in changelog (fallback when GitHub is unreachable).
-     To add a release: put a new object at the top of "releases".
-     ====================================================================== -->
+<!-- Built-in changelog -->
 <script type="application/json" id="changelog-data">
 {
   "legacy": {
@@ -457,6 +442,16 @@
     "versions": ["1.0.11", "1.0.10", "1.0.9", "1.0.8", "1.0.7", "1.0.6", "1.0.5", "1.0.4", "1.0.3", "1.0.2", "1.0.1", "1.0.0"]
   },
   "releases": [
+    { "version": "1.0.81", "notes": {
+      "New": [
+        "Choose any combination of monitor edges for the LED strip, with automatic LED allocation or exact per-edge counts.",
+        "Adjust Screen Sync from 5 to 60 frames per second and detect widescreen movie bars, with a prompt before switching to the detected picture area.",
+        "Calibrate red, green, and blue LED channel levels independently."
+      ],
+      "Improved": [
+        "Updated the interface across Lighting, Scenes, Device, and Updates with responsive layouts and consistent controls.",
+        "Browse published release notes and choose a specific release to install from Updates."
+      ] } },
     { "version": "1.0.80", "notes": {
       "New": ["Arrange every detected LED manually around your screen with drag placement, position controls, and layout rotation."],
       "Improved": ["LED numbers follow the controller's physical order, and Screen Sync samples each manually placed position. Existing strip profiles keep their current layout and sampling behavior."] } },

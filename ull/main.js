@@ -34,6 +34,7 @@ const {
 } = require("./controller-catalog");
 const { createHidOutputQueue } = require("./hid-output");
 const { resetStoredData } = require("./reset-data");
+const { normalizeActiveEdges } = require("./strip-layout");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
 const { normalizeStartupMode, isSyncStartupMode } = require("./startup-mode");
@@ -336,25 +337,32 @@ function validateSettings(input) {
       next.deviceProfile = null;
     } else if (profile && typeof profile === "object" && !Array.isArray(profile)) {
       const ledCount = Number(profile.ledCount);
-      const edgeCount = Number(profile.edgeCount);
+      const edgeSelection = profile.activeEdges ?? profile.edgeCount;
+      const activeEdges = normalizeActiveEdges(edgeSelection);
+      const edgeCount = activeEdges?.length;
       const installationMethod = profile.installationMethod == null ? 0 : Number(profile.installationMethod);
       const colorOrder = typeof profile.colorOrder === "string" ? profile.colorOrder.toUpperCase() : "";
       const positions = new Set(["top", "monitor-back", "monitor-front", "desk"]);
       const matchedBy = profile.matchedBy || "manual";
+      const allocationMode = profile.allocationMode === "manual" ? "manual" : "auto";
+      const edgeCounts = profile.edgeCounts;
+      const validManualCounts = allocationMode !== "manual" || (
+        edgeCounts && typeof edgeCounts === "object" && !Array.isArray(edgeCounts) &&
+        activeEdges &&
+        Object.keys(edgeCounts).length === activeEdges?.length &&
+        activeEdges.every((edge) => Number.isInteger(edgeCounts[edge]) && edgeCounts[edge] > 0) &&
+        Object.keys(edgeCounts).every((edge) => activeEdges.includes(edge)) &&
+        Object.values(edgeCounts).reduce((sum, count) => sum + count, 0) === ledCount
+      );
       if (!Number.isInteger(ledCount) || ledCount < 1 || ledCount > 253 ||
-          !Number.isInteger(edgeCount) || edgeCount < 1 || edgeCount > 4 ||
+          !activeEdges || (Array.isArray(edgeSelection) && activeEdges.length !== edgeSelection.length) ||
           !Number.isInteger(installationMethod) || installationMethod < 0 || installationMethod > 1 ||
+          !["auto", "manual"].includes(profile.allocationMode || "auto") ||
+          !validManualCounts ||
           !/^[RGB]{3}$/.test(colorOrder) || new Set(colorOrder).size !== 3 ||
           !positions.has(profile.position) ||
           typeof profile.name !== "string" || !profile.name.trim() ||
           !["device path", "single connected controller", "manual"].includes(matchedBy) ||
-          (profile.ledPositions !== undefined &&
-            (!Array.isArray(profile.ledPositions) || profile.ledPositions.length !== ledCount ||
-              profile.ledPositions.some((position) =>
-                !position || typeof position !== "object" || Array.isArray(position) ||
-                !Number.isFinite(position.x) || position.x < 0 || position.x > 100 ||
-                !Number.isFinite(position.y) || position.y < 0 || position.y > 100 ||
-                !["top", "left", "right", "bottom"].includes(position.edge)))) ||
           ("color" in profile && profile.color !== null && !validColor(profile.color))) {
         throw new TypeError("Device profile details are invalid.");
       }
@@ -362,18 +370,16 @@ function validateSettings(input) {
         name: profile.name.trim().slice(0, 48),
         ledCount,
         edgeCount,
+        activeEdges,
         installationMethod,
+        allocationMode,
+        edgeCounts: allocationMode === "manual" ? { ...edgeCounts } : null,
         colorOrder,
         position: profile.position,
         matchedBy,
         color: typeof profile.color === "string" && /^#[\da-f]{6}$/i.test(profile.color)
           ? profile.color.toLowerCase()
-          : null,
-        ...(profile.ledPositions === undefined
-          ? {}
-          : {
-              ledPositions: profile.ledPositions.map(({ x, y, edge }) => ({ x, y, edge }))
-            })
+          : null
       };
     } else {
       throw new TypeError("Device profile must be an object or null.");
@@ -713,18 +719,21 @@ async function connectDeviceNow(targetPath, knownDevices) {
       );
     }
     const { ledCount, countSource } = ledCountResult;
+    const savedManualCounts = savedProfile?.allocationMode === "manual" &&
+      savedProfile.edgeCounts &&
+      Object.values(savedProfile.edgeCounts).reduce((sum, count) => sum + count, 0) === ledCount;
     const profile = {
       name: savedProfile?.name || selected.name || "PC SYNC Backlight",
       ledCount,
       edgeCount: savedProfile?.edgeCount || 3,
+      activeEdges: normalizeActiveEdges(savedProfile?.activeEdges ?? savedProfile?.edgeCount ?? 3),
       installationMethod: savedProfile?.installationMethod ?? 0,
+      allocationMode: savedManualCounts ? "manual" : "auto",
+      edgeCounts: savedManualCounts ? savedProfile.edgeCounts : null,
       colorOrder: savedProfile?.colorOrder || "RGB",
       position: savedProfile?.position || "monitor-back",
       matchedBy: savedProfile?.matchedBy || "manual",
       color: savedProfile?.color || null,
-      ...(savedProfile?.ledPositions
-        ? { ledPositions: savedProfile.ledPositions }
-        : {}),
       countSource
     };
     connectedInfo = { ...selected, profile };
@@ -909,7 +918,7 @@ function createWindow({ showWhenReady = !startHidden } = {}) {
     show: false,
     title: "ULLeds",
     icon: path.join(__dirname, "assets", "app.ico"),
-    backgroundColor: "#0A0A0B",
+    backgroundColor: "#0B0B0B",
     frame: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

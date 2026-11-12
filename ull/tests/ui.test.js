@@ -15,17 +15,15 @@ test("the detected LED count has no editable renderer control", () => {
   assert.doesNotMatch(app, /data-setting=["']ledCount["']/);
 });
 
-test("Device and Updates views expand to the full available content width", () => {
+test("Device and Updates views use available width up to a readable maximum", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
-  const narrowViews = [...html.matchAll(/<section\b[^>]*class="([^"]*)"[^>]*id="view-(settings|updates)"/g)];
-  const narrowRule = css.match(/\.view-narrow\s*\{([^}]*)\}/);
+  const views = [...html.matchAll(/<section\b[^>]*class="([^"]*)"[^>]*id="view-(light|scenes|settings|updates)"/g)];
 
-  assert.equal(narrowViews.length, 2);
-  assert.ok(narrowViews.every(([, classes]) => classes.split(/\s+/).includes("view-narrow")));
-  assert.ok(narrowRule, "Device and Updates should share the narrow-view layout rule");
-  assert.match(narrowRule[1], /width:\s*100%/);
-  assert.doesNotMatch(narrowRule[1], /max-width\s*:\s*(?!none\b)[^;]+/);
+  assert.equal(views.length, 4);
+  assert.ok(views.every(([, classes]) => classes.split(/\s+/).includes("view")));
+  assert.match(css, /\.view \{ width: 100%; max-width: 100rem; margin-inline: 0; \}/);
+  assert.match(css, /main \{[^}]*padding: var\(--sp-2\) var\(--gutter\) var\(--gutter\);/s);
 });
 
 test("renderer selectors resolve to unique elements in the page", () => {
@@ -110,7 +108,7 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(main, /autoUpdater\.allowDowngrade = versionComparison < 0/);
   assert.match(main, /result\.updateInfo\.version !== version/);
   assert.doesNotMatch(main, /updates:download-release|shell\.openExternal\(installer\.url\)/);
-  assert.match(css, /\.update-banner\s*\{[^}]*width:\s*min\(340px, calc\(100vw - 28px\)\)/s);
+  assert.match(css, /\.update-banner \{[^}]*margin: 0 var\(--gutter\) var\(--sp-3\);/s);
   assert.match(app, /versionNoticeTimer = setTimeout\(dismissVersionNotice, VERSION_NOTICE_MS\)/);
   assert.match(css, /animation: drain 8s linear forwards/);
 });
@@ -124,7 +122,7 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(html, /Spotify Sync/);
   assert.match(html, /id="spotify-sync-toggle"/);
   assert.match(html, /id="spotify-sync-description"/);
-  assert.match(html, /Spotify Sync reads cover art and analyzes local desktop audio while active\. That includes all system sound, not only Spotify\. Nothing is recorded or uploaded\./);
+  assert.match(html, /Spotify Sync reads cover art and analyzes local desktop audio\. Nothing is recorded or uploaded\./);
   assert.match(app, /window\.ull\.getSpotifyArtwork\(\)/);
   assert.match(app, /createSpotifySyncColors\([\s\S]*\n\s+5\s*\)/);
   assert.match(app, /window\.ull\.screenSyncSource\(\)\.then\(\(\{ id \}\) =>\s+navigator\.mediaDevices\.getUserMedia\(/);
@@ -158,7 +156,7 @@ test("update feedback includes an accessible progress bar and reports download s
   assert.match(app, /updates\.busy/);
 });
 
-test("the interface uses flat monochrome surfaces without colored UI accents", () => {
+test("the interface uses consistent neutral dark and light color systems", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
@@ -168,11 +166,19 @@ test("the interface uses flat monochrome surfaces without colored UI accents", (
   }
   assert.match(html, /<html lang="en">/);
   assert.doesNotMatch(html, /class="brand"|brand-mark|brand-word/);
-  assert.match(css, /--text: #f4f4f5/i);
-  assert.match(css, /--bg: #0a0a0b/i);
-  assert.match(css, /--surface: #101011/i);
+  assert.match(css, /--text: #f3f3f4/i);
+  assert.match(css, /--bg: #0b0b0c/i);
+  assert.match(css, /--surface: #141416/i);
+  assert.match(css, /--accent: #f3f3f4/i);
+  assert.match(css, /@media \(prefers-color-scheme: light\)/);
+  const nonMonochrome = [...css.matchAll(/#([0-9a-f]{6})\b/gi)]
+    .map(([, color]) => color.toLowerCase())
+    .filter((color) => !["e5484d", "ff8f86", "c43a2f"].includes(color) &&
+      Math.max(parseInt(color.slice(0, 2), 16), parseInt(color.slice(2, 4), 16), parseInt(color.slice(4, 6), 16)) -
+      Math.min(parseInt(color.slice(0, 2), 16), parseInt(color.slice(2, 4), 16), parseInt(color.slice(4, 6), 16)) > 10);
+  assert.deepEqual(nonMonochrome, [], "UI colors should be monochrome apart from semantic errors");
   assert.doesNotMatch(css, /backdrop-filter/);
-  assert.doesNotMatch(css, /#(?:D71921|E51B24|E5484D|FF0000)\b/i);
+  assert.doesNotMatch(css, /#(?:D71921|E51B24|FF0000)\b/i);
 });
 
 test("legacy vendor names are replaced with a neutral device label", () => {
@@ -235,29 +241,31 @@ test("LED selection starts empty when the renderer opens", () => {
   assert.match(html, /id="selection-label">No LEDs selected</);
 });
 
-test("topbar uses compact status, shared page padding, and integrated window controls", () => {
+test("topbar omits the wordmark and adapts navigation to the window", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
 
-  assert.match(css, /\.topbar \{[^}]*grid-template-columns: max-content minmax\(0, 1fr\) max-content max-content;[^}]*height: 48px;/s);
-  assert.match(css, /\.tabs \{[^}]*display: flex;[^}]*align-self: stretch;/s);
-  assert.match(css, /\.tab\.active::after \{[^}]*background: var\(--text\);/s);
+  assert.match(css, /\.topbar \{[^}]*display: flex;[^}]*align-items: center;[^}]*min-height: var\(--bar\);/s);
+  assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), /ULLeds/);
+  assert.match(css, /\.tabs \{[^}]*display: flex;/s);
+  assert.match(css, /\.tab\.active \{ background: var\(--surface-3\); color: var\(--text\); \}/);
   assert.match(css, /\.topbar :is\(button, \.tabs, \.status, \.window-controls\) \{\s+-webkit-app-region: no-drag;/);
-  assert.match(css, /\.status \{[^}]*grid-column: 3;[^}]*display: flex;/s);
-  assert.match(css, /\.status-dot \{\s+flex: none;\s+width: 6px;\s+height: 6px;/);
-  assert.match(css, /\.status\.connected \.status-dot \{\s+background: #fff;\s+\}/);
-  assert.match(css, /\.window-controls \{\s+display: flex;\s+align-self: stretch;/);
+  assert.match(css, /\.status \{[^}]*display: flex;[^}]*margin-left: auto;/s);
+  assert.doesNotMatch(css.match(/\.status \{([^}]*)\}/s)?.[1] || "", /background|border:/);
+  assert.match(css, /\.status-dot \{ flex: none; width: 0\.5rem; height: 0\.5rem;/);
+  assert.match(css, /\.status\.connected \.status-dot \{\s+background: var\(--text\);\s+\}/);
+  assert.match(css, /\.window-controls \{ display: flex; align-self: stretch; flex: none; \}/);
   assert.match(css, /\.window-btn \{[^}]*background: transparent;/s);
   assert.match(css, /\.status-label \{\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
   assert.match(css, /main \{\s+flex: 1;\s+min-height: 0;[\s\S]*overflow-y: auto;/);
   assert.match(css, /\.app \{\s+display: flex;\s+flex-direction: column;[\s\S]*height: 100dvh;/);
-  assert.match(css, /--gutter: 32px/);
-  assert.match(css, /\.topbar \{[^}]*padding-left: var\(--gutter\);/s);
-  assert.match(css, /@media \(max-width: 720px\) \{[\s\S]*\.topbar \{\s+grid-template-columns: minmax\(0, 1fr\) max-content;[\s\S]*\.tabs \{\s+grid-row: 2;[\s\S]*\.status \{\s+grid-column: 1;/);
-  assert.match(main, /backgroundColor: "#0A0A0B",\s+frame: false,/);
+  assert.match(css, /--gutter: clamp\(1rem, 2\.5vw, 2\.5rem\)/);
+  assert.match(css, /\.topbar \{[^}]*padding: var\(--sp-2\) 0 var\(--sp-2\) var\(--gutter\);/s);
+  assert.match(css, /@media \(max-width: 40rem\) \{\s+\.tab \{ padding: 0 var\(--sp-3\); \}\s+\.status-label \{ display: none; \}/);
+  assert.match(main, /backgroundColor: "#0B0B0B",\s+frame: false,/);
   assert.doesNotMatch(main, /titleBarStyle|titleBarOverlay/);
   assert.match(html, /class="window-controls"/);
   assert.match(html, /id="window-minimize"/);
@@ -272,17 +280,27 @@ test("topbar uses compact status, shared page padding, and integrated window con
   assert.match(app, /label\.textContent = connected \? "Connected" : error \? "Connection issue" : "Not connected"/);
 });
 
+test("tab content aligns with the topbar gutter and its spacing is balanced", () => {
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  assert.match(css, /\.topbar \{[^}]*padding:\s*var\(--sp-2\) 0 var\(--sp-2\) var\(--gutter\);/s);
+  assert.match(css, /\.tabs \{[^}]*display:\s*flex;/s);
+  assert.match(css, /\.tab \{[^}]*padding:\s*0 var\(--sp-3\);/s);
+  assert.match(css, /\.view \{[^}]*margin-inline:\s*0;/s);
+  assert.match(css, /main \{[^}]*padding:\s*var\(--sp-2\) var\(--gutter\) var\(--gutter\);/s);
+});
+
 test("lighting layout adapts to the window and the monitor preview matches the display ratio", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const controls = css.match(/\.controls\s*\{([^}]*)\}/)?.[1] || "";
 
-  assert.match(css, /\.lighting \{[^}]*grid-template-columns: minmax\(0, 1fr\) 340px;[^}]*gap: var\(--s8\);/s);
-  assert.match(controls, /align-self: start;/);
-  assert.match(css, /\.preview \{[^}]*min-height: max\(440px, calc\(100dvh - 120px\)\);/s);
+  assert.match(css, /\.lighting \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: var\(--sp-4\); \}/);
+  assert.match(controls, /align-content: start;/);
+  assert.match(css, /\.preview \{[^}]*height: clamp\(22rem, 62cqh, 36rem\);/s);
   assert.match(css, /\.monitor \{[^}]*aspect-ratio: var\(--monitor-aspect-ratio, 16 \/ 9\);/s);
-  assert.match(css, /\.monitor \{[^}]*width: min\(100%, calc\(\(100dvh - 330px\) \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
-  assert.match(css, /--control: 34px/);
+  assert.match(css, /\.monitor \{[^}]*width: min\(100cqw, calc\(100cqh \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
+  assert.match(css, /@container \(min-width: 56rem\) \{\s+\.lighting \{ grid-template-columns: minmax\(0, 1fr\) clamp\(19rem, 28cqw, 28rem\);/);
   assert.match(app, /function updateMonitorAspectRatio\(\) \{\s+const \{ width, height \} = window\.screen;\s+if \(!Number\.isFinite\(width\) \|\| !Number\.isFinite\(height\) \|\| width <= 0 \|\| height <= 0\) return;\s+document\.documentElement\.style\.setProperty\("--monitor-aspect-ratio", String\(width \/ height\)\);/);
   assert.match(app, /updateMonitorAspectRatio\(\);\s+window\.addEventListener\("resize", updateMonitorAspectRatio\);/);
 });
@@ -290,24 +308,25 @@ test("lighting layout adapts to the window and the monitor preview matches the d
 test("lighting spacing and control sizes stay consistent while resizing the window", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
-  assert.match(css, /--gutter:\s*32px;/);
-  assert.match(css, /--control:\s*34px;/);
-  assert.match(css, /--fs-md:\s*13px;/);
-  assert.match(css, /--s1:\s*4px;/);
-  assert.match(css, /--s2:\s*8px;/);
-  assert.match(css, /--s3:\s*12px;/);
-  assert.match(css, /--s4:\s*16px;/);
-  assert.match(css, /--s5:\s*20px;/);
-  assert.match(css, /--s6:\s*24px;/);
-  assert.match(css, /\.panel\s*\{[^}]*padding:\s*var\(--s5\);/s);
+  assert.match(css, /--gutter:\s*clamp\(1rem,\s*2\.5vw,\s*2\.5rem\);/);
+  assert.match(css, /--ctl:\s*2\.5rem;/);
+  assert.match(css, /--ctl-sm:\s*2rem;/);
+  assert.match(css, /--r:\s*0\.75rem;/);
+  assert.match(css, /--fs-md:\s*0\.9375rem;/);
+  assert.match(css, /--sp-1:\s*0\.25rem;/);
+  assert.match(css, /--sp-2:\s*0\.5rem;/);
+  assert.match(css, /--sp-3:\s*0\.75rem;/);
+  assert.match(css, /--sp-4:\s*1rem;/);
+  assert.match(css, /--sp-5:\s*1\.5rem;/);
+  assert.match(css, /--sp-6:\s*2rem;/);
+  assert.match(css, /\.card, \.panel \{[^}]*background: var\(--surface\);/s);
   assert.match(css, /h2\s*\{[^}]*font-size:\s*var\(--fs-xl\);/s);
-  assert.match(css, /\.lighting\s*\{[^}]*gap:\s*var\(--s8\);/s);
-  assert.match(css, /\.control-section\s*\{[^}]*gap:\s*var\(--s3\);/s);
+  assert.match(css, /\.lighting\s*\{[^}]*gap:\s*var\(--sp-4\);/s);
+  assert.match(css, /@container \(min-width: 56rem\)/);
   assert.match(css, /font-family:\s*"Noto Sans"/);
   assert.doesNotMatch(css, /Cormorant/);
-  assert.match(css, /@media \(max-width: 900px\)/);
-  assert.match(css, /@media \(max-width: 720px\)/);
-  assert.match(css, /@media \(max-width: 640px\)/);
+  assert.match(css, /@media \(max-width: 40rem\)/);
+  assert.match(css, /container-type: size/);
 });
 
 test("settings changes stay ordered and sliders flush their final value", () => {
@@ -321,9 +340,9 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(app, /if \(immediate\) \{\s+queue\.timer = null;\s+void flushSettingsQueue\(\);/);
   assert.match(app, /document\.addEventListener\("change", \(event\) => \{\s+if \(event\.target instanceof HTMLInputElement && event\.target\.type === "range"\)/);
   assert.doesNotMatch(app, /settingsRevision/);
-  assert.match(css, /\.switch::after \{[^}]*top: 50%;[^}]*transform: translateY\(-50%\);/s);
-  assert.match(css, /\.switch:is\(:checked, \[aria-checked="true"\]\)::after \{[^}]*transform: translate\(18px, -50%\);/s);
-  assert.match(css, /\.switch \{[\s\S]*border-radius: 99px;/);
+  assert.match(css, /\.switch::after \{[^}]*top: 0\.1875rem;[^}]*left: 0\.1875rem;/s);
+  assert.match(css, /\.switch:is\(:checked, \[aria-checked="true"\]\)::after \{[^}]*transform: translateX\(1\.25rem\);/s);
+  assert.match(css, /\.switch \{[\s\S]*border-radius: var\(--r-full\);/);
 });
 
 test("Device settings are grouped by controller, sync, startup, and reset", () => {
@@ -342,7 +361,7 @@ test("Device settings are grouped by controller, sync, startup, and reset", () =
   assert.match(html, /aria-labelledby="group-sync"[\s\S]*id="sync-fps-range"/);
   assert.match(html, /aria-labelledby="group-startup"[\s\S]*id="start-with-windows"/);
   assert.match(html, /aria-labelledby="group-reset"[\s\S]*id="reset-all-data"/);
-  assert.match(css, /\.groups\s*\{[^}]*display:\s*grid;[^}]*gap:\s*var\(--s8\)/s);
+  assert.match(css, /\.groups \{[^}]*display: grid;[^}]*gap: var\(--sp-4\);/s);
 });
 
 test("controller reconnect polling sleeps while connected and retries only while disconnected", () => {
@@ -365,8 +384,8 @@ test("release carousel has dated entries and compact bounded navigation", () => 
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.match(html, /id="release-track"[^>]*aria-live="polite"/);
-  assert.match(html, /id="release-newer"[^>]*aria-label="Newer release"[^>]*>&lt;<\/button>/);
-  assert.match(html, /id="release-older"[^>]*aria-label="Older release"[^>]*>&gt;<\/button>/);
+  assert.match(html, /<button[^>]*id="release-newer"[^>]*aria-label="Newer release"[^>]*>[\s\S]*?<svg/);
+  assert.match(html, /<button[^>]*id="release-older"[^>]*aria-label="Older release"[^>]*>[\s\S]*?<svg/);
   assert.match(html, /id="release-position" type="text" inputmode="numeric" pattern="\[0-9\]\*"[^>]*aria-describedby="release-total"/);
   assert.match(html, /id="release-total"/);
   assert.doesNotMatch(html, /release-progress-markers|release-marker/);
@@ -383,8 +402,8 @@ test("release carousel has dated entries and compact bounded navigation", () => 
   assert.match(app, /entries\[current\]\.animate\(/);
   assert.match(app, /prefers-reduced-motion: reduce/);
   assert.match(css, /\.release-nav\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center/s);
-  assert.match(css, /\.release-nav \[hidden\]\s*\{\s*display:\s*none;\s*\}/);
-  assert.match(css, /\.release-position\s*\{[^}]*width:\s*4ch;[^}]*border-bottom:\s*1px solid var\(--line-strong\);[^}]*text-align:\s*center/s);
+  assert.match(css, /\.release-nav \[hidden\], \.release\[hidden\] \{\s*display: none;/);
+  assert.match(css, /\.release-position \{[^}]*width: 3\.25rem;[^}]*background: var\(--surface-2\);[^}]*text-align: center;/s);
 });
 
 test("release number jumps only to valid entries and restores invalid input", () => {
@@ -428,6 +447,12 @@ test("release notes have one combined entry for 1.0.68 instead of duplicate vers
   assert.equal(releaseVersions.filter((version) => version === "1.0.67").length, 0);
   assert.equal(releaseVersions.filter((version) => version === "1.0.68").length, 1);
   assert.equal(releaseVersions.filter((version) => version === "1.0.77").length, 1);
+  assert.equal(releaseVersions[0], "1.0.81");
+  assert.equal(releaseVersions.filter((version) => version === "1.0.81").length, 1);
+  assert.match(changelog.releases[0].notes.New[0], /any combination of monitor edges/);
+  assert.equal(releaseVersions[1], "1.0.80");
+  assert.equal(releaseVersions.filter((version) => version === "1.0.80").length, 1);
+  assert.match(changelog.releases[1].notes.New[0], /Arrange every detected LED manually around your screen/);
   assert.match(changelog.releases.find(({ version }) => version === "1.0.68").notes.Improved[0], /Reduced idle controller work/);
   assert.match(changelog.legacy.versions[0], /^1\.0\.\d+$/);
 });
@@ -435,32 +460,32 @@ test("release notes have one combined entry for 1.0.68 instead of duplicate vers
 test("LED preview scales with its card and selected LEDs stay within their grid cells", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
-  assert.match(css, /\.preview\s*\{[^}]*container-type:\s*inline-size/s);
-  assert.match(css, /\.led-layout\s*\{[^}]*inset:\s*0/);
-  assert.match(css, /\.led-pixel\s*\{[^}]*position:\s*absolute;[^}]*border-radius:\s*50%/s);
-  assert.match(css, /\.led-pixel\.selected\s*\{[^}]*outline:\s*1\.5px solid #fff;[^}]*outline-offset:\s*-1\.5px/s);
-  assert.match(css, /\.led-pixel:focus-visible:not\(\.selected\)\s*\{\s+outline-offset: 1px;/);
+  assert.match(css, /\.preview-stage \{[^}]*container-type: size;/s);
+  assert.match(css, /--rail: clamp\(0\.4rem, 1\.1vw, 0\.8rem\)/);
+  assert.match(css, /\.led-edge \{[^}]*display: grid;[^}]*gap: 0\.125rem;/s);
+  assert.match(css, /\.led-pixel \{[^}]*border-radius: calc\(var\(--r-sm\) \/ 2\);/s);
+  assert.match(css, /\.led-pixel\.selected \{[^}]*box-shadow: 0 0 0 0\.125rem var\(--text\);/s);
   assert.match(css, /:focus-visible/);
   assert.doesNotMatch(css, /\.led-pixel(?:\.selected)?:hover\s*\{[^}]*transform:\s*scale/);
 });
 
 test("Device and Updates views use available width without enlarging the LED preview", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
-  const monitorRule = css.match(/\.monitor\s*\{([^}]+)\}/)?.[1] || "";
-  const narrowViewRule = css.match(/\.view-narrow\s*\{([^}]+)\}/)?.[1] || "";
+  const monitorRule = css.match(/\.monitor \{([^}]+)\}/)?.[1] || "";
+  const viewRule = css.match(/\.view \{([^}]+)\}/)?.[1] || "";
 
-  assert.match(narrowViewRule, /width:\s*100%/);
-  assert.doesNotMatch(narrowViewRule, /max-width\s*:\s*(?!none\b)[^;]+/);
-  assert.match(monitorRule, /width:\s*min\(100%,\s*calc\(\(100dvh - 330px\) \* var\(--monitor-aspect-ratio, 1\.7778\)\)\)/);
+  assert.match(viewRule, /max-width: 100rem/);
+  assert.match(viewRule, /margin-inline: 0/);
+  assert.match(monitorRule, /width: min\(100cqw, calc\(100cqh \* var\(--monitor-aspect-ratio, 1\.7778\)\)\)/);
   assert.doesNotMatch(monitorRule, /780px/);
 });
 
 test("dropdowns and text fields use a single border for visible keyboard focus", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
-  assert.match(css, /^:focus-visible\s*\{\s+outline: 1\.5px solid #fff;/m);
-  assert.match(css, /select:focus-visible,\s+\.input:focus-visible\s*\{\s+outline: none;\s+border-color: var\(--line-focus\);/);
-  assert.match(css, /\.release-position:focus\s*\{\s+border-color: var\(--text\);\s+outline: none;/);
+  assert.match(css, /^:focus-visible\s*\{\s+outline: 2px solid color-mix\(in srgb, var\(--text\) 60%, transparent\);/m);
+  assert.doesNotMatch(css, /select:focus-visible,\s+\.input:focus-visible\s*\{\s+outline: none/);
+  assert.match(css, /\.release-position \{[^}]*background: var\(--surface-2\);/s);
 });
 
 test("Shift-click selects an inclusive LED range and selected focus keeps its selection mark", () => {
@@ -476,7 +501,7 @@ test("Shift-click selects an inclusive LED range and selected focus keeps its se
   assert.match(bindEvents, /#apply-gradient"\)\.addEventListener\("click", \(\) => void applyGradient\(\)\)/);
   assert.doesNotMatch(startScreenSync, /apply-gradient/);
   assert.match(app, /isLedSelected\(selectedLedIndices, index\)/);
-  assert.match(app, /buildLayout\(count, profile\)\.indices\[edge\]/);
+  assert.match(app, /isEdgeSelected\(selectedLedIndices, indices\)/);
   assert.match(app, /fixedColorChanges\(/);
   assert.match(bindEvents, /#select-all"\)\.addEventListener\("click", \(\) => setSelection\(null\)\)/);
   assert.match(bindEvents, /#deselect-all"\)\.addEventListener\("click", \(\) => setSelection\(new Set\(\)\)\)/);
@@ -502,21 +527,22 @@ test("clicking the preview background or pressing Escape does not clear LED sele
       assert.fail("A click outside an LED should not change the preview");
     }
   };
-  const bindEvents = app.slice(bindStart, bindEnd);
+  const monitorKeydown = app.slice(
+    app.indexOf('$("#monitor").addEventListener("keydown"', bindStart),
+    app.indexOf('$("#select-all")', bindStart)
+  );
 
   assert.notEqual(selectStart, -1);
   assert.notEqual(selectEnd, -1);
   assert.notEqual(bindStart, -1);
   vm.runInNewContext(
-    `${app.slice(selectStart, selectEnd)}\nselectPreviewPosition({ target: {
-      closest: (selector) => selector === ".monitor-screen" ? {} : null
-    } });`,
+    `${app.slice(selectStart, selectEnd)}\nselectPreviewPosition({ target: { closest: () => null } });`,
     context
   );
 
   assert.equal(context.selectedLedIndices, selectedLedIndices);
-  assert.match(bindEvents, /#monitor"\)\.addEventListener\("click", selectPreviewPosition\)/);
-  assert.doesNotMatch(bindEvents, /Escape|selectedLedIndices\s*=/);
+  assert.match(monitorKeydown, /event\.key === "Enter" \|\| event\.key === " "/);
+  assert.doesNotMatch(monitorKeydown, /Escape|selectedLedIndices\s*=/);
 });
 
 test("Scenes save full lighting setups with explicit management actions", () => {
@@ -529,7 +555,7 @@ test("Scenes save full lighting setups with explicit management actions", () => 
   assert.match(html, /id="save-scene"[^>]*>Save current setup/);
   assert.match(html, /id="import-scenes"[^>]*>Import/);
   assert.match(html, /id="export-scenes"[^>]*disabled/);
-  assert.match(html, /Import adds scenes you don’t have yet without replacing any/);
+  assert.match(html, /Import adds new scenes without replacing existing ones\./);
   assert.match(html, /id="scene-form"/);
   assert.match(html, /id="delete-scene-dialog"/);
   assert.match(html, /id="palette-tuning"/);
@@ -537,7 +563,7 @@ test("Scenes save full lighting setups with explicit management actions", () => 
   assert.match(html, /id="gradient-end"/);
   assert.match(html, /id="apply-gradient"/);
   assert.match(html, /id="deselect-all"[^>]*>Deselect all/);
-  assert.match(html, /order you selected the LEDs/);
+  assert.match(html, /Blend two colors across the selected LEDs/);
   assert.match(app, /sceneFromLighting\(/);
   assert.match(app, /function applyGradient\(\)/);
   assert.match(app, /gradientChanges\(/);
@@ -594,7 +620,7 @@ test("saved mode is restored at Windows sign-in and sync modes resume automatica
   assert.match(main, /if \(!startHidden \|\| isSyncStartupMode\(settings\.startupMode\)\) createWindow\(\)/);
   assert.match(html, /id="start-with-windows"/);
   assert.doesNotMatch(html, /resume-screen-sync|Resume Screen Sync/);
-  assert.match(html, /last color or effect, power state, Screen Sync, or Spotify Sync is restored automatically/);
+  assert.match(html, /ULLeds restores your previous mode when it starts\./);
   assert.match(app, /window\.ull\.screenSyncSource\(\)\.then/);
   assert.match(app, /video\.requestVideoFrameCallback\(sampleFrame\)/);
   assert.match(app, /session\.video\.cancelVideoFrameCallback\(session\.videoFrame\)/);
@@ -762,17 +788,17 @@ test("widescreen detection is optional, stable, and asks before changing the cur
   assert.match(main, /!settings\.syncAutoDetect/);
   assert.match(app, /letterboxTracker\.isMissingStable\(\)[\s\S]*session\.detectedAspectRatio = null/);
   assert.match(promptHtml, /href="styles\.css"/);
-  assert.match(promptHtml, /class="secondary-btn"/);
-  assert.match(promptHtml, /class="primary-btn"/);
+  assert.match(promptHtml, /class="btn btn-sm" type="button">Keep current/);
+  assert.match(promptHtml, /class="btn btn-primary btn-sm" type="button">Use detected/);
   assert.match(preload, /onMovieFormatPrompt/);
   assert.match(preload, /chooseMovieFormat/);
   assert.match(preload, /onMovieFormatApplied/);
   assert.match(preload, /notifyMovieFormat: \(aspectRatio\)/);
   assert.match(promptHtml, /id="use-format"/);
   assert.match(promptHtml, /id="keep-current"/);
-  assert.match(promptCss, /background: #141415/);
+  assert.match(promptCss, /--surface: #141416/);
   assert.doesNotMatch(promptCss, /border-left|#D71921|#E51B24/i);
-  assert.match(promptCss, /border: 1px solid rgb\(255 255 255 \/ 0\.14\)/);
+  assert.match(promptCss, /background: var\(--surface\)/);
   assert.match(promptCss, /animation: expire 5s linear forwards/);
   assert.match(promptApp, /choose\("use"\)/);
   assert.match(promptApp, /choose\("keep"\)/);
@@ -790,7 +816,7 @@ test("Updates checks GitHub Releases by default and retains local-folder updates
   assert.match(html, /id="update-source-github"[^>]*value="github"/);
   assert.match(html, /id="update-source-local"[^>]*value="local"/);
   assert.match(html, /Check for updates/);
-  assert.match(html, /Checks the public ULLeds GitHub Releases/);
+  assert.match(html, /Checks public ULLeds GitHub Releases/);
   assert.match(html, /Release notes/);
   assert.match(app, /updateSource: "github"/);
   assert.match(app, /window\.ull\.checkUpdates\(\)/);
@@ -835,8 +861,8 @@ test("the icon build consumes the user PNG and responsive motion preferences are
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   assert.match(main, /icon: path\.join\(__dirname, "assets", "app\.ico"\)/);
   assert.match(packageJson.scripts["dist:win"], /create-icon\.ps1/);
-  assert.match(css, /@media \(max-width: 900px\)/);
-  assert.match(css, /@media \(max-width: 640px\)/);
+  assert.match(css, /@container \(min-width: 56rem\)/);
+  assert.match(css, /@media \(max-width: 40rem\)/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 });
 
@@ -866,9 +892,9 @@ test("full reset is confirmed, clears app and imported profile data, and preserv
 
   assert.match(html, /id="reset-all-data"/);
   assert.match(html, /id="reset-dialog"/);
-  assert.match(html, /imported lighting profiles/);
+  assert.match(html, /preferences and the update folder/);
   assert.doesNotMatch(html, /DX Light|DX-Light|QuikLight/);
-  assert.match(html, /active compatible controller stays connected and selected/);
+  assert.match(html, /The active controller stays connected/);
   assert.match(app, /window\.ull\.resetData\(\)/);
   assert.match(app, /queue\.changes = \{\}/);
   assert.match(app, /sync\.generation \+= 1/);
@@ -900,17 +926,17 @@ test("the Device page can list and switch between detected compatible controller
   assert.match(main, /listSupportedControllers\(await listHidDevicesAsync\(\), profiles\)/);
 });
 
-test("the interface uses bundled Noto Sans typography and hides product branding", () => {
+test("the interface uses bundled Noto Sans typography without a header wordmark", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.doesNotMatch(html, /class="brand"|brand-mark|brand-word/);
   assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), /ULLeds/);
-  assert.match(css, /--font: "Noto Sans", "Segoe UI", system-ui, -apple-system, sans-serif;/);
+  assert.match(css, /--font: "Noto Sans", "Segoe UI", system-ui, sans-serif;/);
   assert.doesNotMatch(css, /CormorantGaramond|Cormorant Garamond/);
   assert.match(css, /NotoSans\[wdth,wght\]\.ttf/);
   assert.equal(fs.existsSync(path.join(__dirname, "..", "assets", "fonts", "NotoSans-OFL.txt")), true);
-  assert.match(css, /--mono: ui-monospace, "Cascadia Code", "SF Mono", Menlo, Consolas, monospace;/);
+  assert.match(css, /--font: "Noto Sans", "Segoe UI", system-ui, sans-serif;/);
 });
 
 test("the frameless window draws its own controls and removes the native menu bar", () => {
@@ -936,27 +962,40 @@ test("editing a connected strip profile updates the live connection profile and 
 
   assert.match(main, /if \(Object\.hasOwn\(changes, "deviceProfile"\) && connectedInfo\) \{\s+connectedInfo = \{\s+\.\.\.connectedInfo,\s+profile: settings\.deviceProfile\s+\?/);
   assert.match(main, /const savedProfile = settings\.devicePath === selected\.path && settings\.deviceProfile\?\.ledCount\s+\?\s+settings\.deviceProfile\s+:\s+selected\.profile\?\.ledCount/);
-  assert.match(main, /profile\.ledPositions\.length !== ledCount/);
-  assert.match(main, /ledPositions: profile\.ledPositions\.map\(\(\{ x, y, edge \}\) => \(\{ x, y, edge \}\)\)/);
-  assert.match(main, /\.\.\.\(savedProfile\?\.ledPositions/);
 });
 
-test("strip profile editor supports manual placement, rotation, and direct coordinates", () => {
+test("strip layout normalizes legacy edge counts and supports every directly selected side", () => {
+  const { normalizeActiveEdges } = require("../strip-layout");
+  assert.deepEqual(normalizeActiveEdges(2), ["top", "left"]);
+  assert.deepEqual(normalizeActiveEdges(["top", "bottom"]), ["top", "bottom"]);
+  assert.deepEqual(normalizeActiveEdges(["top", "right", "bottom", "left"]), [
+    "top", "right", "bottom", "left"
+  ]);
+  assert.equal(normalizeActiveEdges(["top", "unknown"]), null);
+});
+
+test("strip profile editor selects individual edges and supports estimated or manual counts", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
-  assert.match(app, /h\("legend", \{ text: "Arrange the LEDs" \}\)/);
-  assert.match(app, /All \$\{count\} controller LEDs are included/);
-  assert.match(app, /id: "profile-rotate-left"/);
-  assert.match(app, /id: "profile-rotate-right"/);
-  assert.match(app, /id: "profile-reset-layout"/);
-  assert.match(app, /id: "profile-x"/);
-  assert.match(app, /id: "profile-y"/);
-  assert.match(app, /setPointerCapture\(event\.pointerId\)/);
-  assert.match(app, /event\.key === "ArrowRight"/);
-  assert.doesNotMatch(app, /PROFILE_EDGE_LAYOUTS|profileDirectionOptions/);
+  assert.match(app, /const PROFILE_EDGES = \["top", "right", "bottom", "left"\]/);
+  assert.match(app, /activeEdges: profileActiveEdges\(current\)/);
+  assert.match(app, /"auto", "Estimate automatically"/);
+  assert.match(app, /"manual", "Enter counts manually"/);
+  assert.match(app, /The controller reports the total only/);
+  assert.match(app, /document\.createElementNS\("http:\/\/www\.w3\.org\/2000\/svg", tag\)/);
+  assert.match(app, /return svg\("svg", \{ class: "profile-diagram"/);
+  assert.match(app, /profileDraft\.allocationMode === "auto" \? "~" : ""/);
+  assert.match(app, /edgeCounts: allocationMode === "manual" \? layout\.counts : null/);
+  assert.doesNotMatch(app, /PROFILE_EDGE_LAYOUTS/);
+  assert.match(app, /id: "profile-edge-picker"/);
+  assert.match(app, /id: "profile-manual-counts"/);
+  assert.match(main, /normalizeActiveEdges\(edgeSelection\)/);
+  assert.match(main, /Object\.values\(edgeCounts\)\.reduce\(\(sum, count\) => sum \+ count, 0\) === ledCount/);
 });
 
-test("strip profile editing includes the full detected count and keeps color order under Advanced", () => {
+test("strip profile editing keeps optional counts and color order out of the main flow", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
@@ -964,10 +1003,13 @@ test("strip profile editing includes the full detected count and keeps color ord
   assert.match(html, /id="profile-cancel"/);
   assert.match(html, /id="profile-save"/);
   assert.doesNotMatch(html, /wizard-back|wizard-next|class="steps"/);
-  assert.match(app, /ledPositions: profileEditorPositions\.map/);
-  assert.match(app, /if \(profileEditorPositions\.length !== detectedCount\)/);
-  assert.match(app, /The detected LED count cannot be changed/);
-  assert.match(app, /h\("summary", \{ text: "Color order \(advanced\)" \}\)/);
+  assert.match(app, /h\("legend", \{ text: "Choose your monitor edges" \}\)/);
+  assert.match(app, /h\("div", \{ class: "profile-direction-row", role: "group", "aria-label": "LED 1 starts from" \}/);
+  assert.match(app, /h\("summary", \{\},\s+h\("span", \{ text: "LED counts" \}\)/);
+  assert.match(app, /id: "profile-allocation-details"/);
+  assert.match(app, /if \(mode === "manual"\) \$\("#profile-allocation-details"\)\.open = true/);
+  assert.match(app, /h\("summary", \{ text: "Color order" \}\)/);
+  assert.match(app, /profileDraft\.installationMethod/);
   assert.match(app, /if \(setupOnboarding\) changes\.onboarded = true/);
   assert.match(app, /await saveSettingsNow\(changes\);\s+\$\("#setup-dialog"\)\.close\(\)/);
   assert.doesNotMatch(app, /wizardStep|setWizardStep|advanceWizard/);
@@ -976,7 +1018,7 @@ test("strip profile editing includes the full detected count and keeps color ord
 test("screen sync uses an updated strip layout immediately after profile edits", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
-  assert.match(app, /JSON\.stringify\(\[layout\.ledCount, layout\.indices, layout\.positions\]\)/);
+  assert.match(app, /const stripLayoutSignature = \(layout\) => JSON\.stringify\(\[layout\.ledCount, layout\.indices\]\)/);
   assert.match(app, /if \(sync\.session\.layoutSignature !== signature\) \{\s+sync\.session\.layout = layout;\s+sync\.session\.layoutSignature = signature;\s+sync\.session\.colors = null;/);
   assert.match(app, /sync\.session\.layout = layout/);
 });

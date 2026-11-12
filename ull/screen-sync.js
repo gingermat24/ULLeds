@@ -176,15 +176,6 @@ function sampleStripColors(pixels, width, height, layout, contentAspectRatio = n
         (!Number.isFinite(contentAspectRatio) || contentAspectRatio <= 0))) {
     throw new TypeError("Screen image and strip layout are invalid.");
   }
-  if (layout.positions !== undefined &&
-      (!Array.isArray(layout.positions) || layout.positions.length !== layout.ledCount ||
-        layout.positions.some((position) =>
-          !position || typeof position !== "object" || Array.isArray(position) ||
-          !Number.isFinite(position.x) || position.x < 0 || position.x > 100 ||
-          !Number.isFinite(position.y) || position.y < 0 || position.y > 100 ||
-          !["top", "left", "right", "bottom"].includes(position.edge)))) {
-    throw new TypeError("Screen image and strip layout are invalid.");
-  }
   let contentLeft = 0;
   let contentTop = 0;
   let contentWidth = width;
@@ -272,23 +263,11 @@ function sampleStripColors(pixels, width, height, layout, contentAspectRatio = n
       .map((channel) => channel.toString(16).padStart(2, "0"))
       .join("")}`;
   };
-  if (layout.positions) {
-    layout.positions.forEach(({ x, y, edge }, ledIndex) => {
-      const horizontalEdge = edge === "top" || edge === "bottom";
-      // Avoid changing legacy sample pixels at floating-point half-pixel boundaries.
-      const centerX = Math.min(width - 1, Math.max(0,
-        Math.round(contentLeft + x / 100 * (horizontalEdge ? contentWidth - 1 : contentWidth) + 1e-9)));
-      const centerY = Math.min(height - 1, Math.max(0,
-        Math.round(contentTop + y / 100 * (horizontalEdge ? contentHeight : contentHeight - 1) + 1e-9)));
+  for (const [edge, indices] of Object.entries(layout.indices)) {
+    indices.forEach((ledIndex, position) => {
+      const [centerX, centerY] = samplePosition(edge, position, indices.length);
       colors[ledIndex] = sampleColor(centerX, centerY);
     });
-  } else {
-    for (const [edge, indices] of Object.entries(layout.indices)) {
-      indices.forEach((ledIndex, position) => {
-        const [centerX, centerY] = samplePosition(edge, position, indices.length);
-        colors[ledIndex] = sampleColor(centerX, centerY);
-      });
-    }
   }
   return colors;
 }

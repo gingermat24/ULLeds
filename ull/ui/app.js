@@ -91,9 +91,7 @@ const releases = {
 };
 
 let setupOnboarding = false;
-let profileEditorPositions = [];
-let profileSelectedLed = 0;
-let draggedProfileLed = null;
+let profileDraft = null;
 let sceneDialogMode = null;
 let pendingVersionNotice = null;
 let toastTimer;
@@ -123,14 +121,33 @@ function h(tag, attrs = {}, ...children) {
   return node;
 }
 
+function svg(tag, attrs = {}, ...children) {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value != null && value !== false) node.setAttribute(key, value === true ? "" : value);
+  }
+  node.append(...children.filter(Boolean));
+  return node;
+}
+
 const currentProfile = () => state.device.profile || state.settings.deviceProfile;
 
 function buildLayout(ledCount, profile) {
-  return window.ullStripLayout.createStripLayout(ledCount, profile);
+  const aspectRatio = Number.isFinite(window.screen?.width / window.screen?.height)
+    ? window.screen.width / window.screen.height
+    : 16 / 9;
+  return window.ullStripLayout.allocateEdgeIndices(
+    ledCount,
+    profile?.activeEdges || profile?.edgeCount || 3,
+    profile?.installationMethod ?? 0,
+    {
+      aspectRatio,
+      edgeCounts: profile?.allocationMode === "manual" ? profile.edgeCounts : undefined
+    }
+  );
 }
 
-const stripLayoutSignature = (layout) =>
-  JSON.stringify([layout.ledCount, layout.indices, layout.positions]);
+const stripLayoutSignature = (layout) => JSON.stringify([layout.ledCount, layout.indices]);
 
 function toast(message) {
   const element = $("#toast");
@@ -329,7 +346,9 @@ function renderProfile(profile) {
     : "Not detected";
   $("#settings-order").textContent = profile?.colorOrder || "Not configured";
   $("#settings-layout").textContent = profile?.edgeCount
-    ? `${edgeCoverageLabel(profile.edgeCount)} · starts ${profileStartCorner(profile.edgeCount, profile.installationMethod ?? 0)}`
+    ? Object.entries(buildLayout(profile.ledCount || profileCount() || 75, profile).counts)
+      .map(([edge, count]) => `${PROFILE_EDGE_LABELS[edge]} ${count}`)
+      .join(" · ")
     : "Not configured";
 }
 
@@ -390,53 +409,35 @@ function paintSessionPixels(session) {
   }
 }
 
-function renderLedPixels(container, layout) {
-  const sameLayout = container.children.length === layout.ledCount &&
-    layout.positions.every((position, index) => {
-      const pixel = container.children[index];
-      return Number(pixel?.dataset.ledIndex) === index &&
-        Number(pixel?.dataset.x) === position.x &&
-        Number(pixel?.dataset.y) === position.y;
-    });
+function renderEdgePixels(container, indices, edge) {
+  const sameLayout = container.children.length === indices.length &&
+    indices.every((index, position) => Number(container.children[position]?.dataset.ledIndex) === index);
 
   if (!sameLayout) {
-    container.replaceChildren(...layout.positions.map((position, index) => {
-      const pixel = h("button", {
+    container.replaceChildren(...indices.map((index) =>
+      h("button", {
         type: "button",
         class: "led-pixel",
-        dataset: { ledIndex: String(index) }
-      });
-      pixel.style.left = `${position.x}%`;
-      pixel.style.top = `${position.y}%`;
-      pixel.dataset.x = String(position.x);
-      pixel.dataset.y = String(position.y);
-      return pixel;
-    }));
+        dataset: { ledIndex: String(index) },
+        "aria-label": `Select LED ${index + 1}, ${edge} side`
+      })
+    ));
   }
 
-  const pixelSize = Math.max(4, Math.min(11, 150 / Math.sqrt(layout.ledCount)));
-  layout.positions.forEach((position, index) => {
-    const pixel = container.children[index];
+  for (const [position, index] of indices.entries()) {
+    const pixel = container.children[position];
     const selected = window.ullLedSelection.isLedSelected(selectedLedIndices, index);
     const color = calibratedColor(
       sync.session?.colors?.[index] || state.settings.ledColors?.[index] || state.settings.color,
       state.settings.channelGains
     );
-    const label = `Select LED ${index + 1}, ${position.edge} side${selected ? ", selected" : ""}`;
+    const label = `Select LED ${index + 1}, ${edge} side${selected ? ", selected" : ""}`;
 
     setPixelColor(pixel, color);
-    pixel.style.left = `${position.x}%`;
-    pixel.style.top = `${position.y}%`;
-    pixel.style.width = `${pixelSize}px`;
-    pixel.style.height = `${pixelSize}px`;
-    pixel.textContent = selectedLedIndices?.size === 1 && selected ? String(index + 1) : "";
-    pixel.dataset.edge = position.edge;
-    pixel.dataset.x = String(position.x);
-    pixel.dataset.y = String(position.y);
     if (pixel.getAttribute("aria-label") !== label) pixel.setAttribute("aria-label", label);
     pixel.setAttribute("aria-pressed", String(selected));
     pixel.classList.toggle("selected", selected);
-  });
+  }
 }
 
 function selectedColor() {
@@ -450,9 +451,7 @@ function updatePreview() {
   const settings = state.settings;
   const profile = currentProfile();
   const count = Number.isInteger(profile?.ledCount) ? clamp(profile.ledCount, 1, MAX_LEDS) : 0;
-  const layout = count
-    ? buildLayout(count, profile)
-    : { ledCount: 0, counts: {}, indices: {}, positions: [] };
+  const layout = count ? buildLayout(count, profile) : { counts: {}, indices: {} };
 
   if (selectedLedIndices && count) {
     selectedLedIndices = new Set([...selectedLedIndices].filter((index) => index < count));
@@ -473,17 +472,23 @@ function updatePreview() {
       sync.session.layoutSignature = signature;
       sync.session.colors = null;
     }
-    sync.session.pixelElements = $$("#led-layout .led-pixel");
+    sync.session.pixelElements = $$(".led-pixel");
   }
 
   updateRangeFills();
 }
 
 function renderMonitor(settings, profile, count, layout) {
-  renderLedPixels($("#led-layout"), layout);
+  for (const edge of ["top", "left", "right", "bottom"]) {
+    const indices = layout.indices[edge] || [];
+    const container = $(`#led-${edge}`);
+    renderEdgePixels(container, indices, edge);
+    container.classList.toggle("hidden", indices.length === 0);
+    container.classList.toggle("selected", window.ullLedSelection.isEdgeSelected(selectedLedIndices, indices));
+  }
 
   $("#monitor").dataset.power = settings.power ? "on" : "off";
-  $("#preview-title").textContent = "LED layout preview";
+  $("#preview-title").textContent = "LED layout";
 
   const root = document.documentElement.style;
   root.setProperty("--led-color", settings.color);
@@ -665,6 +670,8 @@ async function applyGradient() {
 
 function selectPreviewPosition(event) {
   const pixel = event.target.closest(".led-pixel");
+  const edge = pixel?.closest(".led-edge") || event.target.closest(".led-edge");
+  if (!edge) return;
 
   if (pixel) {
     const index = Number(pixel.dataset.ledIndex);
@@ -673,19 +680,10 @@ function selectPreviewPosition(event) {
       : window.ullLedSelection.selectLed(selectedLedIndices, index, event.ctrlKey || event.metaKey);
     selectedLedAnchorIndex = index;
   } else {
-    if (event.target.closest(".monitor-screen")) return;
     const profile = currentProfile();
     const count = Number(profile?.ledCount);
     if (!Number.isInteger(count)) return;
-    const rect = $("#monitor").getBoundingClientRect();
-    const distances = {
-      top: Math.abs(event.clientY - rect.top),
-      right: Math.abs(rect.right - event.clientX),
-      bottom: Math.abs(rect.bottom - event.clientY),
-      left: Math.abs(event.clientX - rect.left)
-    };
-    const edge = Object.entries(distances).sort((a, b) => a[1] - b[1])[0][0];
-    selectedLedIndices = new Set(buildLayout(count, profile).indices[edge] || []);
+    selectedLedIndices = new Set(buildLayout(count, profile).indices[edge.dataset.edge] || []);
     selectedLedAnchorIndex = null;
   }
   updatePreview();
@@ -1792,6 +1790,14 @@ async function loadReleaseDownloads() {
    10. Strip profile and reset
    ========================================================================== */
 
+const PROFILE_EDGES = ["top", "right", "bottom", "left"];
+const PROFILE_EDGE_LABELS = { top: "Top", right: "Right", bottom: "Bottom", left: "Left" };
+
+function profileActiveEdges(profile) {
+  return window.ullStripLayout.normalizeActiveEdges(profile?.activeEdges ?? profile?.edgeCount) ||
+    ["top", "left", "right"];
+}
+
 function profileCount() {
   const saved = currentProfile();
   return state.device.connected && Number.isInteger(state.device.profile?.ledCount)
@@ -1804,9 +1810,163 @@ function profileCount() {
 function updateProfileCount() {
   const count = profileCount();
   $("#profile-led-count").textContent = count
-    ? `${count} LEDs ${state.device.connected ? "detected" : "saved"} · all included`
+    ? `${count} LEDs ${state.device.connected ? "detected" : "saved"}`
     : "Not detected";
   $("#profile-scan").textContent = state.device.connected ? "Scan again" : "Scan for controller";
+  if (profileDraft && $("#profile-edge-picker")) renderProfileAllocation();
+}
+
+function profileEdgeDiagram(activeEdges) {
+  const coordinates = {
+    top: [12, 8, 60, 8],
+    right: [60, 8, 60, 40],
+    bottom: [12, 40, 60, 40],
+    left: [12, 8, 12, 40]
+  };
+  const lines = Object.entries(coordinates).map(([edge, [x1, y1, x2, y2]]) =>
+    svg("line", {
+      x1, y1, x2, y2,
+      class: `profile-diagram-edge${activeEdges.includes(edge) ? " is-active" : ""}`
+    })
+  );
+  return svg("svg", { class: "profile-diagram", viewBox: "0 0 72 48", "aria-hidden": "true" },
+    svg("rect", { x: 15, y: 11, width: 42, height: 26, rx: 2, class: "profile-diagram-screen" }),
+    ...lines
+  );
+}
+
+function renderProfileDirectionChoices() {
+  const container = $("#profile-direction-choices");
+  container.replaceChildren(...[
+    ["From left", 0],
+    ["From right", 1]
+  ].map(([label, value]) => {
+    const button = h("button", {
+      class: "profile-start-option",
+      type: "button",
+      text: label,
+      "aria-pressed": String(profileDraft.installationMethod === value),
+      onclick: () => {
+        profileDraft.installationMethod = value;
+        renderProfileDirectionChoices();
+        renderProfileAllocation();
+        $(`#profile-direction-choices [data-installation-method="${value}"]`)?.focus();
+      }
+    });
+    button.dataset.installationMethod = String(value);
+    return button;
+  }));
+}
+
+function profileEstimatedLayout() {
+  const ledCount = profileCount() || state.settings.ledCount || 75;
+  const aspectRatio = Number.isFinite(window.screen?.width / window.screen?.height)
+    ? window.screen.width / window.screen.height
+    : 16 / 9;
+  return window.ullStripLayout.allocateEdgeIndices(
+    ledCount,
+    profileDraft.activeEdges,
+    profileDraft.installationMethod,
+    { aspectRatio }
+  );
+}
+
+function renderProfileEdgePicker() {
+  const container = $("#profile-edge-picker");
+  const counts = profileDraft.allocationMode === "manual"
+    ? profileDraft.edgeCounts
+    : profileEstimatedLayout().counts;
+  const buttons = PROFILE_EDGES.map((edge) => {
+    const count = counts?.[edge] ?? 0;
+    const button = h("button", {
+      class: `profile-edge-option${profileDraft.activeEdges.includes(edge) ? " is-active" : ""}`,
+      type: "button",
+      "aria-pressed": String(profileDraft.activeEdges.includes(edge)),
+      "aria-label": `${PROFILE_EDGE_LABELS[edge]} edge`,
+      onclick: () => {
+        const next = new Set(profileDraft.activeEdges);
+        if (next.has(edge)) {
+          if (next.size === 1) return;
+          next.delete(edge);
+        } else {
+          next.add(edge);
+        }
+        profileDraft.activeEdges = PROFILE_EDGES.filter((name) => next.has(name));
+        profileDraft.edgeCounts = { ...profileEstimatedLayout().counts };
+        renderProfileEdgePicker();
+        renderProfileAllocation();
+        $(`#profile-edge-picker [data-edge="${edge}"]`)?.focus();
+      }
+    },
+      h("span", { class: "profile-edge-label", text: PROFILE_EDGE_LABELS[edge] }),
+      h("span", {
+        class: "profile-edge-count",
+        text: profileDraft.activeEdges.includes(edge)
+          ? `${profileDraft.allocationMode === "auto" ? "~" : ""}${count} LEDs`
+          : "Off"
+      })
+    );
+    button.dataset.edge = edge;
+    return button;
+  });
+  container.replaceChildren(
+    buttons.find((button) => button.dataset.edge === "top"),
+    buttons.find((button) => button.dataset.edge === "left"),
+    h("div", { class: "profile-monitor" }, profileEdgeDiagram(profileDraft.activeEdges)),
+    buttons.find((button) => button.dataset.edge === "right"),
+    buttons.find((button) => button.dataset.edge === "bottom")
+  );
+}
+
+function renderProfileAllocation(rebuildInputs = true) {
+  const estimated = profileEstimatedLayout();
+  const count = profileCount() || state.settings.ledCount || 75;
+  const isManual = profileDraft.allocationMode === "manual";
+  if (isManual && !profileDraft.edgeCounts) profileDraft.edgeCounts = { ...estimated.counts };
+  const counts = isManual ? profileDraft.edgeCounts : estimated.counts;
+  const assigned = profileDraft.activeEdges.reduce((sum, edge) => sum + (Number(counts?.[edge]) || 0), 0);
+  const complete = profileDraft.activeEdges.every((edge) =>
+    Number.isInteger(Number(counts?.[edge])) && Number(counts[edge]) > 0) && assigned === count;
+
+  $("#profile-allocation-mode").querySelectorAll("[data-allocation-mode]").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.allocationMode === profileDraft.allocationMode));
+  });
+  $("#profile-allocation-summary").textContent = [
+    isManual ? "Manual" : "Estimate",
+    ...profileDraft.activeEdges.map((edge) => `${PROFILE_EDGE_LABELS[edge]} ${Number(counts?.[edge]) || 0}`)
+  ].join(" · ");
+  $("#profile-allocation-total").textContent = `${assigned} of ${count} LEDs assigned`;
+  $("#profile-allocation-hint").textContent = isManual
+    ? "Enter the actual LED count on each selected side. Counts must add up to the controller total."
+    : "The controller reports the total only. Side counts are estimated from your display proportions.";
+  $("#profile-allocation-total").classList.toggle("is-invalid", !complete);
+  $("#profile-save").disabled = !complete;
+  $("#profile-manual-counts").classList.toggle("hidden", !isManual);
+
+  if (isManual && rebuildInputs) {
+    $("#profile-manual-counts").replaceChildren(...profileDraft.activeEdges.map((edge) => {
+      const input = h("input", {
+        class: "input input-number",
+        type: "number",
+        min: "1",
+        max: String(count),
+        step: "1",
+        value: String(counts?.[edge] ?? ""),
+        "aria-label": `${PROFILE_EDGE_LABELS[edge]} edge LED count`,
+        oninput: (event) => {
+          profileDraft.edgeCounts[edge] = event.target.value === "" ? 0 : Number(event.target.value);
+          renderProfileAllocation(false);
+          renderProfileEdgePicker();
+        }
+      });
+      input.dataset.profileEdgeCount = edge;
+      return h("label", { class: "profile-count-field" },
+        h("span", { text: PROFILE_EDGE_LABELS[edge] }),
+        input
+      );
+    }));
+  }
+  renderProfileEdgePicker();
 }
 
 function selectField(label, id, setting, value, options) {
@@ -1817,229 +1977,91 @@ function selectField(label, id, setting, value, options) {
   return h("label", { class: "field", for: id }, h("span", { text: label }), select);
 }
 
-function profileEdgeForPosition(x, y) {
-  const canvas = $("#profile-canvas");
-  const width = canvas?.clientWidth || 16 / 9;
-  const height = canvas?.clientHeight || 1;
-  const distances = {
-    top: y * height / 100,
-    right: (100 - x) * width / 100,
-    bottom: (100 - y) * height / 100,
-    left: x * width / 100
-  };
-  return Object.entries(distances).sort((a, b) => a[1] - b[1])[0][0];
-}
-
-function positionProfileOrderSegment(segment, index) {
-  const canvas = $("#profile-canvas");
-  const width = canvas.clientWidth || 560;
-  const height = canvas.clientHeight || 315;
-  const previous = profileEditorPositions[index];
-  const next = profileEditorPositions[index + 1];
-  const deltaX = (next.x - previous.x) * width / 100;
-  const deltaY = (next.y - previous.y) * height / 100;
-  segment.style.left = `${previous.x}%`;
-  segment.style.top = `${previous.y}%`;
-  segment.style.width = `${Math.hypot(deltaX, deltaY)}px`;
-  segment.style.transform = `rotate(${Math.atan2(deltaY, deltaX)}rad)`;
-}
-
-function createProfileOrderSegment(index) {
-  const segment = h("span", {
-    class: "profile-order-segment",
-    dataset: { profileSegment: String(index) },
-    "aria-hidden": "true"
-  });
-  positionProfileOrderSegment(segment, index);
-  return segment;
-}
-
-function renderProfilePoints() {
-  const points = $("#profile-points");
-  if (!points) return;
-  const dots = profileEditorPositions.map((position, index) => {
-    const point = h("button", {
-      type: "button",
-      class: `profile-led-dot${index === profileSelectedLed ? " is-active" : ""}`,
-      dataset: { profileLed: String(index) },
-      "aria-label": `Select LED ${index + 1}, ${position.edge} side`,
-      title: `LED ${index + 1}`
-    });
-    point.style.left = `${position.x}%`;
-    point.style.top = `${position.y}%`;
-    if (index === profileSelectedLed) point.textContent = String(index + 1);
-    return point;
-  });
-  const segments = Array.from({ length: Math.max(0, profileEditorPositions.length - 1) },
-    (_, index) => createProfileOrderSegment(index));
-  points.replaceChildren(...segments, ...dots);
-}
-
-function updateProfileCoordinateFields() {
-  if (!profileEditorPositions.length) return;
-  const position = profileEditorPositions[profileSelectedLed];
-  $("#profile-x").value = String(position.x);
-  $("#profile-y").value = String(position.y);
-}
-
-function updateProfilePositionFields() {
-  const count = profileEditorPositions.length;
-  if (!count) return;
-  profileSelectedLed = clamp(profileSelectedLed, 0, count - 1);
-  $("#profile-selected-led").value = String(profileSelectedLed + 1);
-  $("#profile-selected-label").textContent = `of ${count}`;
-  updateProfileCoordinateFields();
-  $("#profile-previous-led").disabled = profileSelectedLed === 0;
-  $("#profile-next-led").disabled = profileSelectedLed === count - 1;
-  for (const point of $$(".profile-led-dot", $("#profile-points"))) {
-    const index = Number(point.dataset.profileLed);
-    const active = index === profileSelectedLed;
-    point.classList.toggle("is-active", active);
-    point.textContent = active ? String(index + 1) : "";
-    point.setAttribute("aria-label",
-      `Select LED ${index + 1}, ${profileEditorPositions[index].edge} side${active ? ", selected" : ""}`);
-  }
-}
-
-function selectProfileLed(index) {
-  if (!Number.isInteger(index) || index < 0 || index >= profileEditorPositions.length) return;
-  profileSelectedLed = index;
-  updateProfilePositionFields();
-}
-
-function setProfileLedPosition(index, x, y) {
-  const position = {
-    x: Math.round(clamp(x, 0, 100) * 10) / 10,
-    y: Math.round(clamp(y, 0, 100) * 10) / 10
-  };
-  const previous = profileEditorPositions[index];
-  if (previous.x === position.x && previous.y === position.y) return;
-  profileEditorPositions[index] = {
-    ...position,
-    edge: profileEdgeForPosition(position.x, position.y)
-  };
-  const point = $(`.profile-led-dot[data-profile-led="${index}"]`, $("#profile-points"));
-  if (point) {
-    point.style.left = `${position.x}%`;
-    point.style.top = `${position.y}%`;
-    point.setAttribute("aria-label",
-      `Select LED ${index + 1}, ${profileEditorPositions[index].edge} side${index === profileSelectedLed ? ", selected" : ""}`);
-  }
-  for (const segmentIndex of [index - 1, index]) {
-    const segment = $(`.profile-order-segment[data-profile-segment="${segmentIndex}"]`, $("#profile-points"));
-    if (segment) positionProfileOrderSegment(segment, segmentIndex);
-  }
-  updateProfileCoordinateFields();
-}
-
-function rotateProfileLayout(direction) {
-  const clockwise = direction === "clockwise";
-  const rotatedEdges = clockwise
-    ? { top: "right", right: "bottom", bottom: "left", left: "top" }
-    : { top: "left", left: "bottom", bottom: "right", right: "top" };
-  profileEditorPositions = profileEditorPositions.map(({ x, y, edge }) => ({
-    x: clockwise ? 100 - y : y,
-    y: clockwise ? x : 100 - x,
-    edge: rotatedEdges[edge]
-  }));
-  renderProfilePoints();
-  updateProfilePositionFields();
-}
-
 function renderProfileEditor() {
   const current = currentProfile() || {};
-  const count = profileCount();
-  profileEditorPositions = count
-    ? window.ullStripLayout.createStripLayout(count, current).positions
-      .map(({ x, y, edge }) => ({ x, y, edge }))
-    : [];
-  profileSelectedLed = clamp(profileSelectedLed, 0, Math.max(0, profileEditorPositions.length - 1));
+  profileDraft = {
+    activeEdges: profileActiveEdges(current),
+    installationMethod: current.installationMethod === 1 ? 1 : 0,
+    allocationMode: current.allocationMode === "manual" ? "manual" : "auto",
+    edgeCounts: current.allocationMode === "manual" && current.edgeCounts
+      ? { ...current.edgeCounts }
+      : null
+  };
   const content = $("#profile-content");
 
-  $("#profile-title").textContent = setupOnboarding ? "Set up your LED strip" : "Edit strip layout";
-  $("#profile-copy").textContent = "Place each detected LED where it sits around your screen. Drag a marker, or select an LED and enter its coordinates.";
+  $("#profile-title").textContent = setupOnboarding ? "Set up your LED strip" : "Strip layout";
+  $("#profile-copy").textContent = "Choose where the LEDs sit around your monitor.";
   $("#profile-save").textContent = setupOnboarding ? "Save and start using ULLeds" : "Save profile";
   $("#profile-cancel").textContent = setupOnboarding ? "Set up later" : "Cancel";
 
   content.replaceChildren(
     h("div", { class: "profile-count" },
       h("div", { class: "profile-count-copy" },
-        h("span", { text: "LED count" }),
         h("strong", { id: "profile-led-count", text: "Not detected" })
       ),
       h("button", {
         class: "btn",
         id: "profile-scan",
         type: "button",
-        text: "Scan for controller",
+        text: state.device.connected ? "Scan again" : "Scan for controller",
         onclick: async () => {
-          await scanDevices();
-          renderProfileEditor();
+          $("#profile-scan").textContent = "Scanning…";
+          $("#profile-scan").disabled = true;
+          try {
+            await scanDevices();
+          } finally {
+            $("#profile-scan").disabled = false;
+            updateProfileCount();
+          }
         }
       })
     ),
-    count
-      ? h("fieldset", { class: "profile-section profile-manual-layout" },
-          h("legend", { text: "Arrange the LEDs" }),
-          h("p", {
-            class: "hint",
-            text: `All ${count} controller LEDs are included. Drag a marker to match its physical position; the line follows the controller's actual LED order.`
-          }),
-          h("div", { class: "profile-canvas", id: "profile-canvas", role: "group", "aria-label": "Screen and LED positions" },
-            h("div", { class: "profile-canvas-screen", "aria-hidden": "true" },
-              h("span", { text: "Screen" })
-            ),
-            h("div", { class: "profile-points", id: "profile-points" })
-          ),
-          h("div", { class: "profile-position-tools" },
-            h("div", { class: "profile-led-picker" },
-              h("label", { for: "profile-selected-led", text: "LED" }),
-              h("button", {
-                class: "btn btn-ghost btn-sm",
-                id: "profile-previous-led",
-                type: "button",
-                text: "Previous",
-                "aria-label": "Select previous LED"
-              }),
-              h("input", {
-                class: "input input-text profile-index-input",
-                id: "profile-selected-led",
-                type: "number",
-                min: "1",
-                max: String(count),
-                step: "1",
-                value: String(profileSelectedLed + 1),
-                "aria-label": "LED number"
-              }),
-              h("span", { id: "profile-selected-label", class: "profile-led-total", text: `of ${count}` }),
-              h("button", {
-                class: "btn btn-ghost btn-sm",
-                id: "profile-next-led",
-                type: "button",
-                text: "Next",
-                "aria-label": "Select next LED"
-              })
-            ),
-            h("div", { class: "profile-rotation-actions" },
-              h("button", { class: "btn btn-ghost btn-sm", id: "profile-rotate-left", type: "button", text: "Rotate left" }),
-              h("button", { class: "btn btn-ghost btn-sm", id: "profile-rotate-right", type: "button", text: "Rotate right" }),
-              h("button", { class: "btn btn-ghost btn-sm", id: "profile-reset-layout", type: "button", text: "Reset layout" })
-            )
-          ),
-          h("div", { class: "profile-coordinate-controls" },
-            h("label", { class: "field", for: "profile-x" },
-              h("span", { text: "Horizontal position (%)" }),
-              h("input", { class: "input input-text", id: "profile-x", type: "number", min: "0", max: "100", step: "0.1" })
-            ),
-            h("label", { class: "field", for: "profile-y" },
-              h("span", { text: "Vertical position (%)" }),
-              h("input", { class: "input input-text", id: "profile-y", type: "number", min: "0", max: "100", step: "0.1" })
-            )
-          )
-        )
-      : h("p", { class: "hint profile-awaiting-device", text: "Scan for a controller to arrange its LEDs. The detected LED count cannot be changed." }),
+    h("fieldset", { class: "profile-section" },
+    h("legend", { text: "Choose your monitor edges" }),
+    h("p", { class: "hint", text: "Tap an edge to switch it on or off." }),
+    h("div", { class: "profile-edge-picker", id: "profile-edge-picker" })
+    ),
+    h("div", { class: "profile-direction-row", role: "group", "aria-label": "LED 1 starts from" },
+    h("span", { class: "profile-direction-label", text: "LED 1 starts from" }),
+    h("div", { class: "profile-direction-choices", id: "profile-direction-choices" })
+    ),
+    h("details", { class: "disclosure profile-allocation", id: "profile-allocation-details" },
+    h("summary", {},
+      h("span", { text: "LED counts" }),
+      h("span", { class: "profile-allocation-summary", id: "profile-allocation-summary" })
+    ),
+    h("div", { class: "profile-allocation-content" },
+    h("div", { class: "profile-allocation-mode", id: "profile-allocation-mode" },
+      ...[
+        ["auto", "Estimate automatically"],
+        ["manual", "Enter counts manually"]
+      ].map(([mode, label]) => {
+        const button = h("button", {
+          class: "profile-allocation-option",
+          type: "button",
+          text: label,
+          "aria-pressed": String(profileDraft.allocationMode === mode),
+          onclick: () => {
+            profileDraft.allocationMode = mode;
+            if (mode === "manual") $("#profile-allocation-details").open = true;
+            if (mode === "manual" && !profileDraft.edgeCounts) {
+              profileDraft.edgeCounts = { ...profileEstimatedLayout().counts };
+            }
+            renderProfileAllocation();
+            $(`#profile-allocation-mode [data-allocation-mode="${mode}"]`)?.focus();
+          }
+        });
+        button.dataset.allocationMode = mode;
+        return button;
+      })
+    ),
+    h("p", { class: "hint", id: "profile-allocation-hint" }),
+    h("p", { class: "profile-allocation-total", id: "profile-allocation-total" }),
+    h("div", { class: "profile-manual-counts hidden", id: "profile-manual-counts" })
+    ),
+    ),
     h("details", { class: "disclosure profile-advanced" },
-      h("summary", { text: "Color order (advanced)" }),
+      h("summary", { text: "Color order" }),
       h("div", { class: "profile-advanced-content" },
         h("p", { class: "hint", text: "Most controllers use RGB. Change this only if colors appear in the wrong order." }),
         selectField("LED color order", "profile-color-order", "colorOrder", current.colorOrder || "RGB",
@@ -2048,20 +2070,13 @@ function renderProfileEditor() {
     )
   );
   updateProfileCount();
-  if (count) {
-    renderProfilePoints();
-    updateProfilePositionFields();
-  }
+  renderProfileDirectionChoices();
 }
 
 function openSetup(onboarding = !state.settings.onboarded) {
   setupOnboarding = onboarding;
   renderProfileEditor();
   $("#setup-dialog").showModal();
-  if (profileEditorPositions.length) {
-    renderProfilePoints();
-    updateProfilePositionFields();
-  }
 }
 
 async function saveProfile() {
@@ -2072,34 +2087,47 @@ async function saveProfile() {
       await scanDevices();
       current = currentProfile() || {};
       detectedCount = profileCount();
-      if (Number.isInteger(detectedCount)) renderProfileEditor();
     }
     if (!Number.isInteger(detectedCount)) {
-      return toast("Connect your controller so ULLeds can detect the LED count.");
+      detectedCount = state.settings.ledCount || 75;
     }
 
-    const edgeCount = Number.isInteger(current.edgeCount) && current.edgeCount >= 1 && current.edgeCount <= 4
-      ? current.edgeCount
-      : 3;
-    const installationMethod = current.installationMethod === 1 ? 1 : 0;
-    if (profileEditorPositions.length !== detectedCount) {
-      profileEditorPositions = window.ullStripLayout.createDefaultLedPositions(
-        detectedCount,
-        edgeCount,
-        installationMethod
-      );
+    const edgeCount = profileDraft.activeEdges.length;
+    const installationMethod = profileDraft.installationMethod;
+    const colorOrder = $("#profile-color-order")?.value || current.colorOrder || "RGB";
+    const allocationMode = profileDraft.allocationMode;
+    if (allocationMode === "manual" &&
+        profileDraft.activeEdges.reduce((sum, edge) => sum + Number(profileDraft.edgeCounts[edge] || 0), 0) !== detectedCount) {
+      renderProfileAllocation();
+      toast(`Manual side counts must add up to the detected total of ${detectedCount} LEDs.`);
+      return;
     }
+    const edgeCounts = allocationMode === "manual"
+      ? Object.fromEntries(profileDraft.activeEdges.map((edge) => [edge, Number(profileDraft.edgeCounts[edge])]))
+      : null;
+    const layout = window.ullStripLayout.allocateEdgeIndices(
+      detectedCount,
+      profileDraft.activeEdges,
+      installationMethod,
+      {
+        aspectRatio: window.screen.width / window.screen.height,
+        edgeCounts: allocationMode === "manual" ? edgeCounts : undefined
+      }
+    );
+
     const changes = {
       deviceProfile: {
         name: deviceLabel(state.device.profile?.name || current.name),
         ledCount: detectedCount,
         edgeCount,
+        activeEdges: [...profileDraft.activeEdges],
         installationMethod,
-        colorOrder: $("#profile-color-order").value,
+        allocationMode,
+        edgeCounts: allocationMode === "manual" ? layout.counts : null,
+        colorOrder,
         position: current.position || "monitor-back",
         matchedBy: "manual",
-        color: state.settings.color,
-        ledPositions: profileEditorPositions.map(({ x, y, edge }) => ({ x, y, edge }))
+        color: state.settings.color
       }
     };
     if (setupOnboarding) changes.onboarded = true;
@@ -2115,98 +2143,6 @@ async function saveProfile() {
 function bindProfileEditor() {
   $("#profile-cancel").addEventListener("click", () => $("#setup-dialog").close());
   $("#profile-save").addEventListener("click", saveProfile);
-  const content = $("#profile-content");
-  content.addEventListener("click", (event) => {
-    const point = event.target.closest(".profile-led-dot");
-    if (point) {
-      selectProfileLed(Number(point.dataset.profileLed));
-      return;
-    }
-    if (event.target.closest("#profile-previous-led")) selectProfileLed(profileSelectedLed - 1);
-    if (event.target.closest("#profile-next-led")) selectProfileLed(profileSelectedLed + 1);
-    if (event.target.closest("#profile-rotate-left")) rotateProfileLayout("counterclockwise");
-    if (event.target.closest("#profile-rotate-right")) rotateProfileLayout("clockwise");
-    if (event.target.closest("#profile-reset-layout")) {
-      const current = currentProfile() || {};
-      profileEditorPositions = window.ullStripLayout.createDefaultLedPositions(
-        profileEditorPositions.length,
-        Number.isInteger(current.edgeCount) ? current.edgeCount : 3,
-        current.installationMethod === 1 ? 1 : 0
-      );
-      renderProfilePoints();
-      updateProfilePositionFields();
-    }
-  });
-  content.addEventListener("change", (event) => {
-    if (event.target.id === "profile-selected-led") {
-      const index = Number(event.target.value) - 1;
-      if (!Number.isInteger(index) || index < 0 || index >= profileEditorPositions.length) {
-        event.target.value = String(profileSelectedLed + 1);
-        return;
-      }
-      selectProfileLed(index);
-    }
-    if (event.target.id === "profile-x" || event.target.id === "profile-y") {
-      if (event.target.value === "") {
-        updateProfileCoordinateFields();
-        return;
-      }
-      const value = Number(event.target.value);
-      if (!Number.isFinite(value) || value < 0 || value > 100) {
-        event.target.value = String(profileEditorPositions[profileSelectedLed][
-          event.target.id === "profile-x" ? "x" : "y"
-        ]);
-        toast("LED positions must be between 0 and 100.");
-        return;
-      }
-      const position = profileEditorPositions[profileSelectedLed];
-      setProfileLedPosition(
-        profileSelectedLed,
-        event.target.id === "profile-x" ? value : position.x,
-        event.target.id === "profile-y" ? value : position.y
-      );
-    }
-  });
-  const canvas = $("#profile-content");
-  canvas.addEventListener("pointerdown", (event) => {
-    const point = event.target.closest(".profile-led-dot");
-    if (!point || event.button !== 0) return;
-    event.preventDefault();
-    profileSelectedLed = Number(point.dataset.profileLed);
-    draggedProfileLed = profileSelectedLed;
-    point.setPointerCapture(event.pointerId);
-    updateProfilePositionFields();
-  });
-  canvas.addEventListener("pointermove", (event) => {
-    if (draggedProfileLed === null) return;
-    const board = $("#profile-canvas");
-    const rect = board.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-    setProfileLedPosition(
-      draggedProfileLed,
-      (event.clientX - rect.left) / rect.width * 100,
-      (event.clientY - rect.top) / rect.height * 100
-    );
-  });
-  for (const eventName of ["pointerup", "pointercancel"]) {
-    canvas.addEventListener(eventName, () => { draggedProfileLed = null; });
-  }
-  window.addEventListener("resize", () => {
-    if (!$("#setup-dialog").open) return;
-    for (const segment of $$(".profile-order-segment", $("#profile-points"))) {
-      positionProfileOrderSegment(segment, Number(segment.dataset.profileSegment));
-    }
-  });
-  content.addEventListener("keydown", (event) => {
-    const point = event.target.closest(".profile-led-dot");
-    if (!point || !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
-    event.preventDefault();
-    const position = profileEditorPositions[Number(point.dataset.profileLed)];
-    const step = event.shiftKey ? 5 : 1;
-    const x = position.x + (event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0);
-    const y = position.y + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0);
-    setProfileLedPosition(profileSelectedLed, x, y);
-  });
 }
 
 async function resetAllData() {
@@ -2297,6 +2233,12 @@ function bindNavigation() {
 
 function bindLighting() {
   $("#monitor").addEventListener("click", selectPreviewPosition);
+  $("#monitor").addEventListener("keydown", (event) => {
+    if ((event.key === "Enter" || event.key === " ") && event.target.classList.contains("led-edge")) {
+      event.preventDefault();
+      selectPreviewPosition(event);
+    }
+  });
   $("#select-all").addEventListener("click", () => setSelection(null));
   $("#deselect-all").addEventListener("click", () => setSelection(new Set()));
 
