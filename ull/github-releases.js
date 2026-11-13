@@ -92,6 +92,66 @@ function getPublishedReleases(releases) {
   }).sort((left, right) => compareVersions(right.version, left.version));
 }
 
+function getArchivedReleases(archive) {
+  if (!archive || typeof archive !== "object" || Array.isArray(archive) ||
+      archive.schemaVersion !== 1 || !Array.isArray(archive.releases) ||
+      !archive.legacy || typeof archive.legacy.note !== "string" ||
+      !archive.legacy.note.trim() || !Array.isArray(archive.legacy.versions)) {
+    throw new TypeError("The archived release history is invalid.");
+  }
+
+  const releases = archive.releases.map((release) => {
+    if (!release || typeof release.version !== "string" || !VERSION_PATTERN.test(release.version) ||
+        !Array.isArray(release.categories)) {
+      throw new TypeError("An archived release entry is invalid.");
+    }
+    const categories = release.categories.map((category) => {
+      if (!category || typeof category.name !== "string" || !category.name.trim() ||
+          !Array.isArray(category.items) || category.items.length === 0 ||
+          category.items.some((item) => typeof item !== "string" || !item.trim())) {
+        throw new TypeError(`Archived release ${release.version} has an invalid category.`);
+      }
+      return { name: category.name, items: category.items.map((item) => item.trim()) };
+    });
+    if (categories.length === 0) {
+      throw new TypeError(`Archived release ${release.version} has no notes.`);
+    }
+    return { version: release.version, categories };
+  });
+
+  for (const version of archive.legacy.versions) {
+    if (typeof version !== "string" || !VERSION_PATTERN.test(version)) {
+      throw new TypeError("An archived legacy release version is invalid.");
+    }
+    releases.push({
+      version,
+      categories: [{ name: "History", items: [archive.legacy.note.trim()] }]
+    });
+  }
+
+  const versions = releases.map(({ version }) => version);
+  if (new Set(versions).size !== versions.length) {
+    throw new Error("Duplicate archived release versions found.");
+  }
+  return releases.sort((left, right) => compareVersions(right.version, left.version));
+}
+
+function mergeReleaseHistory(published, archived) {
+  if (!Array.isArray(published) || !Array.isArray(archived)) {
+    throw new TypeError("Release history sources must be arrays.");
+  }
+  const merged = new Map(archived.map((release) => [release.version, release]));
+  for (const release of published) {
+    const archivedRelease = merged.get(release.version);
+    merged.set(release.version, {
+      ...archivedRelease,
+      ...release,
+      categories: release.categories?.length ? release.categories : archivedRelease?.categories ?? []
+    });
+  }
+  return [...merged.values()].sort((left, right) => compareVersions(right.version, left.version));
+}
+
 function decodeHtmlEntities(text) {
   return text
     .replace(/&amp;/g, "&")
@@ -204,8 +264,10 @@ function findReleaseInstaller(releases, version) {
 const githubReleases = Object.freeze({
   compareVersions,
   findReleaseInstaller,
+  getArchivedReleases,
   getPublishedReleases,
   getReleasedInstallers,
+  mergeReleaseHistory,
   getReleaseFromHtml,
   getReleaseInstallerFromHtml,
   getReleasePageCountFromHtml,

@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("ull", Object.freeze({
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   listReleaseDownloads: () => ipcRenderer.invoke("updates:release-downloads"),
   listReleaseHistory: () => ipcRenderer.invoke("updates:release-history"),
+  listArchivedReleaseHistory: () => ipcRenderer.invoke("updates:archived-release-history"),
   installRelease: (version) => ipcRenderer.invoke("updates:install-release", version),
   onUpdateProgress: (callback) => listen("updates:progress", callback),
   onUpdateDownloaded: (callback) => listen("updates:downloaded", callback),

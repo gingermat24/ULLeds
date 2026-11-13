@@ -82,6 +82,7 @@ const devices = { list: [], connecting: false, connectingPath: "" };
 const updates = { busy: false, progress: { phase: "idle", percent: null, transferred: 0, total: 0 } };
 const releases = {
   published: null,      // Map(version → release) once GitHub history loads
+  archived: null,       // repository-hosted notes for versions without GitHub Releases
   installers: null,     // Map(version → installer) once GitHub downloads load
   latest: null,         // newest installer
   selected: null,       // version currently shown
@@ -1627,8 +1628,10 @@ function cleanCategories(categories) {
 }
 
 function releaseEntries() {
-  return [...(releases.published?.values() ?? [])]
-    .sort((a, b) => compareReleaseVersions(b.version, a.version));
+  return window.ullGithubReleases.mergeReleaseHistory(
+    [...(releases.published?.values() ?? [])],
+    releases.archived ?? []
+  );
 }
 
 function releaseBadge(version) {
@@ -1702,7 +1705,7 @@ function renderReleases() {
     $("#release-total").textContent = "0";
     $("#release-newer").hidden = true;
     $("#release-older").hidden = true;
-    if (releases.published) {
+    if (releases.published || releases.archived) {
       status.textContent = "No release notes are available on GitHub.";
       status.classList.remove("hidden");
     }
@@ -1762,33 +1765,64 @@ async function loadReleaseDownloads() {
   const status = $("#release-status");
   status.textContent = "Loading release notes from GitHub…";
   status.classList.remove("hidden");
-  try {
-    const [installers, history] = await Promise.all([
-      window.ull.listReleaseDownloads(),
-      window.ull.listReleaseHistory()
-    ]);
-    if (!Array.isArray(installers)) throw new Error("GitHub returned an invalid release list.");
-    if (!Array.isArray(history)) throw new Error("GitHub returned an invalid release history.");
+  const [installerResult, historyResult, archiveResult] = await Promise.allSettled([
+    window.ull.listReleaseDownloads(),
+    window.ull.listReleaseHistory(),
+    window.ull.listArchivedReleaseHistory()
+  ]);
+  if (historyResult.status === "rejected" && archiveResult.status === "rejected") {
+    console.error("Could not load published or archived release notes:", {
+      published: historyResult.reason,
+      archived: archiveResult.reason
+    });
+    status.textContent = navigator.onLine === false
+      ? "Offline. Changelog can't load."
+      : "Could not load the changelog from GitHub. Check your connection and try again.";
+    status.classList.remove("hidden");
+    renderReleases();
+    return;
+  }
 
-    releases.installers = new Map(installers.map((installer) => [installer.version, installer]));
-    releases.latest = installers[0] ?? null;
-    releases.published = new Map(
-      history
+  releases.published = new Map(
+    historyResult.status === "fulfilled" && Array.isArray(historyResult.value)
+      ? historyResult.value
         .filter((release) => typeof release?.version === "string" && /^\d+\.\d+\.\d+$/.test(release.version))
         .map((release) => [release.version, release])
-    );
-    status.classList.add("hidden");
-    renderReleases();
+      : []
+  );
+  releases.archived = archiveResult.status === "fulfilled" && Array.isArray(archiveResult.value)
+    ? archiveResult.value
+    : [];
+  releases.installers = installerResult.status === "fulfilled" && Array.isArray(installerResult.value)
+    ? new Map(installerResult.value.map((installer) => [installer.version, installer]))
+    : null;
+  releases.latest = installerResult.status === "fulfilled" && Array.isArray(installerResult.value)
+    ? installerResult.value[0] ?? null
+    : null;
 
-    if (releases.latest && state.version && compareReleaseVersions(releases.latest.version, state.version) > 0) {
-      showVersionNotice(releases.latest);
-    }
-  } catch (error) {
-    console.error("Could not load GitHub release downloads:", error);
-    status.textContent = navigator.onLine === false
-      ? "Offline. Release notes can't be loaded."
-      : "Could not load release notes from GitHub. Check your connection and try again.";
+  const warnings = [];
+  if (historyResult.status === "rejected") {
+    console.error("Could not load published release notes:", historyResult.reason);
+    warnings.push("Published release notes couldn't be loaded.");
+  }
+  if (archiveResult.status === "rejected") {
+    console.error("Could not load archived release notes:", archiveResult.reason);
+    warnings.push("Some older changelog entries couldn't be loaded.");
+  }
+  if (installerResult.status === "rejected") {
+    console.error("Could not load GitHub release installers:", installerResult.reason);
+    if (!warnings.length) warnings.push("Release downloads couldn't be loaded.");
+  }
+  if (warnings.length) {
+    status.textContent = warnings.join(" ");
     status.classList.remove("hidden");
+  } else {
+    status.classList.add("hidden");
+  }
+  renderReleases();
+
+  if (releases.latest && state.version && compareReleaseVersions(releases.latest.version, state.version) > 0) {
+    showVersionNotice(releases.latest);
   }
 }
 

@@ -83,6 +83,7 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(html, /github-releases\.js/);
   assert.match(app, /listReleaseDownloads\(\)/);
   assert.match(app, /listReleaseHistory\(\)/);
+  assert.match(app, /listArchivedReleaseHistory\(\)/);
   assert.match(app, /function releaseEntries\(\)/);
   assert.match(app, /function buildReleaseEntry\(entry\)/);
   assert.match(app, /function releaseDate\(release\)/);
@@ -96,9 +97,12 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(app, /Preparing ULLeds \$\{version\}/);
   assert.match(preload, /listReleaseDownloads: \(\) => ipcRenderer\.invoke\("updates:release-downloads"\)/);
   assert.match(preload, /listReleaseHistory: \(\) => ipcRenderer\.invoke\("updates:release-history"\)/);
+  assert.match(preload, /listArchivedReleaseHistory: \(\) => ipcRenderer\.invoke\("updates:archived-release-history"\)/);
   assert.match(preload, /installRelease: \(version\) => ipcRenderer\.invoke\("updates:install-release", version\)/);
   assert.match(main, /ipcMain\.handle\("updates:release-downloads"/);
   assert.match(main, /ipcMain\.handle\("updates:release-history"/);
+  assert.match(main, /ipcMain\.handle\("updates:archived-release-history"/);
+  assert.match(main, /raw\.githubusercontent\.com\/gingermat24\/ULLeds\/dev\/docs\/release-history\.json/);
   assert.match(main, /fetchInstallersFromReleasePages/);
   assert.match(main, /using public release pages/);
   assert.match(main, /getReleaseTagsFromHtml/);
@@ -438,17 +442,18 @@ test("release number jumps only to valid entries and restores invalid input", ()
   }
 });
 
-test("release carousel uses only published GitHub history and does not bundle changelog data", () => {
+test("release carousel merges published notes with archived notes without bundling history", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
   assert.doesNotMatch(html, /changelog-data|Built-in changelog/);
   assert.match(html, /id="release-navigation"[^>]*hidden/);
   assert.match(html, /id="release-status"[^>]*role="status"[^>]*aria-live="polite">Loading release notes from GitHub/);
-  assert.match(app, /return \[\.\.\.\(releases\.published\?\.values\(\) \?\? \[\]\)\]/);
+  assert.match(app, /window\.ullGithubReleases\.mergeReleaseHistory/);
+  assert.match(app, /releases\.archived \?\? \[\]/);
   assert.doesNotMatch(app, /loadBuiltinChangelog|releases\.builtin/);
-  assert.match(app, /Offline\. Release notes can't be loaded\./);
-  assert.match(app, /Could not load release notes from GitHub\. Check your connection and try again\./);
+  assert.match(app, /Offline\. Changelog can't load\./);
+  assert.match(app, /Could not load the changelog from GitHub\. Check your connection and try again\./);
   assert.match(app, /No release notes are available on GitHub\./);
 });
 

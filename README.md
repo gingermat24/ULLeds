@@ -46,9 +46,11 @@ Windows installer for each published version, labeled **Update** or
 in-app updater; restart ULLeds from the update prompt to install it. Earlier
 versions must be updated manually.
 
-The release-notes carousel loads published release descriptions directly from
-GitHub. Release history is not bundled with the app. If GitHub is unreachable,
-the carousel reports that release notes could not be loaded.
+The release-notes carousel loads published release descriptions from GitHub.
+Older notes for versions without a GitHub Release are kept in a repository-hosted
+archive and loaded separately; neither source is bundled with the app. When
+online, published release notes take precedence. If GitHub is unreachable, the
+carousel reports that the changelog cannot load.
 
 ## Screen Sync and privacy
 
@@ -108,9 +110,10 @@ installed.
 To publish a Windows release, add `docs/releases/<version>.md` with the release
 notes, update the package version, then push a matching `v<version>` tag.
 GitHub Actions runs the tests, builds the installer, and publishes the installer
-and release notes. The notes source is kept outside the app package; the app
-loads published notes from GitHub. The bundled Cormorant Garamond and Noto Sans
-font licenses are in `ull/assets/fonts/`.
+and release notes. Keep historical entries in `docs/release-history.json`; that
+repository-hosted archive is fetched by the app but excluded from its package.
+The bundled Cormorant Garamond and Noto Sans font licenses are in
+`ull/assets/fonts/`.
 
 ## License
 

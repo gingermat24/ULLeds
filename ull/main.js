@@ -49,6 +49,7 @@ const { shouldTurnOffForSessionEnd, turnOffForSessionEnd } = require("./shutdown
 const {
   compareVersions,
   findReleaseInstaller,
+  getArchivedReleases,
   getPublishedReleases,
   getReleasedInstallers,
   getReleaseFromHtml,
@@ -107,6 +108,8 @@ let updateDownloadVersion = null;
 let updateCheckPromise = null;
 let githubReleaseCache = null;
 let githubReleaseRequest = null;
+let archivedReleaseCache = null;
+let archivedReleaseRequest = null;
 let resetPromise = null;
 let screenSyncDiagnostics = null;
 let pendingMovieFormat = null;
@@ -1303,8 +1306,47 @@ async function getGithubReleaseInstallers() {
 async function getGithubReleaseHistory() {
   return (await getGithubReleaseData()).releases;
 }
+async function getArchivedReleaseHistory() {
+  if (archivedReleaseCache && archivedReleaseCache.expiresAt > Date.now()) {
+    return archivedReleaseCache.releases;
+  }
+  if (archivedReleaseRequest) return archivedReleaseRequest;
+
+  const request = (async () => {
+    const url = "https://raw.githubusercontent.com/gingermat24/ULLeds/dev/docs/release-history.json";
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "ULLeds"
+        },
+        signal: controller.signal
+      });
+      const finalUrl = new URL(response.url);
+      if (!response.ok) throw new Error(`GitHub returned HTTP ${response.status} for archived release history.`);
+      if (finalUrl.origin !== "https://raw.githubusercontent.com" ||
+          finalUrl.pathname !== "/gingermat24/ULLeds/dev/docs/release-history.json") {
+        throw new Error("GitHub redirected archived release history to an unexpected location.");
+      }
+      const releases = getArchivedReleases(await response.json());
+      archivedReleaseCache = { releases, expiresAt: Date.now() + 60 * 60 * 1000 };
+      return releases;
+    } finally {
+      clearTimeout(timeout);
+    }
+  })();
+  archivedReleaseRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (archivedReleaseRequest === request) archivedReleaseRequest = null;
+  }
+}
 ipcMain.handle("updates:release-downloads", () => getGithubReleaseInstallers());
 ipcMain.handle("updates:release-history", () => getGithubReleaseHistory());
+ipcMain.handle("updates:archived-release-history", () => getArchivedReleaseHistory());
 ipcMain.handle("updates:install-release", async (_event, version) => {
   if (!app.isPackaged) {
     return { available: false, error: "Updates are available from the installed app." };

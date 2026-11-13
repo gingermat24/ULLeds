@@ -5,8 +5,10 @@ const assert = require("node:assert/strict");
 const {
   compareVersions,
   findReleaseInstaller,
+  getArchivedReleases,
   getPublishedReleases,
   getReleasedInstallers,
+  mergeReleaseHistory,
   getReleaseFromHtml,
   getReleaseInstallerFromHtml,
   getReleasePageCountFromHtml,
@@ -107,6 +109,32 @@ test("published GitHub releases provide sorted dates and parsed release notes", 
     }
   ]);
   assert.deepEqual(parseReleaseNotes("Notes without a category"), []);
+});
+
+test("archived notes fill unpublished versions while GitHub notes take precedence", () => {
+  const archived = getArchivedReleases({
+    schemaVersion: 1,
+    legacy: { note: "Older history.", versions: ["1.0.1"] },
+    releases: [
+      { version: "1.0.8", categories: [{ name: "Improved", items: ["Archived note."] }] },
+      { version: "1.0.9", categories: [{ name: "Fixed", items: ["Older published note."] }] }
+    ]
+  });
+  const merged = mergeReleaseHistory([
+    {
+      version: "1.0.9",
+      date: "2026-01-02T03:04:05Z",
+      categories: [{ name: "Fixed", items: ["Current GitHub note."] }]
+    },
+    { version: "1.0.10", date: "2026-01-03T03:04:05Z", categories: [] }
+  ], archived);
+
+  assert.deepEqual(merged.map(({ version }) => version), ["1.0.10", "1.0.9", "1.0.8", "1.0.1"]);
+  assert.deepEqual(merged[1].categories, [{ name: "Fixed", items: ["Current GitHub note."] }]);
+  assert.equal(merged[1].date, "2026-01-02T03:04:05Z");
+  assert.deepEqual(merged[2].categories, [{ name: "Improved", items: ["Archived note."] }]);
+  assert.deepEqual(merged[3].categories, [{ name: "History", items: ["Older history."] }]);
+  assert.throws(() => getArchivedReleases({ schemaVersion: 1, legacy: {}, releases: [] }), /archived release history is invalid/);
 });
 
 test("GitHub release HTML exposes published version tags and pagination", () => {

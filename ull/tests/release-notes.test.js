@@ -5,6 +5,7 @@ const path = require("node:path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { formatReleaseNotes } = require("../../scripts/release-notes");
+const { getArchivedReleases } = require("../../ull/github-releases");
 
 const root = path.join(__dirname, "..", "..");
 const version = require(path.join(root, "package.json")).version;
@@ -22,6 +23,26 @@ test("release notes are maintained outside the app package", () => {
   assert.deepEqual(packageConfig.build.files, ["package.json", "ull/**", "!ull/tests/**", "!ull/ui/_preview-light.html"]);
 });
 
+test("historical changelog entries remain available in the non-bundled repository archive", () => {
+  const archive = JSON.parse(fs.readFileSync(path.join(root, "docs", "release-history.json"), "utf8"));
+  const releases = getArchivedReleases(archive);
+  assert.equal(releases.length, 83);
+  assert.ok(releases.some((release) => release.version === "1.0.11" && release.categories[0].name === "History"));
+  assert.ok(releases.some((release) =>
+    release.version === "1.0.68" && release.categories[0].items[0].includes("Reduced idle controller work")
+  ));
+  assert.ok(releases.some((release) =>
+    release.version === "1.0.83" && release.categories.some((category) =>
+      category.items.some((item) => item.includes("centered monitor-edge picker"))
+    )
+  ));
+  assert.doesNotMatch(packageConfigFiles(), /docs\/release-history\.json/);
+});
+
+function packageConfigFiles() {
+  return JSON.stringify(require(path.join(root, "package.json")).build.files);
+}
+
 test("release workflow publishes the matching versioned Markdown notes", () => {
   const workflow = fs.readFileSync(
     path.join(root, ".github", "workflows", "release.yml"),
@@ -33,8 +54,8 @@ test("release workflow publishes the matching versioned Markdown notes", () => {
 
 test("release note formatting validates version, category, and bullet", () => {
   const notes = fs.readFileSync(releaseNotesPath, "utf8");
-  assert.match(formatReleaseNotes(notes, version), /Load release notes and history directly from published GitHub releases/);
+  assert.match(formatReleaseNotes(notes, version), /Restored historical changelog entries for versions without GitHub Releases/);
   assert.throws(() => formatReleaseNotes(notes, "bad-version"), /X\.Y\.Z/);
-  assert.throws(() => formatReleaseNotes("## ULLeds 1.0.84\n\nNo category", "1.0.84"), /category and at least one bullet/);
-  assert.throws(() => formatReleaseNotes("## ULLeds 1.0.83\n\n### Fixed\n\n- Note", "1.0.84"), /must start/);
+  assert.throws(() => formatReleaseNotes(`## ULLeds ${version}\n\nNo category`, version), /category and at least one bullet/);
+  assert.throws(() => formatReleaseNotes("## ULLeds 1.0.83\n\n### Fixed\n\n- Note", version), /must start/);
 });
