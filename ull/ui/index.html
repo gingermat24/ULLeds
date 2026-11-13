@@ -442,15 +442,18 @@
     "versions": ["1.0.11", "1.0.10", "1.0.9", "1.0.8", "1.0.7", "1.0.6", "1.0.5", "1.0.4", "1.0.3", "1.0.2", "1.0.1", "1.0.0"]
   },
   "releases": [
+    { "version": "1.0.82", "notes": {
+      "Fixed": [
+        "Preserved headings and bullet lists in GitHub release descriptions so published changelogs display correctly."
+      ]
+    } },
     { "version": "1.0.81", "notes": {
-      "New": [
-        "Choose any combination of monitor edges for the LED strip, with automatic LED allocation or exact per-edge counts.",
-        "Adjust Screen Sync from 5 to 60 frames per second and detect widescreen movie bars, with a prompt before switching to the detected picture area.",
-        "Calibrate red, green, and blue LED channel levels independently."
+      "Changed": [
+        "Replaced the per-LED placement editor from 1.0.80 with direct monitor-edge selection, automatic LED distribution, and exact per-edge counts.",
+        "Updated Screen Sync sampling to follow the selected edge layout."
       ],
       "Improved": [
-        "Updated the interface across Lighting, Scenes, Device, and Updates with responsive layouts and consistent controls.",
-        "Browse published release notes and choose a specific release to install from Updates."
+        "Reworked the interface with a consistent monochrome style, shared spacing, and responsive layouts."
       ] } },
     { "version": "1.0.80", "notes": {
       "New": ["Arrange every detected LED manually around your screen with drag placement, position controls, and layout rotation."],

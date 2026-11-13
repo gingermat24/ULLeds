@@ -10,18 +10,28 @@ const html = fs.readFileSync(path.join(__dirname, "..", "ui", "index.html"), "ut
 
 test("GitHub release text is generated from every in-app changelog entry", () => {
   const entries = extractReleaseNotes(html);
-  assert.equal(entries.length, 81);
-  for (let version = 0; version <= 81; version += 1) {
+  assert.equal(entries.length, 82);
+  for (let version = 0; version <= 82; version += 1) {
     if (version === 67) continue;
     assert.ok(entries.some((entry) => entry.version === `1.0.${version}`));
   }
 });
 
+test("release workflow writes each generated Markdown line separately", () => {
+  const workflow = fs.readFileSync(
+    path.join(__dirname, "..", "..", ".github", "workflows", "release.yml"),
+    "utf8"
+  );
+  assert.match(workflow, /node scripts\/release-notes\.js \$version \| Set-Content -Path \$notesPath -Encoding utf8NoBOM/);
+  assert.doesNotMatch(workflow, /"\$notes`n"/);
+});
+
 test("release note output preserves categories and user-facing items", () => {
-  const notes = formatReleaseNotes(html, "1.0.68");
-  assert.match(notes, /^## ULLeds 1\.0\.68/m);
-  assert.match(notes, /Reduced idle controller work/);
-  assert.match(notes, /### Improved/);
+  const notes = formatReleaseNotes(html, "1.0.82");
+  assert.equal(
+    notes,
+    "## ULLeds 1.0.82\n\n### Fixed\n\n- Preserved headings and bullet lists in GitHub release descriptions so published changelogs display correctly."
+  );
   assert.doesNotMatch(notes, /UI tests/);
 });
 

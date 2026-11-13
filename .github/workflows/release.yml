@@ -34,13 +34,11 @@ jobs:
             throw "Tag $tag does not match package version $version."
           }
 
-          $notes = node scripts/release-notes.js $version
           $notesPath = Join-Path $PWD "dist\release-notes.md"
-          [System.IO.File]::WriteAllText(
-            $notesPath,
-            "$notes`n",
-            [System.Text.UTF8Encoding]::new($false)
-          )
+          node scripts/release-notes.js $version | Set-Content -Path $notesPath -Encoding utf8NoBOM
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not generate release notes for $version."
+          }
 
           $installer = "dist\ULLeds-Setup-$version-x64.exe"
           $assets = @(
