@@ -45,8 +45,7 @@ test("data reset retains the live controller profile but resets lighting prefere
     brightness: 50,
     ledColors: {},
     deviceProfile: null,
-    devicePath: "",
-    updateFolder: ""
+    devicePath: ""
   };
   const profile = {
     name: "Controller A",
@@ -62,5 +61,4 @@ test("data reset retains the live controller profile but resets lighting prefere
   assert.deepEqual(reset.ledColors, {});
   assert.deepEqual(reset.deviceProfile, profile);
   assert.equal(reset.devicePath, "controller-a");
-  assert.equal(reset.updateFolder, "");
 });

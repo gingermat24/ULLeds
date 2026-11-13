@@ -99,15 +99,15 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(preload, /listReleaseHistory: \(\) => ipcRenderer\.invoke\("updates:release-history"\)/);
   assert.match(preload, /listArchivedReleaseHistory: \(\) => ipcRenderer\.invoke\("updates:archived-release-history"\)/);
   assert.match(preload, /installRelease: \(version\) => ipcRenderer\.invoke\("updates:install-release", version\)/);
-  assert.match(main, /ipcMain\.handle\("updates:release-downloads"/);
-  assert.match(main, /ipcMain\.handle\("updates:release-history"/);
-  assert.match(main, /ipcMain\.handle\("updates:archived-release-history"/);
+  assert.match(main, /handleMainWindow\("updates:release-downloads"/);
+  assert.match(main, /handleMainWindow\("updates:release-history"/);
+  assert.match(main, /handleMainWindow\("updates:archived-release-history"/);
   assert.match(main, /raw\.githubusercontent\.com\/gingermat24\/ULLeds\/dev\/docs\/release-history\.json/);
   assert.match(main, /fetchInstallersFromReleasePages/);
   assert.match(main, /using public release pages/);
   assert.match(main, /getReleaseTagsFromHtml/);
   assert.match(main, /getReleaseInstallerFromHtml/);
-  assert.match(main, /ipcMain\.handle\("updates:install-release"/);
+  assert.match(main, /handleMainWindow\("updates:install-release"/);
   assert.match(main, /autoUpdater\.setFeedURL\(\{\s+provider: "generic",\s+url: new URL\("\.", installer\.url\)\.href\s+\}\)/);
   assert.match(main, /autoUpdater\.allowDowngrade = versionComparison < 0/);
   assert.match(main, /result\.updateInfo\.version !== version/);
@@ -139,7 +139,7 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(app, /window\.ull\.getSpotifyArtwork\(\),\s+audioCapture,\s+audioReady/);
   assert.match(app, /if \(artwork && artwork\.data !== session\.artworkData\)/);
   assert.match(app, /window\.ull\.startScreenSync\("spotify"\)/);
-  assert.match(main, /ipcMain\.handle\("spotify-sync:artwork", \(\) => readSpotifyArtwork\(\)\)/);
+  assert.match(main, /handleMainWindow\("spotify-sync:artwork", \(\) => readSpotifyArtwork\(\)\)/);
   assert.match(main, /settings\.startupMode = mode;\s+saveSettings\(\)/);
   assert.match(main, /execFile\(helperPath/);
   assert.match(main, /spotify-media\.exe/);
@@ -209,14 +209,14 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(app, /\$\("#power-state"\)\.textContent = settings\.power \? "On" : "Off"/);
   assert.match(app, /root\.setProperty\("--led-opacity", settings\.power \? String\(settings\.brightness \/ 100\) : "0"\)/);
   assert.match(app, /\$\("#monitor"\)\.dataset\.power = settings\.power \? "on" : "off"/);
-  assert.match(main, /ipcMain\.handle\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+const result = setSettings\(input, !powerChanged\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
+  assert.match(main, /handleMainWindow\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+const result = setSettings\(input, !powerChanged\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
   assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| isSyncStartupMode\(settings\.startupMode\)\)\) return;/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{[\s\S]*?if \(hidDevice\) \{[\s\S]*?writeColor\(settings\.color\)[\s\S]*?return;\s+\}/);
   const animation = main.slice(main.indexOf("function updateAnimation"), main.indexOf("function deviceState"));
   assert.match(animation, /settings\.effect === "steady"[\s\S]*?return;\s+\}\s+const interval/);
-  assert.match(main, /ipcMain\.handle\("screen-sync:colors", \(_event, colors\) => \{\s+if \(!screenSyncActive \|\| !hidDevice \|\| !settings\.power\) return \{ active: false \};/);
-  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+settings\.startupMode = "lighting";\s+saveSettings\(\);\s+dismissMovieFormatPrompt\(\);\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
+  assert.match(main, /handleMainWindow\("screen-sync:colors", \(_event, colors\) => \{\s+if \(!screenSyncActive \|\| !hidDevice \|\| !settings\.power\) return \{ active: false \};/);
+  assert.match(main, /handleMainWindow\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+settings\.startupMode = "lighting";\s+saveSettings\(\);\s+dismissMovieFormatPrompt\(\);\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
   assert.match(main, /function updateAnimation\(\{ waitForOutput = false \}/);
 });
 
@@ -614,8 +614,8 @@ test("Scenes save full lighting setups with explicit management actions", () => 
   assert.match(app, /settingsFromScene\(scene\)/);
   assert.match(main, /scenes: \[\]/);
   assert.match(main, /normalizeScenes\(input\.scenes\)/);
-  assert.match(main, /ipcMain\.handle\("scenes:export"/);
-  assert.match(main, /ipcMain\.handle\("scenes:import"/);
+  assert.match(main, /handleMainWindow\("scenes:export"/);
+  assert.match(main, /handleMainWindow\("scenes:import"/);
   assert.match(main, /size > 1024 \* 1024/);
   assert.match(preload, /exportScenes: \(\) => ipcRenderer\.invoke\("scenes:export"\)/);
   assert.match(preload, /importScenes: \(\) => ipcRenderer\.invoke\("scenes:import"\)/);
@@ -630,7 +630,7 @@ test("Scenes save full lighting setups with explicit management actions", () => 
 test("update installation stops controller work without waiting for HID shutdown", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const prepare = main.indexOf("function prepareForUpdate()");
-  const install = main.indexOf('ipcMain.handle("updates:install"');
+  const install = main.indexOf('handleMainWindow("updates:install"');
   const updaterLaunch = main.indexOf("autoUpdater.quitAndInstall(true, true)", install);
 
   assert.notEqual(prepare, -1);
@@ -709,7 +709,7 @@ test("sync mode is saved only while active and manual stop restores the lighting
 
   assert.doesNotMatch(start, /updateSettings\(\{\s*resumeScreenSync:\s*true\s*\}\)/);
   assert.match(main, /settings\.startupMode = mode;\s+saveSettings\(\)/);
-  assert.match(main, /ipcMain\.handle\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+settings\.startupMode = "lighting";\s+saveSettings\(\)/);
+  assert.match(main, /handleMainWindow\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+settings\.startupMode = "lighting";\s+saveSettings\(\)/);
   assert.match(main, /if \(changes\.power === false\) settings\.startupMode = "lighting"/);
 });
 
@@ -781,7 +781,7 @@ test("Screen Sync FPS is persisted and controls capture, sampling, and HID caden
   assert.match(app, /createLatestFrameSender\(\{/);
   assert.match(app, /performanceCallbackCount \+= 1/);
   assert.match(app, /recordScreenSyncPerformance\(\{/);
-  assert.match(main, /ipcMain\.on\("screen-sync:performance"/);
+  assert.match(main, /onMainWindow\("screen-sync:performance"/);
   assert.match(preload, /recordScreenSyncPerformance: \(metrics\)/);
   assert.match(screenSync, /maxFrameRate,\s*maxWidth: MAX_CAPTURE_DIMENSION,\s*maxHeight: MAX_CAPTURE_DIMENSION/);
   assert.match(screenSync, /return lastSample === 0 \|\| now - lastSample >= 900 \/ fps/);
@@ -848,25 +848,27 @@ test("widescreen detection is optional, stable, and asks before changing the cur
   assert.match(screenSync, /function createLetterboxStability/);
 });
 
-test("Updates checks GitHub Releases by default and retains local-folder updates", () => {
+test("Updates use GitHub Releases only and local-folder updates are disabled", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "package.json"), "utf8"));
 
   assert.match(html, /data-view="updates"/);
-  assert.match(html, /id="update-source-github"[^>]*value="github"/);
-  assert.match(html, /id="update-source-local"[^>]*value="local"/);
+  assert.doesNotMatch(html, /update-source-local|choose-update-folder|local-update-controls/);
+  assert.match(html, /Local-folder updates are disabled until installers can be authenticated/);
   assert.match(html, /Check for updates/);
   assert.match(html, /Checks public ULLeds GitHub Releases/);
   assert.match(html, /Release notes/);
-  assert.match(app, /updateSource: "github"/);
   assert.match(app, /window\.ull\.checkUpdates\(\)/);
   assert.match(main, /autoUpdater\.setFeedURL\(\{\s+provider: "github",\s+owner: "gingermat24",\s+repo: "ULLeds",\s+releaseType: "release"\s+\}\)/);
-  assert.match(main, /autoUpdater\.setFeedURL\(\{ provider: "generic", url: updateServer\.url \}\)/);
+  assert.doesNotMatch(main, /createLocalUpdateServer|updateServer|updates:choose-folder/);
+  assert.match(main, /delete stored\.updateFolder;\s+delete stored\.updateSource;/);
+  assert.match(main, /Local-folder updates are disabled until installers can be authenticated/);
+  assert.doesNotMatch(preload, /chooseUpdateFolder|onUpdateFolderRequest/);
   assert.match(main, /controller-write-diagnostics\.log/);
   assert.doesNotMatch(html, /controller-write-diagnostics\.log/);
-  assert.match(main, /updateSource: "github"/);
   assert.equal(packageJson.build.publish.length, 1);
   assert.deepEqual(packageJson.build.publish[0], {
     provider: "github",
@@ -874,6 +876,23 @@ test("Updates checks GitHub Releases by default and retains local-folder updates
     repo: "ULLeds",
     releaseType: "release"
   });
+});
+
+test("local renderer pages enforce CSP, navigation, and main-frame IPC boundaries", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const prompt = fs.readFileSync(path.join(uiDirectory, "movie-format-prompt.html"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(html, /http-equiv="Content-Security-Policy"[^>]*default-src 'none'/);
+  assert.match(prompt, /http-equiv="Content-Security-Policy"[^>]*default-src 'none'/);
+  assert.match(main, /function restrictWindowNavigation\(window, pagePath\)/);
+  assert.match(main, /window\.webContents\.on\("will-navigate"/);
+  assert.match(main, /window\.webContents\.on\("will-redirect"/);
+  assert.match(main, /window\.webContents\.setWindowOpenHandler\(\(\) => \(\{ action: "deny" \}\)\)/);
+  assert.match(main, /function isTrustedMainFrame\(event\)/);
+  assert.match(main, /function handleMainWindow\(channel, handler\)/);
+  assert.equal((main.match(/ipcMain\.handle\(/g) || []).length, 1);
+  assert.match(main, /event\.senderFrame !== event\.sender\.mainFrame/);
 });
 
 test("the icon build consumes the user PNG and responsive motion preferences are global", () => {
@@ -934,7 +953,7 @@ test("full reset is confirmed, clears app and imported profile data, and preserv
 
   assert.match(html, /id="reset-all-data"/);
   assert.match(html, /id="reset-dialog"/);
-  assert.match(html, /preferences and the update folder/);
+  assert.match(html, /preferences and imported profiles/);
   assert.doesNotMatch(html, /DX Light|DX-Light|QuikLight/);
   assert.match(html, /The active controller stays connected/);
   assert.match(app, /window\.ull\.resetData\(\)/);
@@ -942,9 +961,9 @@ test("full reset is confirmed, clears app and imported profile data, and preserv
   assert.match(app, /sync\.generation \+= 1/);
   assert.match(app, /generation !== sync\.generation/);
   assert.match(preload, /resetData: \(\) => ipcRenderer\.invoke\("settings:reset"\)/);
-  assert.match(main, /ipcMain\.handle\("settings:reset"/);
+  assert.match(main, /handleMainWindow\("settings:reset"/);
   assert.match(main, /settings = settingsAfterReset\(defaultSettings\(\), activeProfile, activePath\)/);
-  const resetHandler = main.slice(main.indexOf('ipcMain.handle("settings:reset"'), main.indexOf('ipcMain.handle("app:initial-state"'));
+  const resetHandler = main.slice(main.indexOf('handleMainWindow("settings:reset"'), main.indexOf('handleMainWindow("app:initial-state"'));
   assert.doesNotMatch(resetHandler, /await disconnectDevice\(\)/);
   assert.match(resetHandler, /if \(hidDevice\) updateAnimation\(\)/);
   assert.match(main, /configureLoginItem\(\)/);
@@ -989,9 +1008,9 @@ test("the frameless window draws its own controls and removes the native menu ba
   assert.doesNotMatch(main, /titleBarStyle|titleBarOverlay/);
   assert.match(main, /Menu\.setApplicationMenu\(null\)/);
   assert.doesNotMatch(main, /createApplicationMenu/);
-  assert.match(main, /ipcMain\.handle\("window:minimize"/);
-  assert.match(main, /ipcMain\.handle\("window:toggle-maximize"/);
-  assert.match(main, /ipcMain\.handle\("window:close"/);
+  assert.match(main, /handleMainWindow\("window:minimize"/);
+  assert.match(main, /handleMainWindow\("window:toggle-maximize"/);
+  assert.match(main, /handleMainWindow\("window:close"/);
   assert.match(main, /mainWindow\.on\("maximize", \(\) => sendWindowState\(\)\)/);
   assert.match(main, /mainWindow\.on\("unmaximize", \(\) => sendWindowState\(\)\)/);
   assert.match(css, /\.topbar \{[^}]*[-]webkit-app-region: drag;/s);

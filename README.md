@@ -47,7 +47,8 @@ Releases in the app. The release-notes carousel also offers the matching
 Windows installer for each published version, labeled **Update** or
 **Downgrade**. Selecting one downloads and verifies that release through the
 in-app updater; restart ULLeds from the update prompt to install it. Earlier
-versions must be updated manually.
+versions must be updated manually. Local-folder updates are disabled until
+ULLeds can authenticate both the update metadata and installer.
 
 The release-notes carousel loads v1.0.47 and later release descriptions from
 GitHub, so edits to those releases appear in the app. Only earlier versions,

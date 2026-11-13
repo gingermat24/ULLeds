@@ -46,8 +46,6 @@ let state = {
     devicePath: "",
     power: true,
     onboarded: false,
-    updateFolder: "",
-    updateSource: "github",
     syncFps: FPS.fallback,
     syncContentMode: "display",
     syncAutoDetect: true,
@@ -1397,13 +1395,6 @@ function setUpdatePhase(phase, extra = {}) {
 }
 
 function renderUpdates() {
-  const local = state.settings.updateSource === "local";
-  $$('input[name="update-source"]').forEach((input) => {
-    input.checked = input.value === (local ? "local" : "github");
-  });
-  $("#update-folder-label").textContent = state.settings.updateFolder || "No folder selected";
-  $("#local-update-controls").classList.toggle("hidden", !local);
-  $("#github-update-note").classList.toggle("hidden", local);
   $("#check-updates").disabled = updates.busy;
 }
 
@@ -1443,7 +1434,7 @@ function showUpdateMessage(message, error = false, readyToInstall = false) {
   }
 
   detail.textContent = phase === "checking"
-    ? "Connecting to the selected update source…"
+    ? "Connecting to GitHub Releases…"
     : phase === "installing"
       ? "ULLeds will reopen automatically. Please wait; do not launch it manually."
       : active ? formatUpdateProgress(updates.progress) : "";
@@ -1468,38 +1459,7 @@ function showUpdateAvailable(result) {
   showUpdateMessage(`Downloading ULLeds ${result.version}…`);
 }
 
-function selectUpdateSource(source) {
-  if (!["github", "local"].includes(source)) throw new TypeError("Unsupported update source.");
-  queueSettings({ updateSource: source }, true);
-  renderUpdates();
-  showUpdateMessage(
-    source === "github"
-      ? "Updates will be checked against the public ULLeds GitHub Releases."
-      : state.settings.updateFolder
-        ? `Local update folder: ${state.settings.updateFolder}`
-        : "Choose the folder containing the ULLeds update package."
-  );
-}
-
-async function chooseUpdateFolder() {
-  try {
-    const result = await window.ull.chooseUpdateFolder();
-    if (result.canceled) return;
-    state.settings.updateFolder = result.folder;
-    state.settings.updateSource = "local";
-    render();
-    showUpdateMessage(`Update source set to ${result.folder}`);
-  } catch (error) {
-    showUpdateMessage(`Could not select the update folder: ${error.message}`, true);
-  }
-}
-
 async function checkUpdates() {
-  const local = state.settings.updateSource === "local";
-  if (local && !state.settings.updateFolder) {
-    showUpdateMessage("Choose the folder containing the ULLeds update package.");
-    return;
-  }
   if (updates.busy) return;
 
   updates.busy = true;
@@ -1507,7 +1467,7 @@ async function checkUpdates() {
   button.disabled = true;
   button.textContent = "Checking…";
   setUpdatePhase("checking");
-  showUpdateMessage(local ? "Checking the local update folder…" : "Checking GitHub Releases…");
+  showUpdateMessage("Checking GitHub Releases…");
 
   try {
     const result = await window.ull.checkUpdates();
@@ -2482,10 +2442,6 @@ function bindDeviceSettings() {
 }
 
 function bindUpdates() {
-  $$('input[name="update-source"]').forEach((input) => {
-    input.addEventListener("change", () => selectUpdateSource(input.value));
-  });
-  $("#choose-update-folder").addEventListener("click", chooseUpdateFolder);
   $("#check-updates").addEventListener("click", checkUpdates);
   $("#version-notice-dismiss").addEventListener("click", dismissVersionNotice);
 
@@ -2531,11 +2487,6 @@ function bindMainProcessEvents() {
 
   window.ull.onDeviceScanRequest(scanDevices);
   window.ull.onSetupRequest(() => openSetup());
-  window.ull.onUpdateFolderRequest(() => {
-    switchView("updates");
-    selectUpdateSource("local");
-    chooseUpdateFolder();
-  });
   window.ull.onUpdateCheckRequest(() => {
     switchView("updates");
     checkUpdates();

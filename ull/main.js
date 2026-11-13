@@ -6,6 +6,7 @@ const { execFile } = require("node:child_process");
 const { performance } = require("node:perf_hooks");
 const { randomUUID } = require("node:crypto");
 const os = require("node:os");
+const { pathToFileURL } = require("node:url");
 const {
   app,
   BrowserWindow,
@@ -27,7 +28,6 @@ const {
   buildScreenSyncFrame,
   parseDeviceLedCount
 } = require("./protocol");
-const { createLocalUpdateServer } = require("./local-update-server");
 const { loadSavedProfiles, resolveDeviceLedCount } = require("./device-profile");
 const {
   listSupportedControllers,
@@ -81,8 +81,6 @@ const DEFAULTS = Object.freeze({
   devicePath: "",
   power: true,
   onboarded: false,
-  updateFolder: "",
-  updateSource: "github",
   syncFps: 30,
   syncContentMode: "display",
   syncAutoDetect: true,
@@ -109,8 +107,6 @@ const hidOutputQueue = createHidOutputQueue((timing) => controllerWriteDiagnosti
 let watcherTimer = null;
 let screenSyncActive = false;
 let commandId = 1;
-let updateServer = null;
-let updateServerFolder = "";
 let downloadedUpdateVersion = null;
 let updateDownloadVersion = null;
 let updateCheckPromise = null;
@@ -186,11 +182,17 @@ function loadSettings() {
   if (!fs.existsSync(file)) return;
   try {
     const stored = JSON.parse(fs.readFileSync(file, "utf8"));
+    const migrateLocalUpdates = Object.hasOwn(stored, "updateFolder") || Object.hasOwn(stored, "updateSource");
+    if (migrateLocalUpdates) {
+      delete stored.updateFolder;
+      delete stored.updateSource;
+    }
     const restored = validateSettings(stored);
     if (!Object.hasOwn(stored, "startupMode")) {
       restored.startupMode = normalizeStartupMode(undefined, stored.resumeScreenSync === true);
     }
     settings = { ...settings, ...restored };
+    if (migrateLocalUpdates) saveSettings();
   } catch (error) {
     console.error("Could not load ULLeds settings:", error);
     dialog.showMessageBoxSync({
@@ -412,16 +414,7 @@ function validateSettings(input) {
     next.onboarded = input.onboarded;
   }
   if ("updateFolder" in input) {
-    if (typeof input.updateFolder !== "string" || input.updateFolder.length > 2048) {
-      throw new TypeError("Update folder path is invalid.");
-    }
-    next.updateFolder = input.updateFolder;
-  }
-  if ("updateSource" in input) {
-    if (!["github", "local"].includes(input.updateSource)) {
-      throw new TypeError("Choose a supported update source.");
-    }
-    next.updateSource = input.updateSource;
+    throw new TypeError("Local-folder updates are disabled until installers can be authenticated.");
   }
   if ("startupMode" in input) {
     const mode = normalizeStartupMode(input.startupMode);
@@ -885,7 +878,7 @@ function showMovieFormatPrompt(message) {
       pendingMovieFormat = null;
     }
   });
-  prompt.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  restrictWindowNavigation(prompt, path.join(__dirname, "ui", "movie-format-prompt.html"));
   prompt.once("ready-to-show", () => {
     if (pendingMovieFormat?.promptId !== message.promptId || prompt.isDestroyed()) return;
     prompt.webContents.send("movie-format:prompt", message);
@@ -919,6 +912,37 @@ function createTray() {
   ]));
   tray.on("click", showMainWindow);
   tray.on("double-click", showMainWindow);
+}
+
+function restrictWindowNavigation(window, pagePath) {
+  const expectedUrl = pathToFileURL(pagePath).href;
+  const preventUntrustedNavigation = (event, url) => {
+    if (url !== expectedUrl) event.preventDefault();
+  };
+  window.webContents.on("will-navigate", preventUntrustedNavigation);
+  window.webContents.on("will-redirect", preventUntrustedNavigation);
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+}
+
+function isTrustedMainFrame(event) {
+  return Boolean(mainWindow && !mainWindow.isDestroyed() &&
+    event.sender === mainWindow.webContents &&
+    event.senderFrame &&
+    event.senderFrame === event.sender.mainFrame &&
+    event.senderFrame.url === pathToFileURL(path.join(__dirname, "ui", "index.html")).href);
+}
+
+function handleMainWindow(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!isTrustedMainFrame(event)) throw new Error("This action is only available to the ULLeds window.");
+    return handler(event, ...args);
+  });
+}
+
+function onMainWindow(channel, handler) {
+  ipcMain.on(channel, (event, ...args) => {
+    if (isTrustedMainFrame(event)) handler(event, ...args);
+  });
 }
 
 function createWindow({ showWhenReady = !startHidden } = {}) {
@@ -976,11 +1000,9 @@ function createWindow({ showWhenReady = !startHidden } = {}) {
   });
   mainWindow.on("maximize", () => sendWindowState());
   mainWindow.on("unmaximize", () => sendWindowState());
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://")) shell.openExternal(url);
-    return { action: "deny" };
-  });
-  mainWindow.loadFile(path.join(__dirname, "ui", "index.html"));
+  const pagePath = path.join(__dirname, "ui", "index.html");
+  restrictWindowNavigation(mainWindow, pagePath);
+  mainWindow.loadFile(pagePath);
 }
 
 function sendWindowState() {
@@ -988,33 +1010,27 @@ function sendWindowState() {
   mainWindow.webContents.send("window:maximized", mainWindow.isMaximized());
 }
 
-ipcMain.handle("window:minimize", () => {
+handleMainWindow("window:minimize", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.minimize();
 });
 
-ipcMain.handle("window:toggle-maximize", () => {
+handleMainWindow("window:toggle-maximize", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMaximized()) mainWindow.unmaximize();
   else mainWindow.maximize();
 });
 
-ipcMain.handle("window:close", () => {
+handleMainWindow("window:close", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.close();
 });
 
-ipcMain.handle("settings:reset", async () => {
+handleMainWindow("settings:reset", async () => {
   if (resetPromise) return resetPromise;
   resetPromise = (async () => {
     if (connectionPromise) await connectionPromise;
     screenSyncActive = false;
-
-    if (updateServer) {
-      await updateServer.close();
-      updateServer = null;
-      updateServerFolder = "";
-    }
 
     const activeProfile = connectedInfo?.profile || settings.deviceProfile;
     const activePath = connectedInfo?.path || settings.devicePath;
@@ -1038,18 +1054,18 @@ ipcMain.handle("settings:reset", async () => {
     resetPromise = null;
   }
 });
-ipcMain.handle("app:initial-state", () => ({
+handleMainWindow("app:initial-state", () => ({
   version: app.getVersion(),
   settings: settingsSnapshot(),
   device: deviceState()
 }));
-ipcMain.handle("settings:update", async (_event, input) => {
+handleMainWindow("settings:update", async (_event, input) => {
   const powerChanged = input && Object.hasOwn(input, "power");
   const result = setSettings(input, !powerChanged);
   if (powerChanged) await updateAnimation({ waitForOutput: true });
   return result;
 });
-ipcMain.handle("scenes:export", async () => {
+handleMainWindow("scenes:export", async () => {
   const scenes = normalizeScenes(settings.scenes);
   if (scenes.length === 0) throw new Error("Save a lighting setup before exporting.");
   const date = new Date().toISOString().slice(0, 10);
@@ -1066,7 +1082,7 @@ ipcMain.handle("scenes:export", async () => {
   );
   return { canceled: false, count: scenes.length };
 });
-ipcMain.handle("support:preview", async (event, input) => {
+handleMainWindow("support:preview", async (event, input) => {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
       event.senderFrame !== event.sender.mainFrame) {
     throw new Error("Only the ULLeds window can prepare a support request.");
@@ -1112,7 +1128,7 @@ ipcMain.handle("support:preview", async (event, input) => {
     attachmentContent: report.attachmentContent
   };
 });
-ipcMain.handle("support:open-github", async (event, previewId) => {
+handleMainWindow("support:open-github", async (event, previewId) => {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
       event.senderFrame !== event.sender.mainFrame) {
     throw new Error("Only the ULLeds window can open a support request.");
@@ -1141,7 +1157,7 @@ ipcMain.handle("support:open-github", async (event, previewId) => {
   preparedSupportIssue = null;
   return { opened: true, attachmentSaved };
 });
-ipcMain.handle("support:discard", (event, previewId) => {
+handleMainWindow("support:discard", (event, previewId) => {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
       event.senderFrame !== event.sender.mainFrame) {
     throw new Error("Only the ULLeds window can discard a support request.");
@@ -1151,7 +1167,7 @@ ipcMain.handle("support:discard", (event, previewId) => {
   }
   return { discarded: true };
 });
-ipcMain.handle("scenes:import", async () => {
+handleMainWindow("scenes:import", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: "Import ULLeds setups",
     properties: ["openFile"],
@@ -1171,20 +1187,20 @@ ipcMain.handle("scenes:import", async () => {
     settings: updated?.settings || settingsSnapshot()
   };
 });
-ipcMain.on("settings:flush", (event, input) => {
+onMainWindow("settings:flush", (event, input) => {
   try {
     event.returnValue = { result: setSettings(input) };
   } catch (error) {
     event.returnValue = { error: error.message };
   }
 });
-ipcMain.handle("device:scan", () => scanAndConnect());
-ipcMain.handle("device:connect", (_event, targetPath) => connectDevice(targetPath));
-ipcMain.handle("device:disconnect", () => {
+handleMainWindow("device:scan", () => scanAndConnect());
+handleMainWindow("device:connect", (_event, targetPath) => connectDevice(targetPath));
+handleMainWindow("device:disconnect", () => {
   disconnectDevice();
   return deviceState();
 });
-ipcMain.handle("screen-sync:start", (_event, mode = "screen") => {
+handleMainWindow("screen-sync:start", (_event, mode = "screen") => {
   if (!["screen", "spotify"].includes(mode)) throw new TypeError("Screen Sync mode is invalid.");
   if (!hidDevice) throw new Error("Connect the LED controller before starting screen sync.");
   if (!settings.power) throw new Error("Turn the LEDs on before starting screen sync.");
@@ -1199,8 +1215,8 @@ ipcMain.handle("screen-sync:start", (_event, mode = "screen") => {
   updateAnimation();
   return { active: true };
 });
-ipcMain.handle("spotify-sync:artwork", () => readSpotifyArtwork());
-ipcMain.handle("screen-sync:colors", (_event, colors) => {
+handleMainWindow("spotify-sync:artwork", () => readSpotifyArtwork());
+handleMainWindow("screen-sync:colors", (_event, colors) => {
   if (!screenSyncActive || !hidDevice || !settings.power) return { active: false };
   const ledCount = settings.deviceProfile?.ledCount;
   if (!Number.isInteger(ledCount)) throw new Error("The controller's LED count has not been detected.");
@@ -1209,15 +1225,15 @@ ipcMain.handle("screen-sync:colors", (_event, colors) => {
   }
   return writeScreenSyncColors(colors).then(() => ({ active: true }));
 });
-ipcMain.on("screen-sync:performance", (event, metrics) => {
-  if (!mainWindow || event.sender !== mainWindow.webContents || !screenSyncActive) return;
+onMainWindow("screen-sync:performance", (_event, metrics) => {
+  if (!screenSyncActive) return;
   try {
     screenSyncDiagnostics.recordRendererPerformance(metrics);
   } catch (error) {
     console.error("Could not record Screen Sync performance metrics:", error);
   }
 });
-ipcMain.handle("screen-sync:stop", async () => {
+handleMainWindow("screen-sync:stop", async () => {
   screenSyncActive = false;
   settings.startupMode = "lighting";
   saveSettings();
@@ -1229,7 +1245,7 @@ ipcMain.handle("screen-sync:stop", async () => {
   }
   return { active: false, startupMode: settings.startupMode };
 });
-ipcMain.handle("screen-sync:source", async () => {
+handleMainWindow("screen-sync:source", async () => {
   const sources = await desktopCapturer.getSources({
     types: ["screen"],
     thumbnailSize: { width: 0, height: 0 }
@@ -1239,9 +1255,8 @@ ipcMain.handle("screen-sync:source", async () => {
   if (!source) throw new Error("No display is available to sync.");
   return { id: source.id };
 });
-ipcMain.on("screen-sync:movie-detected", (event, aspectRatio) => {
-  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
-      !screenSyncActive || !settings.syncAutoDetect ||
+onMainWindow("screen-sync:movie-detected", (_event, aspectRatio) => {
+  if (!screenSyncActive || !settings.syncAutoDetect ||
       !Number.isFinite(aspectRatio) || aspectRatio < 1.78 || aspectRatio > 2.6) {
     return;
   }
@@ -1259,6 +1274,9 @@ ipcMain.on("movie-format:choose", (event, choice) => {
   const prompt = movieFormatPromptWindow;
   const message = pendingMovieFormat;
   if (!prompt || prompt.isDestroyed() || event.sender !== prompt.webContents ||
+      !event.senderFrame ||
+      event.senderFrame !== event.sender.mainFrame ||
+      event.senderFrame.url !== pathToFileURL(path.join(__dirname, "ui", "movie-format-prompt.html")).href ||
       !message || typeof choice?.promptId !== "string" ||
       choice.promptId !== message.promptId || !["use", "keep"].includes(choice.choice) ||
       !screenSyncActive || !settings.syncAutoDetect) {
@@ -1270,20 +1288,6 @@ ipcMain.on("movie-format:choose", (event, choice) => {
     });
   }
   dismissMovieFormatPrompt();
-});
-ipcMain.handle("updates:choose-folder", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title: "Choose a local ULLeds update folder",
-    properties: ["openDirectory"]
-  });
-  if (result.canceled || !result.filePaths[0]) return { canceled: true };
-  if (updateServer) {
-    await updateServer.close();
-    updateServer = null;
-    updateServerFolder = "";
-  }
-  setSettings({ updateFolder: result.filePaths[0], updateSource: "local" });
-  return { canceled: false, folder: settings.updateFolder };
 });
 async function getGithubReleaseData() {
   if (githubReleaseCache && githubReleaseCache.expiresAt > Date.now()) {
@@ -1438,10 +1442,10 @@ async function getArchivedReleaseHistory() {
     if (archivedReleaseRequest === request) archivedReleaseRequest = null;
   }
 }
-ipcMain.handle("updates:release-downloads", () => getGithubReleaseInstallers());
-ipcMain.handle("updates:release-history", () => getGithubReleaseHistory());
-ipcMain.handle("updates:archived-release-history", () => getArchivedReleaseHistory());
-ipcMain.handle("updates:install-release", async (_event, version) => {
+handleMainWindow("updates:release-downloads", () => getGithubReleaseInstallers());
+handleMainWindow("updates:release-history", () => getGithubReleaseHistory());
+handleMainWindow("updates:archived-release-history", () => getArchivedReleaseHistory());
+handleMainWindow("updates:install-release", async (_event, version) => {
   if (!app.isPackaged) {
     return { available: false, error: "Updates are available from the installed app." };
   }
@@ -1517,12 +1521,9 @@ ipcMain.handle("updates:install-release", async (_event, version) => {
     updateCheckPromise = null;
   }
 });
-ipcMain.handle("updates:check", async () => {
+handleMainWindow("updates:check", async () => {
   if (!app.isPackaged) {
     return { available: false, error: "Updates are available from the installed app." };
-  }
-  if (settings.updateSource === "local" && !settings.updateFolder) {
-    return { available: false, error: "Choose the folder containing the ULLeds update first." };
   }
   if (downloadedUpdateVersion) {
     return { available: true, downloaded: true, version: downloadedUpdateVersion };
@@ -1535,21 +1536,12 @@ ipcMain.handle("updates:check", async () => {
   updateCheckPromise = (async () => {
     try {
       autoUpdater.allowDowngrade = false;
-      if (settings.updateSource === "local") {
-        if (!updateServer || updateServerFolder !== settings.updateFolder) {
-          if (updateServer) await updateServer.close();
-          updateServer = await createLocalUpdateServer(settings.updateFolder);
-          updateServerFolder = settings.updateFolder;
-        }
-        autoUpdater.setFeedURL({ provider: "generic", url: updateServer.url });
-      } else {
-        autoUpdater.setFeedURL({
-          provider: "github",
-          owner: "gingermat24",
-          repo: "ULLeds",
-          releaseType: "release"
-        });
-      }
+      autoUpdater.setFeedURL({
+        provider: "github",
+        owner: "gingermat24",
+        repo: "ULLeds",
+        releaseType: "release"
+      });
       const result = await autoUpdater.checkForUpdates();
       if (!result) return { available: false, error: "The update service did not return a result." };
       if (!result.isUpdateAvailable) {
@@ -1568,7 +1560,7 @@ ipcMain.handle("updates:check", async () => {
     updateCheckPromise = null;
   }
 });
-ipcMain.handle("updates:install", () => {
+handleMainWindow("updates:install", () => {
   if (!downloadedUpdateVersion) {
     return { installing: false, error: "The update has not finished downloading yet." };
   }
@@ -1649,10 +1641,6 @@ app.on("before-quit", () => {
   stopDeviceWatcher();
   screenSyncActive = false;
   disconnectDevice();
-  if (updateServer) {
-    updateServer.close().catch((error) => console.error("Could not stop the local update server:", error));
-    updateServer = null;
-  }
   tray?.destroy();
   tray = null;
 });

@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
   <title>ULLeds</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -336,23 +337,7 @@
 
       <div class="updates">
         <section class="card update-panel" aria-label="Check for updates">
-          <div class="choices" role="radiogroup" aria-label="Update source">
-            <label class="choice" for="update-source-github">
-              <input id="update-source-github" type="radio" name="update-source" value="github">
-              <span><strong>GitHub Releases</strong><small>Latest public release</small></span>
-            </label>
-            <label class="choice" for="update-source-local">
-              <input id="update-source-local" type="radio" name="update-source" value="local">
-              <span><strong>Local folder</strong><small>Package on this PC</small></span>
-            </label>
-          </div>
-
-          <p class="hint" id="github-update-note">Checks public ULLeds GitHub Releases and downloads verified updates.</p>
-
-          <div class="update-actions-row hidden" id="local-update-controls">
-            <button class="btn" id="choose-update-folder" type="button">Choose folder</button>
-            <span class="folder-path" id="update-folder-label">No folder selected</span>
-          </div>
+          <p class="hint">Checks public ULLeds GitHub Releases. Local-folder updates are disabled until installers can be authenticated.</p>
 
           <div>
             <button class="btn btn-primary" id="check-updates" type="button">Check for updates</button>
@@ -434,7 +419,7 @@
 <dialog class="dialog" id="reset-dialog">
   <form method="dialog">
     <h2>Clear all saved data?</h2>
-    <p class="dialog-copy">This resets scenes, colors, preferences and the update folder. The active controller stays connected. Browser data and the app installation are kept.</p>
+    <p class="dialog-copy">This resets scenes, colors, preferences and imported profiles. The active controller stays connected. Browser data and the app installation are kept.</p>
     <div class="dialog-actions">
       <button class="btn" id="cancel-reset" type="submit" value="cancel">Keep my data</button>
       <button class="btn btn-danger" id="confirm-reset" type="button">Delete and reset</button>
