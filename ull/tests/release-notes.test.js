@@ -4,47 +4,37 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { extractReleaseNotes, formatReleaseNotes } = require("../../scripts/release-notes");
+const { formatReleaseNotes } = require("../../scripts/release-notes");
 
-const html = fs.readFileSync(path.join(__dirname, "..", "ui", "index.html"), "utf8");
+const root = path.join(__dirname, "..", "..");
+const version = require(path.join(root, "package.json")).version;
+const releaseNotesPath = path.join(root, "docs", "releases", `${version}.md`);
 
-test("GitHub release text is generated from every in-app changelog entry", () => {
-  const entries = extractReleaseNotes(html);
-  assert.equal(entries.length, 83);
-  for (let version = 0; version <= 83; version += 1) {
-    if (version === 67) continue;
-    assert.ok(entries.some((entry) => entry.version === `1.0.${version}`));
-  }
+test("release notes are maintained outside the app package", () => {
+  const notes = fs.readFileSync(releaseNotesPath, "utf8");
+  assert.equal(formatReleaseNotes(notes, version), notes.trim().replace(/\r\n/g, "\n"));
+
+  const html = fs.readFileSync(path.join(root, "ull", "ui", "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(root, "ull", "ui", "app.js"), "utf8");
+  const packageConfig = require(path.join(root, "package.json"));
+  assert.doesNotMatch(html, /changelog-data|Built-in changelog/);
+  assert.doesNotMatch(app, /loadBuiltinChangelog|releases\.builtin/);
+  assert.deepEqual(packageConfig.build.files, ["package.json", "ull/**", "!ull/tests/**", "!ull/ui/_preview-light.html"]);
 });
 
-test("release workflow writes each generated Markdown line separately", () => {
+test("release workflow publishes the matching versioned Markdown notes", () => {
   const workflow = fs.readFileSync(
-    path.join(__dirname, "..", "..", ".github", "workflows", "release.yml"),
+    path.join(root, ".github", "workflows", "release.yml"),
     "utf8"
   );
   assert.match(workflow, /node scripts\/release-notes\.js \$version \| Set-Content -Path \$notesPath -Encoding utf8NoBOM/);
-  assert.doesNotMatch(workflow, /"\$notes`n"/);
+  assert.match(fs.readFileSync(releaseNotesPath, "utf8"), new RegExp(`^## ULLeds ${version}$`, "m"));
 });
 
-test("release note output preserves categories and user-facing items", () => {
-  const latestNotes = formatReleaseNotes(html, "1.0.83");
-  assert.equal(
-    latestNotes,
-    "## ULLeds 1.0.83\n\n### Improved\n\n- Refined the strip profile editor with a centered monitor-edge picker, concise LED counts, and one Advanced section for LED counts and color order.\n- Adjusted live-preview LED spacing to the number of LEDs on each monitor edge.\n- Kept monitor edges in a consistent order and clarified manual LED-count validation.\n\n### Fixed\n\n- Separated selected monitor-edge indicators at the corners so adjacent bars stay visually distinct."
-  );
-  const notes = formatReleaseNotes(html, "1.0.82");
-  assert.equal(
-    notes,
-    "## ULLeds 1.0.82\n\n### Fixed\n\n- Preserved headings and bullet lists in GitHub release descriptions so published changelogs display correctly."
-  );
-  assert.doesNotMatch(notes, /UI tests/);
-});
-
-test("HTML entities are decoded in GitHub release text", () => {
-  const notes = formatReleaseNotes(
-    '<article class="card release-entry"><header><h3>ULLeds 1.0.99</h3></header>' +
-    '<div class="release-category"><strong>Improved</strong><ul><li>Color &amp; brightness.</li></ul></div></article>',
-    "1.0.99"
-  );
-  assert.match(notes, /Color & brightness\./);
+test("release note formatting validates version, category, and bullet", () => {
+  const notes = fs.readFileSync(releaseNotesPath, "utf8");
+  assert.match(formatReleaseNotes(notes, version), /Load release notes and history directly from published GitHub releases/);
+  assert.throws(() => formatReleaseNotes(notes, "bad-version"), /X\.Y\.Z/);
+  assert.throws(() => formatReleaseNotes("## ULLeds 1.0.84\n\nNo category", "1.0.84"), /category and at least one bullet/);
+  assert.throws(() => formatReleaseNotes("## ULLeds 1.0.83\n\n### Fixed\n\n- Note", "1.0.84"), /must start/);
 });

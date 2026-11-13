@@ -402,7 +402,7 @@ test("release carousel has dated entries and compact bounded navigation", () => 
   assert.match(app, /entries\[current\]\.animate\(/);
   assert.match(app, /prefers-reduced-motion: reduce/);
   assert.match(css, /\.release-nav\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center/s);
-  assert.match(css, /\.release-nav \[hidden\], \.release\[hidden\] \{\s*display: none;/);
+  assert.match(css, /\.release-nav\[hidden\], \.release-nav \[hidden\], \.release\[hidden\] \{\s*display: none;/);
   assert.match(css, /\.release-position \{[^}]*width: 3\.25rem;[^}]*background: var\(--surface-2\);[^}]*text-align: center;/s);
 });
 
@@ -438,33 +438,18 @@ test("release number jumps only to valid entries and restores invalid input", ()
   }
 });
 
-test("release notes have one combined entry for 1.0.68 instead of duplicate version 1.0.67", () => {
+test("release carousel uses only published GitHub history and does not bundle changelog data", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
-  const changelog = JSON.parse(html.match(/<script type="application\/json" id="changelog-data">([\s\S]*?)<\/script>/)[1]);
-  const releaseVersions = changelog.releases.map(({ version }) => version);
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
-  assert.equal(new Set(releaseVersions).size, releaseVersions.length);
-  assert.equal(releaseVersions.filter((version) => version === "1.0.67").length, 0);
-  assert.equal(releaseVersions.filter((version) => version === "1.0.68").length, 1);
-  assert.equal(releaseVersions.filter((version) => version === "1.0.77").length, 1);
-  assert.equal(releaseVersions[0], "1.0.83");
-  assert.equal(releaseVersions.filter((version) => version === "1.0.83").length, 1);
-  assert.match(changelog.releases[0].notes.Improved[0], /centered monitor-edge picker/);
-  assert.match(changelog.releases[0].notes.Improved[1], /live-preview LED spacing/);
-  assert.match(changelog.releases[0].notes.Fixed[0], /adjacent bars stay visually distinct/);
-  assert.equal(releaseVersions[1], "1.0.82");
-  assert.equal(releaseVersions.filter((version) => version === "1.0.82").length, 1);
-  assert.match(changelog.releases[1].notes.Fixed[0], /Preserved headings and bullet lists/);
-  assert.equal(releaseVersions[2], "1.0.81");
-  assert.match(changelog.releases[2].notes.Changed[0], /Replaced the per-LED placement editor from 1\.0\.80/);
-  assert.match(changelog.releases[2].notes.Changed[0], /exact per-edge counts/);
-  assert.match(changelog.releases[2].notes.Changed[1], /Screen Sync sampling to follow the selected edge layout/);
-  assert.equal(changelog.releases[2].notes.New, undefined);
-  assert.equal(releaseVersions[3], "1.0.80");
-  assert.equal(releaseVersions.filter((version) => version === "1.0.80").length, 1);
-  assert.match(changelog.releases[3].notes.New[0], /Arrange every detected LED manually around your screen/);
-  assert.match(changelog.releases.find(({ version }) => version === "1.0.68").notes.Improved[0], /Reduced idle controller work/);
-  assert.match(changelog.legacy.versions[0], /^1\.0\.\d+$/);
+  assert.doesNotMatch(html, /changelog-data|Built-in changelog/);
+  assert.match(html, /id="release-navigation"[^>]*hidden/);
+  assert.match(html, /id="release-status"[^>]*role="status"[^>]*aria-live="polite">Loading release notes from GitHub/);
+  assert.match(app, /return \[\.\.\.\(releases\.published\?\.values\(\) \?\? \[\]\)\]/);
+  assert.doesNotMatch(app, /loadBuiltinChangelog|releases\.builtin/);
+  assert.match(app, /Offline\. Release notes can't be loaded\./);
+  assert.match(app, /Could not load release notes from GitHub\. Check your connection and try again\./);
+  assert.match(app, /No release notes are available on GitHub\./);
 });
 
 test("LED preview scales with its card and selected LEDs stay within their grid cells", () => {
@@ -838,7 +823,7 @@ test("Updates checks GitHub Releases by default and retains local-folder updates
   assert.match(main, /autoUpdater\.setFeedURL\(\{\s+provider: "github",\s+owner: "gingermat24",\s+repo: "ULLeds",\s+releaseType: "release"\s+\}\)/);
   assert.match(main, /autoUpdater\.setFeedURL\(\{ provider: "generic", url: updateServer\.url \}\)/);
   assert.match(main, /controller-write-diagnostics\.log/);
-  assert.match(html, /controller-write-diagnostics\.log/);
+  assert.doesNotMatch(html, /controller-write-diagnostics\.log/);
   assert.match(main, /updateSource: "github"/);
   assert.equal(packageJson.build.publish.length, 1);
   assert.deepEqual(packageJson.build.publish[0], {

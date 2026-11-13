@@ -361,7 +361,7 @@
         <section class="card releases" aria-labelledby="releases-title">
           <header class="releases-head">
             <h3 id="releases-title">Release notes</h3>
-            <nav class="release-nav" aria-label="Release navigation">
+            <nav class="release-nav" id="release-navigation" aria-label="Release navigation" hidden>
               <button class="icon-btn" id="release-newer" type="button" aria-label="Newer release" aria-controls="release-track">
                 <svg viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M8.5 3L4.5 7l4 4" /></svg>
               </button>
@@ -373,7 +373,7 @@
               </button>
             </nav>
           </header>
-          <p class="hint hidden" id="release-status" role="status" aria-live="polite"></p>
+          <p class="hint" id="release-status" role="status" aria-live="polite">Loading release notes from GitHub…</p>
           <div id="release-track" aria-live="polite"></div>
         </section>
       </div>
@@ -433,206 +433,6 @@
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-<!-- Built-in changelog -->
-<script type="application/json" id="changelog-data">
-{
-  "legacy": {
-    "note": "This installer predates the available source commits; its individual changes could not be verified.",
-    "versions": ["1.0.11", "1.0.10", "1.0.9", "1.0.8", "1.0.7", "1.0.6", "1.0.5", "1.0.4", "1.0.3", "1.0.2", "1.0.1", "1.0.0"]
-  },
-  "releases": [
-    { "version": "1.0.83", "notes": {
-      "Improved": [
-        "Refined the strip profile editor with a centered monitor-edge picker, concise LED counts, and one Advanced section for LED counts and color order.",
-        "Adjusted live-preview LED spacing to the number of LEDs on each monitor edge.",
-        "Kept monitor edges in a consistent order and clarified manual LED-count validation."
-      ],
-      "Fixed": [
-        "Separated selected monitor-edge indicators at the corners so adjacent bars stay visually distinct."
-      ]
-    } },
-    { "version": "1.0.82", "notes": {
-      "Fixed": [
-        "Preserved headings and bullet lists in GitHub release descriptions so published changelogs display correctly."
-      ]
-    } },
-    { "version": "1.0.81", "notes": {
-      "Changed": [
-        "Replaced the per-LED placement editor from 1.0.80 with direct monitor-edge selection, automatic LED distribution, and exact per-edge counts.",
-        "Updated Screen Sync sampling to follow the selected edge layout."
-      ],
-      "Improved": [
-        "Reworked the interface with a consistent monochrome style, shared spacing, and responsive layouts."
-      ] } },
-    { "version": "1.0.80", "notes": {
-      "New": ["Arrange every detected LED manually around your screen with drag placement, position controls, and layout rotation."],
-      "Improved": ["LED numbers follow the controller's physical order, and Screen Sync samples each manually placed position. Existing strip profiles keep their current layout and sampling behavior."] } },
-    { "version": "1.0.79", "notes": {
-      "Fixed": ["Device and Updates now expand to the available window width on large displays, matching Lighting and Scenes."] } },
-    { "version": "1.0.78", "notes": {
-      "Improved": ["Simplified strip profile editing with clear edge-coverage diagrams, LED start direction choices, and color order under Advanced.", "Start-with-Windows launches faster for regular lighting and performs only one controller scan."],
-      "Fixed": ["ULLeds now restores the saved lighting or sync mode at startup, including Spotify Sync, and keeps LEDs off when the saved power state is off.", "Spotify Sync uses local desktop-audio capture so it can resume without a display-sharing prompt."] } },
-    { "version": "1.0.77", "notes": {
-      "Improved": ["Applied the redesigned interface across ULLeds, and made Device and Updates pages adapt to more of the available window width.", "Release notes now let you enter an update number directly, with previous and next arrows shown only when available."] } },
-    { "version": "1.0.76", "notes": {
-      "Fixed": ["Windows shutdown now waits for the LED-off command to finish before the controller disconnects.", "The Lighting view opens with no LEDs selected."] } },
-    { "version": "1.0.75", "notes": {
-      "Improved": ["LED gradients now follow the order and direction you selected the LEDs.", "Added a Deselect all control for clearing the current LED selection."],
-      "Fixed": ["Restored the Apply gradient button action."] } },
-    { "version": "1.0.74", "notes": {
-      "Fixed": ["Select all now visibly marks every LED, and fixed colors or gradients switch to Solid so their colors reach the strip."] } },
-    { "version": "1.0.73", "notes": {
-      "New": ["Export saved lighting setups as a backup and import them on another PC without replacing existing setups.", "Apply a two-color gradient across the whole strip or selected LEDs in strip order."],
-      "Improved": ["Aligned changelog markers at both ends of the responsive release card and aligned compact Update and Downgrade buttons with their titles."] } },
-    { "version": "1.0.72", "notes": {
-      "Improved": ["Fixed changelog marker spacing and made the release card resize with the window.", "Aligned compact Update and Downgrade buttons with their release titles."] } },
-    { "version": "1.0.71", "notes": {
-      "Improved": ["Made the Update and Downgrade controls compact to match release titles, and spaced every changelog marker evenly from edge to edge."] } },
-    { "version": "1.0.70", "notes": {
-      "Improved": ["Aligned the changelog progress markers with both ends of the release card and moved each Update or Downgrade button next to its version."] } },
-    { "version": "1.0.69", "notes": {
-      "Improved": ["The changelog now uses published GitHub release notes and dates. Versions without a GitHub release keep their built-in notes and are marked Legacy."] } },
-    { "version": "1.0.68", "notes": {
-      "Improved": ["Reduced idle controller work: reconnect checks pause while the controller is connected, timing diagnostics flush only after new data arrives, and steady-color LEDs are left undisturbed between changes."] } },
-    { "version": "1.0.66", "notes": {
-      "Fixed": ["Turn the LEDs off when Windows shuts down or restarts, then restore their previous on or off state when ULLeds starts again."] } },
-    { "version": "1.0.65", "notes": {
-      "Improved": ["Kept the startup update notice visible for longer so there is more time to notice it."] } },
-    { "version": "1.0.64", "notes": {
-      "Fixed": ["Show available updates even when GitHub’s Releases API is rate-limited by discovering published installers from GitHub’s public release pages."] } },
-    { "version": "1.0.63", "notes": {
-      "Improved": ["Kept changelog navigation arrows visible at every release and made them wrap between the newest and oldest entries."] } },
-    { "version": "1.0.62", "notes": {
-      "Fixed": ["Update and Downgrade now use ULLeds’ in-app updater, with download progress and the same verified restart-to-install flow as GitHub updates."] } },
-    { "version": "1.0.61", "notes": {
-      "Added": ["Added Update and Downgrade buttons for each published Windows release and a compact startup notice when a newer version is available."],
-      "Improved": ["Reduced Screen Sync color-sampling work while preserving sampled LED colors and frame behavior."] } },
-    { "version": "1.0.60", "notes": {
-      "Improved": ["Spotify Sync now reacts to live desktop audio, sending flowing cover-art colors that pulse with bass, mids, and treble.", "Kept Spotify Sync running through brief gaps in track artwork and improved track-change detection.", "Matched changelog arrows, progress alignment, and transitions to the existing interface."] } },
-    { "version": "1.0.59", "notes": {
-      "Added": ["Added Spotify Sync, using locally read cover art to spread each track’s dominant colors across the LED strip."],
-      "Fixed": ["Fixed the monitor preview width so it grows with the app window."],
-      "Improved": ["Reorganized Device settings into Controller, Screen Sync, Startup, and Reset groups.", "Replaced the long changelog with a dated release carousel, navigation arrows, and progress markers."] } },
-    { "version": "1.0.58", "notes": {
-      "Added": ["Added Music Sync for Spotify and other audio apps using local system-audio analysis, with no Spotify login or audio recording."],
-      "Fixed": ["Kept top LEDs sampling picture colors when small bright overlays cross widescreen letterbox bars."],
-      "Improved": ["Refreshed the Lighting interface with streamlined controls, bundled Cormorant Garamond titles, Noto Sans body text, and a shared spacing scale.", "Automated Windows release builds and uploads from version tags, with GitHub notes generated from this changelog."] } },
-    { "version": "1.0.57", "notes": {
-      "Fixed": ["Kept Lighting controls grouped together instead of spreading them across the full card height."] } },
-    { "version": "1.0.56", "notes": {
-      "Fixed": ["Kept page gutters, card padding, control sizes, and spacing consistent while resizing the window."] } },
-    { "version": "1.0.55", "notes": {
-      "Improved": ["Expanded the lighting layout on large displays, scaled controls to fit the available space, matched the monitor preview to your display’s aspect ratio, and rounded the LED previews to match the interface."] } },
-    { "version": "1.0.54", "notes": {
-      "Improved": ["Refined the interface with tighter spacing, hairline borders, understated active tabs, compact controls, and clearer visual hierarchy."] } },
-    { "version": "1.0.53", "notes": {
-      "Improved": ["Redesigned the app with a cleaner black-and-white interface, softer surfaces, and consistent controls.", "Made the widescreen prompt compact and translucent, and stopped repeated prompts for already-seen movie formats during a Screen Sync session."] } },
-    { "version": "1.0.52", "notes": {
-      "Fixed": ["Screen Sync no longer drops nearly half its samples when the 30 FPS capture timestamps vary slightly."] } },
-    { "version": "1.0.51", "notes": {
-      "Improved": ["Removed the extra focus outline from dropdowns and text fields.", "Added local Screen Sync callback and sampling timing diagnostics to help pinpoint low frame rates."] } },
-    { "version": "1.0.50", "notes": {
-      "Fixed": ["Screen Sync returns to your saved picture area after widescreen letterbox bars disappear.", "Shift-click selects every LED between the previous and current LED; the selected outline no longer turns into a conflicting focus ring.", "The widescreen prompt now uses the app’s shared styles and button presets."] } },
-    { "version": "1.0.49", "notes": {
-      "Improved": ["Added a compact, semi-transparent movie-format prompt at the top center of the screen, including over fullscreen windows.", "Choosing Use detected within five seconds applies the detected ratio for the current Screen Sync session. If the prompt times out or you choose Keep current, Screen Sync keeps its existing format."] } },
-    { "version": "1.0.48", "notes": {
-      "Added": ["Added GitHub in-app update checks and verified downloads. Users on 1.0.47 or earlier need to install 1.0.48 manually once before in-app updates are available.", "Added temporary aggregate settings-save and USB-write timing diagnostics at %APPDATA%\\ULLeds\\controller-write-diagnostics.log. The log records timings and counts only, not screen content, colors, or device identifiers."] } },
-    { "version": "1.0.47", "notes": {
-      "Improved": ["Made the connection status compact and unified the page spacing.", "Matched the Windows title bar to the app header."] } },
-    { "version": "1.0.46", "notes": {
-      "Fixed": ["Aligned the connection status with the full-height Windows title-bar controls and kept the scrollbar below the header."] } },
-    { "version": "1.0.45", "notes": {
-      "Improved": ["Reorganized the top navigation and connection status for steadier alignment across window sizes."] } },
-    { "version": "1.0.44", "notes": {
-      "Added": ["Scenes now save, rename, duplicate, and restore complete lighting setups.", "Optional widescreen detection asks before applying a stable detected movie picture ratio."] } },
-    { "version": "1.0.43", "notes": {
-      "Improved": ["Screen Sync can sample inside the picture area of 2.35:1 widescreen movies instead of sampling letterbox bars.", "The 1280-pixel capture cap scales the full display; it does not crop the capture."] } },
-    { "version": "1.0.42", "notes": {
-      "Improved": ["Screen Sync limits desktop capture resolution to reduce processing work while preserving the existing color-sampling resolution."] } },
-    { "version": "1.0.41", "notes": {
-      "Fixed": ["Launching ULLeds again reopens the existing window instead of starting a second controller session, preserving Screen Sync state."] } },
-    { "version": "1.0.40", "notes": {
-      "Fixed": ["Screen Sync follows newly presented display frames and sends the newest sampled colors as soon as the current controller write completes, reducing avoidable delay."] } },
-    { "version": "1.0.39", "notes": {
-      "Improved": ["The LED preview scales with the window, and selecting a single LED no longer enlarges it over neighboring LEDs."] } },
-    { "version": "1.0.38", "notes": {
-      "Diagnostic": ["Screen Sync records timestamped counts of ULLeds USB color writes in %APPDATA%\\ULLeds\\screen-sync-diagnostics.log. The log does not include screen pixels or color values."] } },
-    { "version": "1.0.37", "notes": {
-      "Fixed": ["Screen Sync initialization no longer prevents the interface from loading, so buttons and controls respond again."] } },
-    { "version": "1.0.36", "notes": {
-      "Fixed": ["Controller discovery no longer blocks the app’s main thread while enumerating USB devices.", "The interface and setup wizard appear immediately while device discovery runs in the background.", "Startup discovery reuses its device scan rather than enumerating the same controllers multiple times."] } },
-    { "version": "1.0.35", "notes": {
-      "Fixed": ["Screen Sync uses representative sampled pixels directly, avoiding invented colors from patch averages and transition blending.", "Repeated Stop clicks now share one stop request, and Stop remains available while Screen Sync is starting."],
-      "Changed": ["Screen Sync explicitly rejects audio tracks; it only samples display video."] } },
-    { "version": "1.0.34", "notes": {
-      "Fixed": ["Screen Sync keeps using the selected strip direction when you edit a profile while sync is running.", "Screen-facing left and right colors are explicitly mapped to their matching LED sides in either strip direction."],
-      "Changed": ["Rebuilt the Windows, tray, and taskbar icons from the new 1024 × 1024 app artwork.", "Power and preference switches now share the same track and thumb proportions.", "Strip direction choices spell out the full route from the monitor’s front view."] } },
-    { "version": "1.0.33", "notes": {
-      "Fixed": ["Detecting LED counts now handles both HID report formats, including 75-LED controllers.", "Edited strip layouts stay visible on the connected controller and take precedence over older imported profiles after reconnecting."],
-      "Improved": ["Power-off output remains black, and the live switch state stays in sync with the controller."] } },
-    { "version": "1.0.32", "notes": {
-      "Changed": ["Power is now a labelled switch that reports the live LED state, so On and Off can no longer read as the opposite action.", "The whole interface uses a single typeface, and the top-left logo has been removed.", "The Windows title bar is black to match the app, and the redundant native menu bar is gone."],
-      "Fixed": ["Switching the LEDs off now leaves the preview dark, so the preview and the controller agree."] } },
-    { "version": "1.0.31", "notes": {
-      "Changed": ["Redesigned the interface in a Nothing/CMF language: pure black surfaces, hairline borders, monospaced labels, and a single red accent.", "Removed Liquid Glass, glow, and archived Scenes from the active interface."],
-      "Fixed": ["Powering off now always reaches the controller, even while Screen Sync is active, so the button and the LEDs stay in agreement.", "Only one release is marked Current in the changelog."],
-      "Improved": ["Lighting updates and Screen Sync frames skip work while the output is off."] } },
-    { "version": "1.0.30", "notes": {
-      "Fixed": ["Power changes stop Screen Sync first and wait for the requested lighting output to settle.", "Stopping Screen Sync waits for the saved LED colors or selected lighting effect to be restored."],
-      "Changed": ["Archived Liquid Glass without removing its implementation or settings markup."] } },
-    { "version": "1.0.29", "notes": {
-      "Improved": ["Refreshed the interface with a more spacious Liquid Glass layout and refined controls.", "Manual Screen Sync now uses the direct primary-display capture path already used by automatic resume."] } },
-    { "version": "1.0.28", "notes": {
-      "Fixed": ["Preference switch thumbs stay vertically centered in both states.", "Rapid setting changes are saved in order without allowing older responses to overwrite newer control values."],
-      "Improved": ["Power changes are sent immediately, and slider changes are flushed when released while continuing to update during dragging."] } },
-    { "version": "1.0.27", "notes": {
-      "Fixed": ["Glass controls use a dark neutral tint instead of a white overlay.", "Range slider thumbs are vertically centered on their tracks."] } },
-    { "version": "1.0.26", "notes": {
-      "Changed": ["Removed the ULLeds logo and title from the top-left of the interface.", "Reworked Liquid Glass with clearer frosted translucency and a cleaner, quieter surface treatment."],
-      "Removed": ["Removed decorative glow, ambient lighting, and drop shadows throughout the interface."] } },
-    { "version": "1.0.25", "notes": {
-      "Changed": ["Redesigned the interface with optional Liquid Glass controls, adjustable transparency, animated tab selection, and filled range sliders."],
-      "Improved": ["Added clearer tab and control accessibility labels and keyboard selection state.", "Screen Sync FPS remains editable while typing, and section changes return to the top."] } },
-    { "version": "1.0.24", "notes": {
-      "Fixed": ["Controller discovery accepts valid device-info replies even when another HID reader changes the response ID.", "Saved Screen Sync no longer suppresses manual lighting controls when automatic resume fails."] } },
-    { "version": "1.0.23", "notes": {
-      "Fixed": ["Reset keeps the active controller connected and restores its detected profile.", "The Windows app, tray, and refreshed shortcuts use the updated icon."],
-      "New": ["Choose between connected compatible controllers from Device settings."],
-      "Improved": ["Added separate release entries for every version from 1.0.0 through 1.0.23."] } },
-    { "version": "1.0.22", "notes": {
-      "Improved": ["The top navigation stays centered when controller status changes.", "Connection details fit their reserved space instead of shifting the tabs."],
-      "Changed": ["Updated the app artwork and regenerated the Windows icon."] } },
-    { "version": "1.0.21", "notes": {
-      "Fixed": ["Reset clears saved settings without removing active browser data.", "Windows shortcuts refresh to the current app icon after install or update."] } },
-    { "version": "1.0.20", "notes": {
-      "New": ["Added a confirmation flow to reset saved settings and imported lighting profiles."],
-      "Fixed": ["Reset preserves Electron browser data and only removes ULLeds settings and selected legacy profiles."] } },
-    { "version": "1.0.19", "notes": {
-      "Changed": ["Fresh installs now start at #008100 and 50% brightness."],
-      "Improved": ["The interface fills wide windows and scales spacing and type up on large displays.", "The Windows icon is generated from the supplied app.png."] } },
-    { "version": "1.0.18", "notes": {
-      "New": ["Adjustable Screen Sync speed from 5 to 60 FPS, defaulting to 30.", "A dedicated Updates page with local-folder updates and GitHub Releases marked Coming Soon."],
-      "Changed": ["Uses the matching saved LED count when the controller misses its count reply.", "Screen capture and LED updates follow the selected FPS."],
-      "Improved": ["Device and update layouts adapt to narrower windows.", "The app icon can be supplied as a PNG for the window, tray, and installer."],
-      "Fixed": ["Matching controllers can connect using their saved strip profile if the startup count handshake times out.", "Reduced-motion preferences apply at every window size."] } },
-    { "version": "1.0.17", "notes": {
-      "Improved": ["Screen Sync samples screen edges more responsively and calibrates RGB channels."] } },
-    { "version": "1.0.16", "notes": {
-      "Fixed": ["Restored Screen Sync state cleanly when reopening the app."] } },
-    { "version": "1.0.15", "notes": {
-      "New": ["Windows sign-in startup and optional automatic Screen Sync resume."],
-      "Improved": ["Restores saved lighting and shortens the update restart flow."] } },
-    { "version": "1.0.14", "notes": {
-      "Improved": ["Shortened the update restart flow and clarified that ULLeds reopens automatically."] } },
-    { "version": "1.0.13", "notes": {
-      "Improved": ["Stopped controller work before update installation to make restart more reliable."] } },
-    { "version": "1.0.12", "notes": {
-      "New": ["Added visible update download progress."],
-      "Removed": ["Archived Scenes from the active interface."] } }
-  ]
-}
-</script>
 
 <script src="../strip-layout.js"></script>
 <script src="../led-selection.js"></script>

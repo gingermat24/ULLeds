@@ -46,10 +46,9 @@ Windows installer for each published version, labeled **Update** or
 in-app updater; restart ULLeds from the update prompt to install it. Earlier
 versions must be updated manually.
 
-The release-notes carousel reads published release descriptions from GitHub
-when online. The app also bundles a local copy of the changelog so notes remain
-available if GitHub cannot be reached; published GitHub notes take precedence
-when they load successfully.
+The release-notes carousel loads published release descriptions directly from
+GitHub. Release history is not bundled with the app. If GitHub is unreachable,
+the carousel reports that release notes could not be loaded.
 
 ## Screen Sync and privacy
 
@@ -82,6 +81,36 @@ saved picture area. You can also disable detection or select
 
 Closing the window keeps ULLeds running in the system tray, so Screen Sync can
 continue. Choose **Quit** from the tray menu to exit completely.
+
+## Build from source
+
+For developers: use Windows 10 or 11, Node.js 22.12 or newer, and npm.
+
+```powershell
+npm install
+npm start
+```
+
+To run the tests and build the Windows installer:
+
+```powershell
+npm test
+npm run dist:win
+```
+
+The installer is created in `dist/`. ULLeds settings are stored under
+`%APPDATA%\ULLeds`.
+
+The Spotify media helper source is `ull/spotify-media.cs`. To rebuild its
+Windows executable, run `npm run build:spotify-helper` with the Windows 10 SDK
+installed.
+
+To publish a Windows release, add `docs/releases/<version>.md` with the release
+notes, update the package version, then push a matching `v<version>` tag.
+GitHub Actions runs the tests, builds the installer, and publishes the installer
+and release notes. The notes source is kept outside the app package; the app
+loads published notes from GitHub. The bundled Cormorant Garamond and Noto Sans
+font licenses are in `ull/assets/fonts/`.
 
 ## License
 

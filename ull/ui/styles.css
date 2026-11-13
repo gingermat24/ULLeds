@@ -670,7 +670,7 @@ main {
 .releases { display: grid; gap: var(--sp-4); align-content: start; }
 .releases-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
 .release-nav { display: flex; align-items: center; gap: var(--sp-2); color: var(--muted); }
-.release-nav [hidden], .release[hidden] { display: none; }
+.release-nav[hidden], .release-nav [hidden], .release[hidden] { display: none; }
 .releases .release { padding: 0; background: transparent; }
 .release-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3); }
 .release-date { margin-left: auto; color: var(--muted); font-size: var(--fs-xs); }

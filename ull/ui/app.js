@@ -81,7 +81,6 @@ const devices = { list: [], connecting: false, connectingPath: "" };
 // Updates and release notes.
 const updates = { busy: false, progress: { phase: "idle", percent: null, transferred: 0, total: 0 } };
 const releases = {
-  builtin: [],          // from the changelog block in index.html
   published: null,      // Map(version → release) once GitHub history loads
   installers: null,     // Map(version → installer) once GitHub downloads load
   latest: null,         // newest installer
@@ -1615,19 +1614,6 @@ function showVersionNotice(installer) {
 
 const compareReleaseVersions = (a, b) => window.ullGithubReleases.compareVersions(a, b);
 
-/** Built-in changelog from the JSON block in index.html, newest first. */
-function loadBuiltinChangelog() {
-  const data = JSON.parse($("#changelog-data").textContent);
-  const entries = data.releases.map(({ version, notes }) => ({
-    version,
-    categories: Object.entries(notes).map(([name, items]) => ({ name, items }))
-  }));
-  for (const version of data.legacy.versions) {
-    entries.push({ version, categories: [{ name: "History", items: [data.legacy.note] }] });
-  }
-  return entries;
-}
-
 /** Keep only well-formed { name, items[] } categories with real text. */
 function cleanCategories(categories) {
   if (!Array.isArray(categories)) return [];
@@ -1641,11 +1627,8 @@ function cleanCategories(categories) {
 }
 
 function releaseEntries() {
-  const byVersion = new Map(releases.builtin.map((entry) => [entry.version, entry]));
-  for (const version of releases.published?.keys() ?? []) {
-    if (!byVersion.has(version)) byVersion.set(version, { version, categories: [] });
-  }
-  return [...byVersion.values()].sort((a, b) => compareReleaseVersions(b.version, a.version));
+  return [...(releases.published?.values() ?? [])]
+    .sort((a, b) => compareReleaseVersions(b.version, a.version));
 }
 
 function releaseBadge(version) {
@@ -1684,25 +1667,24 @@ function releaseAction(version) {
 function buildReleaseEntry(entry) {
   const { version } = entry;
   const published = releases.published?.get(version);
-  const fromGithub = cleanCategories(published?.categories);
-  const categories = fromGithub.length ? fromGithub : cleanCategories(entry.categories);
+  const categories = cleanCategories(entry.categories);
   const badge = releaseBadge(version);
-  const legacy = releases.published && !published;
 
   return h("article", { class: "panel release", hidden: true },
     h("header", { class: "release-head" },
       h("h3", { text: `ULLeds ${version}` }),
       badge && h("span", { class: "badge", text: badge }),
-      legacy && h("span", { class: "badge badge-quiet", text: "Legacy" }),
       releaseAction(version),
       releaseDate(published)
     ),
-    ...categories.map(({ name, items }) =>
-      h("div", { class: "release-category" },
-        h("strong", { text: name }),
-        h("ul", {}, ...items.map((item) => h("li", { text: item })))
+    ...(categories.length
+      ? categories.map(({ name, items }) =>
+        h("div", { class: "release-category" },
+          h("strong", { text: name }),
+          h("ul", {}, ...items.map((item) => h("li", { text: item })))
+        )
       )
-    )
+      : [h("p", { class: "hint", text: "No release notes were published for this version." })])
   );
 }
 
@@ -1710,8 +1692,24 @@ function renderReleases() {
   const entries = releaseEntries();
   releases.versions = entries.map((entry) => entry.version);
   releases.previousIndex = null;
-
+  const status = $("#release-status");
+  $("#release-navigation").hidden = entries.length === 0;
   $("#release-track").replaceChildren(...entries.map(buildReleaseEntry));
+
+  if (entries.length === 0) {
+    releases.selected = null;
+    $("#release-position").value = "";
+    $("#release-total").textContent = "0";
+    $("#release-newer").hidden = true;
+    $("#release-older").hidden = true;
+    if (releases.published) {
+      status.textContent = "No release notes are available on GitHub.";
+      status.classList.remove("hidden");
+    }
+    return;
+  }
+
+  status.classList.add("hidden");
   const selected = releases.versions.indexOf(releases.selected);
   showRelease(selected >= 0 ? selected : 0);
 }
@@ -1762,6 +1760,8 @@ function commitReleaseJump() {
 
 async function loadReleaseDownloads() {
   const status = $("#release-status");
+  status.textContent = "Loading release notes from GitHub…";
+  status.classList.remove("hidden");
   try {
     const [installers, history] = await Promise.all([
       window.ull.listReleaseDownloads(),
@@ -1785,7 +1785,9 @@ async function loadReleaseDownloads() {
     }
   } catch (error) {
     console.error("Could not load GitHub release downloads:", error);
-    status.textContent = "Could not load releases from GitHub. Showing the built-in release notes.";
+    status.textContent = navigator.onLine === false
+      ? "Offline. Release notes can't be loaded."
+      : "Could not load release notes from GitHub. Check your connection and try again.";
     status.classList.remove("hidden");
   }
 }
@@ -2440,7 +2442,6 @@ async function start() {
   window.addEventListener("resize", updateMonitorAspectRatio);
 
   try {
-    releases.builtin = loadBuiltinChangelog();
     state = await window.ull.initialState();
     render();
     renderReleases();

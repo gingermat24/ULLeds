@@ -3,91 +3,39 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-function decodeHtmlEntities(value) {
-  return value
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'");
-}
-
-function extractReleaseNotes(html) {
-  if (typeof html !== "string") throw new TypeError("In-app release notes must be HTML text.");
-  const changelogData = html.match(/<script\b(?=[^>]*\bid="changelog-data")(?=[^>]*\btype="application\/json")[^>]*>([\s\S]*?)<\/script>/i);
-  if (changelogData) {
-    const data = JSON.parse(changelogData[1]);
-    if (!Array.isArray(data.releases)) throw new Error("The in-app changelog has no release list.");
-    const entries = data.releases.map(({ version, notes }) => {
-      if (typeof version !== "string" || !/^1\.0\.\d+$/.test(version) ||
-          !notes || typeof notes !== "object" || Array.isArray(notes)) {
-        throw new Error("An in-app release note entry is invalid.");
-      }
-      const categories = Object.entries(notes).map(([name, items]) => {
-        if (typeof name !== "string" || !Array.isArray(items) || items.length === 0 ||
-            items.some((item) => typeof item !== "string" || !item.trim())) {
-          throw new Error(`Release ${version} has an invalid category.`);
-        }
-        return { name, items: items.map((item) => item.trim()) };
-      });
-      if (categories.length === 0) throw new Error(`Release ${version} has no notes.`);
-      return { version, categories };
-    });
-    if (data.legacy) {
-      if (typeof data.legacy.note !== "string" || !data.legacy.note.trim() ||
-          !Array.isArray(data.legacy.versions) ||
-          data.legacy.versions.some((version) =>
-            typeof version !== "string" || !/^1\.0\.\d+$/.test(version))) {
-        throw new Error("The in-app legacy release notes are invalid.");
-      }
-      entries.push(...data.legacy.versions.map((version) => ({
-        version,
-        categories: [{ name: "History", items: [data.legacy.note.trim()] }]
-      })));
-    }
-    const versions = entries.map((entry) => entry.version);
-    if (new Set(versions).size !== versions.length) throw new Error("Duplicate in-app release versions found.");
-    return entries;
+function formatReleaseNotes(markdown, version) {
+  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/.test(version)) {
+    throw new TypeError("Release version must use the X.Y.Z format.");
+  }
+  if (typeof markdown !== "string") {
+    throw new TypeError("Release notes must be Markdown text.");
   }
 
-  const entries = [];
-  const articlePattern = /<article\b[^>]*class="card release-entry"[^>]*>([\s\S]*?)<\/article>/g;
-  for (const article of html.matchAll(articlePattern)) {
-    const versionMatch = article[1].match(/<h3>ULLeds (1\.0\.\d+)<\/h3>/);
-    if (!versionMatch) throw new Error("A release note entry is missing its version.");
-    const categories = [];
-    const categoryPattern = /<div class="release-category"><strong>([^<]+)<\/strong><ul>([\s\S]*?)<\/ul><\/div>/g;
-    for (const category of article[1].matchAll(categoryPattern)) {
-      const items = [...category[2].matchAll(/<li>([\s\S]*?)<\/li>/g)]
-        .map((item) => decodeHtmlEntities(item[1].replace(/<[^>]*>/g, "").trim()));
-      if (items.length === 0) throw new Error(`Release ${versionMatch[1]} has an empty category.`);
-      categories.push({ name: decodeHtmlEntities(category[1]), items });
-    }
-    if (categories.length === 0) throw new Error(`Release ${versionMatch[1]} has no notes.`);
-    entries.push({ version: versionMatch[1], categories });
+  const notes = markdown.trim().replace(/\r\n/g, "\n");
+  if (notes.split("\n", 1)[0] !== `## ULLeds ${version}`) {
+    throw new Error(`Release notes must start with "## ULLeds ${version}".`);
   }
-  if (entries.length === 0) throw new Error("No in-app release notes were found.");
-  const versions = entries.map((entry) => entry.version);
-  if (new Set(versions).size !== versions.length) throw new Error("Duplicate in-app release versions found.");
-  return entries;
-}
-
-function formatReleaseNotes(html, version) {
-  const entry = extractReleaseNotes(html).find((candidate) => candidate.version === version);
-  if (!entry) throw new Error(`In-app release notes for ${version} were not found.`);
-  const categories = entry.categories.map(({ name, items }) =>
-    `### ${name}\n\n${items.map((item) => `- ${item}`).join("\n")}`
-  );
-  return `## ULLeds ${entry.version}\n\n${categories.join("\n\n")}`;
+  if (!/^### .+\S.*$/m.test(notes) || !/^[-*+] \S.+$/m.test(notes)) {
+    throw new Error(`Release notes for ${version} must include a category and at least one bullet.`);
+  }
+  return notes;
 }
 
 function main() {
   const root = path.resolve(__dirname, "..");
   const version = process.argv[2] || require(path.join(root, "package.json")).version;
-  const html = fs.readFileSync(path.join(root, "ull", "ui", "index.html"), "utf8");
-  process.stdout.write(`${formatReleaseNotes(html, version)}\n`);
+  const file = path.join(root, "docs", "releases", `${version}.md`);
+  const markdown = fs.readFileSync(file, "utf8");
+  process.stdout.write(`${formatReleaseNotes(markdown, version)}\n`);
 }
 
-if (require.main === module) main();
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}
 
-module.exports = { extractReleaseNotes, formatReleaseNotes };
+module.exports = { formatReleaseNotes };
