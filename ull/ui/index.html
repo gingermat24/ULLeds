@@ -194,15 +194,49 @@
                 </div>
                 <button class="btn sync-toggle" id="screen-sync-toggle" type="button">Start</button>
               </div>
-              <div class="row row-inline">
-                <div class="row-text">
-                  <span class="row-title">Spotify Sync</span>
-                  <span class="row-desc" id="spotify-sync-description">Colors from the current track</span>
+              <section class="spotify-group" id="spotify-player" data-active="false" data-starting="false">
+                <div class="row row-inline spotify-sync-row">
+                  <div class="row-text">
+                    <span class="row-title">Spotify Sync</span>
+                    <span class="row-desc" id="spotify-sync-description">Match LEDs to Spotify</span>
+                  </div>
+                  <button class="btn sync-toggle" id="spotify-sync-toggle" type="button">Start</button>
                 </div>
-                <button class="btn sync-toggle" id="spotify-sync-toggle" type="button">Start</button>
-              </div>
+                <div class="spotify-details" id="spotify-details" data-expanded="false" aria-hidden="true" inert>
+                  <div class="spotify-details-inner">
+                    <div class="spotify-now-playing">
+                      <div class="spotify-cover" aria-hidden="true">
+                        <svg class="spotify-cover-placeholder" id="spotify-cover-placeholder" viewBox="0 0 32 32" focusable="false">
+                          <path d="M7 21V8l18-3v17M7 21c0 2-1.6 3.5-3.5 3.5S0 23.6 0 21.5 1.6 18 3.5 18 7 19 7 21Zm18-2c0 2-1.6 3.5-3.5 3.5S18 21.6 18 19.5s1.6-3.5 3.5-3.5S25 16.9 25 19Z" />
+                        </svg>
+                        <img class="spotify-cover-image hidden" id="spotify-cover-image" alt="">
+                      </div>
+                      <div class="spotify-track-copy">
+                        <strong id="spotify-track-title">Ready when you are</strong>
+                        <span id="spotify-track-artist">Play a track in Spotify</span>
+                      </div>
+                    </div>
+                    <div class="spotify-audio">
+                      <div class="spotify-meter" id="spotify-meter" aria-hidden="true">
+                        <span></span><span></span><span></span><span></span><span></span><span></span>
+                        <span></span><span></span><span></span><span></span><span></span><span></span>
+                      </div>
+                      <div class="spotify-meter-caption" aria-hidden="true">
+                        <span>Low</span><span>Mid</span><span>High</span>
+                      </div>
+                      <div class="field spotify-response">
+                        <div class="field-head">
+                          <label for="spotify-sensitivity">Audio response</label>
+                          <output id="spotify-sensitivity-value" for="spotify-sensitivity">100%</output>
+                        </div>
+                        <input id="spotify-sensitivity" type="range" min="0" max="100" value="100">
+                      </div>
+                    </div>
+                    <p class="sync-note">Desktop audio is analyzed on this PC and never recorded or uploaded.</p>
+                  </div>
+                </div>
+              </section>
             </div>
-            <p class="sync-note">Spotify Sync reads cover art and analyzes local desktop audio. Nothing is recorded or uploaded.</p>
           </section>
 
         </aside>

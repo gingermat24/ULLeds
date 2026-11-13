@@ -39,6 +39,7 @@ const { resetStoredData } = require("./reset-data");
 const { normalizeActiveEdges } = require("./strip-layout");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
+const { parseSpotifyArtworkOutput } = require("./spotify-artwork");
 const {
   createGithubIssueReport,
   createGithubIssueUrl,
@@ -81,6 +82,7 @@ const DEFAULTS = Object.freeze({
   devicePath: "",
   power: true,
   onboarded: false,
+  spotifySensitivity: 100,
   syncFps: 30,
   syncContentMode: "display",
   syncAutoDetect: true,
@@ -153,18 +155,11 @@ function readSpotifyArtwork() {
         reject(new Error(stderr.trim() || `Could not read Spotify cover art: ${error.message}`));
         return;
       }
-      const output = stdout.trim();
-      if (output === "NONE") {
-        resolve(null);
-        return;
+      try {
+        resolve(parseSpotifyArtworkOutput(stdout));
+      } catch (parseError) {
+        reject(parseError);
       }
-      const [contentType, data, ...extra] = output.split(/\r?\n/);
-      if (!["image/jpeg", "image/png", "image/webp", "image/bmp"].includes(contentType) ||
-          !data || extra.length > 0 || !/^[\da-z+/]+={0,2}$/i.test(data)) {
-        reject(new Error("Windows returned invalid Spotify cover art."));
-        return;
-      }
-      resolve({ contentType, data });
     });
   });
 }
@@ -187,12 +182,14 @@ function loadSettings() {
       delete stored.updateFolder;
       delete stored.updateSource;
     }
+    const migrateSpotifySensitivity = stored.spotifySensitivity === 65;
+    if (migrateSpotifySensitivity) stored.spotifySensitivity = 100;
     const restored = validateSettings(stored);
     if (!Object.hasOwn(stored, "startupMode")) {
       restored.startupMode = normalizeStartupMode(undefined, stored.resumeScreenSync === true);
     }
     settings = { ...settings, ...restored };
-    if (migrateLocalUpdates) saveSettings();
+    if (migrateLocalUpdates || migrateSpotifySensitivity) saveSettings();
   } catch (error) {
     console.error("Could not load ULLeds settings:", error);
     dialog.showMessageBoxSync({
@@ -307,6 +304,13 @@ function validateSettings(input) {
       throw new RangeError("Screen Sync FPS must be an integer from 5 to 60.");
     }
     next.syncFps = value;
+  }
+  if ("spotifySensitivity" in input) {
+    const value = Number(input.spotifySensitivity);
+    if (!Number.isInteger(value) || value < 0 || value > 100) {
+      throw new RangeError("Spotify response must be an integer from 0 to 100.");
+    }
+    next.spotifySensitivity = value;
   }
   if ("syncContentMode" in input) {
     if (!["display", "cinema235"].includes(input.syncContentMode)) {
