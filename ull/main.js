@@ -95,6 +95,9 @@ app.setName("ULLeds");
 app.setAppUserModelId(APP_ID);
 
 let mainWindow;
+let mainWindowPageLoaded = false;
+let showMainWindowWhenReady = false;
+let loadMainWindowPage = null;
 let tray;
 let isQuitting = false;
 let hidDevice = null;
@@ -826,6 +829,11 @@ function showMainWindow() {
     createWindow({ showWhenReady: true });
     return;
   }
+  if (!mainWindowPageLoaded) {
+    showMainWindowWhenReady = true;
+    loadMainWindowPage?.();
+    return;
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -949,8 +957,8 @@ function onMainWindow(channel, handler) {
   });
 }
 
-function createWindow({ showWhenReady = !startHidden } = {}) {
-  mainWindow = new BrowserWindow({
+function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
+  const window = new BrowserWindow({
     width: 1240,
     height: 760,
     minWidth: 640,
@@ -968,10 +976,23 @@ function createWindow({ showWhenReady = !startHidden } = {}) {
       backgroundThrottling: false
     }
   });
-  mainWindow.once("ready-to-show", () => {
-    if (showWhenReady) mainWindow.show();
+  mainWindow = window;
+  mainWindowPageLoaded = false;
+  showMainWindowWhenReady = showWhenReady;
+  const pagePath = path.join(__dirname, "ui", "index.html");
+  restrictWindowNavigation(window, pagePath);
+  loadMainWindowPage = () => {
+    if (mainWindow !== window || window.isDestroyed() || mainWindowPageLoaded) return;
+    mainWindowPageLoaded = true;
+    window.loadFile(pagePath).catch((error) => {
+      if (mainWindow === window) mainWindowPageLoaded = false;
+      console.error("Could not load the ULLeds window:", error);
+    });
+  };
+  window.once("ready-to-show", () => {
+    if (showMainWindowWhenReady) window.show();
   });
-  mainWindow.on("query-session-end", (event) => {
+  window.on("query-session-end", (event) => {
     const shutdown = {
       platform: process.platform,
       powered: settings.power,
@@ -992,21 +1013,24 @@ function createWindow({ showWhenReady = !startHidden } = {}) {
       app.quit();
     });
   });
-  mainWindow.on("close", (event) => {
+  window.on("close", (event) => {
     if (isQuitting) return;
     event.preventDefault();
-    mainWindow.hide();
+    window.hide();
   });
-  mainWindow.on("closed", () => {
-    mainWindow = null;
+  window.on("closed", () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+      mainWindowPageLoaded = false;
+      showMainWindowWhenReady = false;
+      loadMainWindowPage = null;
+    }
     screenSyncActive = false;
     updateAnimation();
   });
-  mainWindow.on("maximize", () => sendWindowState());
-  mainWindow.on("unmaximize", () => sendWindowState());
-  const pagePath = path.join(__dirname, "ui", "index.html");
-  restrictWindowNavigation(mainWindow, pagePath);
-  mainWindow.loadFile(pagePath);
+  window.on("maximize", () => sendWindowState());
+  window.on("unmaximize", () => sendWindowState());
+  if (loadUI) loadMainWindowPage();
 }
 
 function sendWindowState() {
@@ -1618,7 +1642,7 @@ app.whenReady().then(async () => {
   configureLoginItem();
   Menu.setApplicationMenu(null);
   createTray();
-  if (!startHidden || isSyncStartupMode(settings.startupMode)) createWindow();
+  createWindow({ loadUI: !startHidden || isSyncStartupMode(settings.startupMode) });
   void scanAndConnect().catch((error) => {
     console.error("Could not scan for the LED controller:", error);
     deviceError = error.message;

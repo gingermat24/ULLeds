@@ -13,7 +13,7 @@ test("only known lighting modes are restored and old Screen Sync preference migr
   assert.equal(normalizeStartupMode(undefined, false), "lighting");
 });
 
-test("only capture modes require a renderer at hidden Windows startup", () => {
+test("only screen and Spotify modes resume capture at startup", () => {
   assert.equal(isSyncStartupMode("lighting"), false);
   assert.equal(isSyncStartupMode("screen"), true);
   assert.equal(isSyncStartupMode("spotify"), true);

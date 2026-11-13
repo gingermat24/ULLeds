@@ -263,8 +263,8 @@ test("Windows session shutdown powers off connected LEDs without changing saved 
   const shutdownPower = fs.readFileSync(path.join(__dirname, "..", "shutdown-power.js"), "utf8");
 
   const queryEnd = main.slice(
-    main.indexOf('mainWindow.on("query-session-end"'),
-    main.indexOf('mainWindow.on("close"', main.indexOf('mainWindow.on("query-session-end"'))
+    main.indexOf('window.on("query-session-end"'),
+    main.indexOf('window.on("close"', main.indexOf('window.on("query-session-end"'))
   );
   assert.match(queryEnd, /shouldTurnOffForSessionEnd\(event, shutdown\)/);
   assert.match(queryEnd, /event\.preventDefault\(\)/);
@@ -697,7 +697,8 @@ test("saved mode is restored at Windows sign-in and sync modes resume automatica
   assert.match(main, /openAtLogin: settings\.startWithWindows/);
   assert.match(main, /args: \["--hidden"\]/);
   assert.match(main, /void scanAndConnect\(\)\.catch/);
-  assert.match(main, /if \(!startHidden \|\| isSyncStartupMode\(settings\.startupMode\)\) createWindow\(\)/);
+  assert.match(main, /createTray\(\);\s+createWindow\(\{ loadUI: !startHidden \|\| isSyncStartupMode\(settings\.startupMode\) \}\);/);
+  assert.doesNotMatch(main.slice(main.indexOf("app.whenReady()"), main.indexOf("}).catch((error) => {", main.indexOf("app.whenReady()"))), /if \(!startHidden/);
   assert.match(html, /id="start-with-windows"/);
   assert.doesNotMatch(html, /resume-screen-sync|Resume Screen Sync/);
   assert.match(html, /ULLeds restores your previous mode when it starts\./);
@@ -718,7 +719,7 @@ test("saved mode is restored at Windows sign-in and sync modes resume automatica
   assert.match(app, /function maybeRestoreStartupMode\(\)/);
   assert.match(app, /if \(mode === "screen"\) void startScreenSync\(\{ automatic: true \}\);\s+else void startSpotifySync\(\{ automatic: true \}\)/);
   assert.doesNotMatch(app.slice(app.indexOf("async function start()"), app.indexOf("\nstart();")), /scanDevices\(/);
-  assert.match(main, /if \(!startHidden \|\| isSyncStartupMode\(settings\.startupMode\)\) createWindow\(\)/);
+  assert.match(main, /createTray\(\);\s+createWindow\(\{ loadUI: !startHidden \|\| isSyncStartupMode\(settings\.startupMode\) \}\);/);
 });
 
 test("saved sync modes preserve output during reconnect and fall back when resume fails", () => {
@@ -738,6 +739,20 @@ test("saved sync modes preserve output during reconnect and fall back when resum
   assert.match(app, /runSpotifySyncStart\(audioCapture, audioContext, audioReady, automatic\)/);
   assert.match(app, /\(hardwareSyncStarted \|\| automatic\) && !sync\.lifecycle\.isStopping\) \{\s+try \{\s+const result = await window\.ull\.stopScreenSync\(\);\s+state\.settings\.startupMode = result\.startupMode;/);
   assert.match(app, /sync\.autoAttempted = true;\s+updatePreview\(\);\s+if \(mode === "screen"\) void startScreenSync\(\{ automatic: true \}\);\s+else void startSpotifySync\(\{ automatic: true \}\)/);
+});
+
+test("hidden Windows startup keeps a window alive for session-end LED shutdown", () => {
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const startup = main.slice(main.indexOf("app.whenReady()"), main.indexOf("}).catch((error) => {", main.indexOf("app.whenReady()")));
+  const createWindow = main.slice(main.indexOf("function createWindow"), main.indexOf('mainWindow.on("close"'));
+
+  assert.match(startup, /createTray\(\);\s+createWindow\(\{ loadUI: !startHidden \|\| isSyncStartupMode\(settings\.startupMode\) \}\);/);
+  assert.match(createWindow, /show: false/);
+  assert.match(createWindow, /window\.on\("query-session-end"/);
+  assert.match(createWindow, /if \(loadUI\) loadMainWindowPage\(\)/);
+  assert.match(createWindow, /showMainWindowWhenReady\) window\.show\(\)/);
+  assert.match(main, /if \(!mainWindowPageLoaded\) \{\s+showMainWindowWhenReady = true;\s+loadMainWindowPage\?\.\(\)/);
+  assert.match(main, /const startHidden = process\.platform === "win32" && process\.argv\.includes\("--hidden"\)/);
 });
 
 test("sync mode is saved only while active and manual stop restores the lighting mode", () => {
@@ -1049,8 +1064,8 @@ test("the frameless window draws its own controls and removes the native menu ba
   assert.match(main, /handleMainWindow\("window:minimize"/);
   assert.match(main, /handleMainWindow\("window:toggle-maximize"/);
   assert.match(main, /handleMainWindow\("window:close"/);
-  assert.match(main, /mainWindow\.on\("maximize", \(\) => sendWindowState\(\)\)/);
-  assert.match(main, /mainWindow\.on\("unmaximize", \(\) => sendWindowState\(\)\)/);
+  assert.match(main, /window\.on\("maximize", \(\) => sendWindowState\(\)\)/);
+  assert.match(main, /window\.on\("unmaximize", \(\) => sendWindowState\(\)\)/);
   assert.match(css, /\.topbar \{[^}]*[-]webkit-app-region: drag;/s);
   assert.match(css, /[-]webkit-app-region: no-drag/);
   assert.match(css, /body\.is-maximized \.window-btn \.glyph-max \{\s+display: none;/);
