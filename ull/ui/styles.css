@@ -707,9 +707,34 @@ main {
 .dialog::backdrop { background: var(--scrim); }
 .dialog-profile { width: min(30rem, calc(100vw - 2rem)); }
 .dialog form { display: grid; gap: var(--sp-4); }
+.support-form { display: grid; gap: var(--sp-3); }
+.support-problem {
+  height: auto;
+  min-height: 7rem;
+  padding: var(--sp-3);
+  resize: vertical;
+  user-select: text;
+  white-space: pre-wrap;
+}
 .dialog h2 { font-size: var(--fs-lg); }
 .dialog-copy { color: var(--muted); }
 .dialog-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
+.support-options { display: grid; gap: var(--sp-2); border: 0; }
+.support-options legend { margin-bottom: var(--sp-2); font-weight: 600; }
+.support-file-preview {
+  max-height: 18rem;
+  padding: var(--sp-3);
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font: var(--fs-xs) / 1.45 ui-monospace, Consolas, monospace;
+  user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.support-attachment summary { margin-bottom: var(--sp-2); cursor: pointer; }
+.support-attachment[hidden] { display: none; }
 .dialog-profile .dialog-actions {
   position: sticky;
   bottom: calc(-1 * var(--pad));

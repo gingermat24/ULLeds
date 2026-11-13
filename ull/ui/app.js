@@ -89,6 +89,7 @@ const releases = {
   versions: [],         // versions in display order
   previousIndex: null
 };
+let supportPreviewId = null;
 
 let setupOnboarding = false;
 let profileDraft = null;
@@ -2344,6 +2345,108 @@ function bindScenes() {
   $("#cancel-delete-scene").addEventListener("click", () => $("#delete-scene-dialog").close());
 }
 
+function resetSupportPreview(message = "") {
+  supportPreviewId = null;
+  $("#support-preview").textContent = "";
+  $("#support-preview").hidden = true;
+  $("#support-attachment").hidden = true;
+  $("#support-attachment-preview").textContent = "";
+  $("#send-support").disabled = true;
+  $("#send-support").textContent = "Open GitHub draft";
+  $("#support-status").textContent = message;
+}
+
+async function previewSupportRequest() {
+  const button = $("#preview-support");
+  button.disabled = true;
+  resetSupportPreview("Preparing the preview…");
+  try {
+    const result = await window.ull.previewSupportIssue({
+      problem: $("#support-problem").value,
+      screenSync: $("#support-screen-sync").checked,
+      controllerTiming: $("#support-controller-timing").checked
+    });
+    if (!result || typeof result.previewId !== "string" ||
+        typeof result.title !== "string" || typeof result.body !== "string" ||
+        typeof result.hasDiagnostics !== "boolean" ||
+        !(typeof result.attachmentContent === "string" || result.attachmentContent === null)) {
+      throw new Error("The support request preview was incomplete.");
+    }
+    supportPreviewId = result.previewId;
+    $("#support-preview").textContent = `${result.title}\n\n${result.body}`;
+    $("#support-preview").hidden = false;
+    if (result.hasDiagnostics) {
+      $("#support-attachment-preview").textContent = result.attachmentContent;
+      $("#support-attachment").hidden = false;
+    }
+    $("#send-support").disabled = false;
+    $("#send-support").textContent = result.hasDiagnostics
+      ? "Save logs & open GitHub"
+      : "Open GitHub draft";
+    $("#support-status").textContent = result.hasDiagnostics
+      ? "Review the GitHub draft and local attachment. The logs are not included in the draft; you decide whether to attach them."
+      : "Review the exact GitHub draft below. It becomes public only if you submit it there.";
+  } catch (error) {
+    $("#support-status").textContent = `Could not prepare the support request: ${error.message}`;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function openGithubSupportIssue() {
+  if (!supportPreviewId) return;
+  const button = $("#send-support");
+  button.disabled = true;
+  try {
+    const result = await window.ull.openGithubSupportIssue(supportPreviewId);
+    if (result?.canceled) {
+      button.disabled = false;
+      $("#support-status").textContent = "No file was saved and GitHub was not opened.";
+      return;
+    }
+    supportPreviewId = null;
+    $("#support-dialog").close();
+    resetSupportPreview();
+    toast(result?.attachmentSaved
+      ? "Diagnostics saved locally. Attach the JSON file in GitHub if you want to share it."
+      : "GitHub draft opened. Review it and submit it to contact support.");
+  } catch (error) {
+    $("#support-status").textContent = `Could not open GitHub: ${error.message}`;
+    button.disabled = false;
+  }
+}
+
+function bindSupportRequest() {
+  const dialog = $("#support-dialog");
+  $("#open-support").addEventListener("click", () => {
+    $("#support-problem").value = "";
+    $("#support-screen-sync").checked = false;
+    $("#support-controller-timing").checked = false;
+    $("#preview-support").disabled = false;
+    resetSupportPreview();
+    dialog.showModal();
+  });
+  const invalidatePreview = () => {
+    if (supportPreviewId) void window.ull.discardSupportIssue(supportPreviewId);
+    resetSupportPreview("Your changes were not sent. Preview the updated request before opening GitHub.");
+  };
+  $("#support-problem").addEventListener("input", invalidatePreview);
+  $("#support-screen-sync").addEventListener("change", invalidatePreview);
+  $("#support-controller-timing").addEventListener("change", invalidatePreview);
+  $("#preview-support").addEventListener("click", previewSupportRequest);
+  $("#send-support").addEventListener("click", openGithubSupportIssue);
+  $("#cancel-support").addEventListener("click", () => {
+    if (supportPreviewId) void window.ull.discardSupportIssue(supportPreviewId);
+    supportPreviewId = null;
+    dialog.close();
+  });
+  dialog.addEventListener("close", () => {
+    if (supportPreviewId) void window.ull.discardSupportIssue(supportPreviewId);
+    supportPreviewId = null;
+    resetSupportPreview();
+  });
+}
+
 function bindDeviceSettings() {
   $("#scan-device").addEventListener("click", scanDevices);
   $("#controller-select").addEventListener("change", (event) => void connectSelectedDevice(event.target.value));
@@ -2460,6 +2563,7 @@ function bindEvents() {
   bindLighting();
   bindScenes();
   bindDeviceSettings();
+  bindSupportRequest();
   bindUpdates();
   bindProfileEditor();
   bindMainProcessEvents();

@@ -356,6 +356,7 @@ test("Device settings are grouped by controller, sync, startup, and reset", () =
     "group-controller",
     "group-sync",
     "group-startup",
+    "group-support",
     "group-reset"
   ].map((id) => html.indexOf(`id="${id}"`));
 
@@ -364,8 +365,44 @@ test("Device settings are grouped by controller, sync, startup, and reset", () =
   assert.match(html, /aria-labelledby="group-controller"[\s\S]*id="controller-select"/);
   assert.match(html, /aria-labelledby="group-sync"[\s\S]*id="sync-fps-range"/);
   assert.match(html, /aria-labelledby="group-startup"[\s\S]*id="start-with-windows"/);
+  assert.match(html, /aria-labelledby="group-support"[\s\S]*id="open-support"/);
   assert.match(html, /aria-labelledby="group-reset"[\s\S]*id="reset-all-data"/);
   assert.match(css, /\.groups \{[^}]*display: grid;[^}]*gap: var\(--sp-4\);/s);
+});
+
+test("support request requires user details and explicit opt-in before opening a public GitHub draft", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  const supportBundle = fs.readFileSync(path.join(__dirname, "..", "support-bundle.js"), "utf8");
+
+  assert.match(html, /id="support-problem"[^>]*maxlength="5000"[^>]*required/);
+  assert.match(html, /id="support-screen-sync" type="checkbox"/);
+  assert.match(html, /id="support-controller-timing" type="checkbox"/);
+  assert.match(html, /id="support-preview"[^>]*hidden/);
+  assert.match(html, /diagnostic logs are not put in the draft URL/);
+  assert.match(html, /saved as a local JSON file\. You can review and attach that file yourself in GitHub/);
+  assert.match(html, /id="support-attachment" hidden/);
+  assert.match(app, /problem: \$\("#support-problem"\)\.value/);
+  assert.match(app, /screenSync: \$\("#support-screen-sync"\)\.checked/);
+  assert.match(app, /controllerTiming: \$\("#support-controller-timing"\)\.checked/);
+  assert.match(app, /Your changes were not sent/);
+  assert.match(preload, /previewSupportIssue: \(input\) => ipcRenderer\.invoke\("support:preview", input\)/);
+  assert.match(preload, /openGithubSupportIssue: \(previewId\) => ipcRenderer\.invoke\("support:open-github", previewId\)/);
+  assert.match(preload, /discardSupportIssue: \(previewId\) => ipcRenderer\.invoke\("support:discard", previewId\)/);
+  assert.match(main, /event\.senderFrame !== event\.sender\.mainFrame/);
+  assert.match(main, /screen-sync-diagnostics\.log/);
+  assert.match(main, /controller-write-diagnostics\.log/);
+  assert.match(main, /shell\.openExternal\(createGithubIssueUrl\(preparedSupportIssue\)\)/);
+  assert.match(main, /showSaveDialog\(mainWindow,[\s\S]*Save optional diagnostics to attach to your GitHub issue/);
+  assert.match(main, /fs\.promises\.writeFile\(result\.filePath, preparedSupportIssue\.attachmentContent, "utf8"\)/);
+  assert.match(main, /createGithubIssueUrl\(report\)/);
+  assert.match(main, /osVersion: os\.release\(\)/);
+  assert.doesNotMatch(main, /app\.getSystemVersion/);
+  assert.match(supportBundle, /MAX_DIAGNOSTIC_BYTES = 8 \* 1024/);
+  assert.match(supportBundle, /Object\.keys\(options\)\.some/);
+  assert.match(supportBundle, /https:\/\/github\.com\/gingermat24\/ULLeds\/issues\/new/);
 });
 
 test("controller reconnect polling sleeps while connected and retries only while disconnected", () => {

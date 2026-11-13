@@ -48,7 +48,7 @@ test("release workflow publishes the matching versioned Markdown notes", () => {
 
 test("release note formatting validates version, category, and bullet", () => {
   const notes = fs.readFileSync(releaseNotesPath, "utf8");
-  assert.match(formatReleaseNotes(notes, version), /Keep archived changelogs only for versions before GitHub v1\.0\.47/);
+  assert.match(formatReleaseNotes(notes, version), /Add a support form under Device settings/);
   assert.throws(() => formatReleaseNotes(notes, "bad-version"), /X\.Y\.Z/);
   assert.throws(() => formatReleaseNotes(`## ULLeds ${version}\n\nNo category`, version), /category and at least one bullet/);
   assert.throws(() => formatReleaseNotes("## ULLeds 1.0.83\n\n### Fixed\n\n- Note", version), /must start/);

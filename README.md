@@ -25,6 +25,9 @@ or choose a color and effect yourself.
   them. Export setups as a backup or move them to another PC; importing adds
   new setups without replacing the ones you already have. Device layout and
   Screen Sync preferences stay as they are.
+- **Contact support:** Describe the problem, preview the GitHub issue draft,
+  and optionally save recent diagnostics as a local attachment. You choose
+  whether to attach them in GitHub; the app never submits the issue for you.
 
 ## Compatibility
 
@@ -60,6 +63,11 @@ than individual app windows, so the part of the display being shown matters.
 Local diagnostics record callback rates and processing times, not screen images
 or sampled colors. They are saved to
 `%APPDATA%\ULLeds\screen-sync-diagnostics.log`.
+The support form previews the issue contents. Diagnostic logs are unchecked
+unless you choose them; selected logs are saved locally and are not added to the
+draft URL. Attach the JSON file yourself in GitHub if you want to share it.
+Opening the prefilled issue draft sends the problem description and basic app
+details to GitHub; the issue is public only if you submit it there.
 
 Spotify Sync reads cover art locally from Windows media controls and analyzes
 the desktop audio mix while active to animate the LEDs. Audio capture is not

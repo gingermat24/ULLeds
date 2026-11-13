@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
 const { performance } = require("node:perf_hooks");
+const { randomUUID } = require("node:crypto");
+const os = require("node:os");
 const {
   app,
   BrowserWindow,
@@ -37,6 +39,12 @@ const { resetStoredData } = require("./reset-data");
 const { normalizeActiveEdges } = require("./strip-layout");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
+const {
+  createGithubIssueReport,
+  createGithubIssueUrl,
+  readDiagnosticLog,
+  validateSupportOptions
+} = require("./support-bundle");
 const { normalizeStartupMode, isSyncStartupMode } = require("./startup-mode");
 const {
   normalizeScenes,
@@ -112,6 +120,7 @@ let archivedReleaseCache = null;
 let archivedReleaseRequest = null;
 let resetPromise = null;
 let screenSyncDiagnostics = null;
+let preparedSupportIssue = null;
 let pendingMovieFormat = null;
 let movieFormatPromptWindow = null;
 let movieFormatPromptTimer = null;
@@ -1056,6 +1065,91 @@ ipcMain.handle("scenes:export", async () => {
     "utf8"
   );
   return { canceled: false, count: scenes.length };
+});
+ipcMain.handle("support:preview", async (event, input) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
+      event.senderFrame !== event.sender.mainFrame) {
+    throw new Error("Only the ULLeds window can prepare a support request.");
+  }
+  if (!input || typeof input !== "object" || typeof input.problem !== "string") {
+    throw new TypeError("Describe the problem before preparing a support request.");
+  }
+  const options = validateSupportOptions({
+    screenSync: input.screenSync,
+    controllerTiming: input.controllerTiming
+  });
+  const appDataPath = path.join(app.getPath("appData"), "ULLeds");
+  const [screenSync, controllerTiming] = await Promise.all([
+    options.screenSync
+      ? readDiagnosticLog(path.join(appDataPath, "screen-sync-diagnostics.log"))
+      : Promise.resolve(null),
+    options.controllerTiming
+      ? readDiagnosticLog(path.join(appDataPath, "controller-write-diagnostics.log"))
+      : Promise.resolve(null)
+  ]);
+  const diagnostics = {
+    screenSync: options.screenSync ? { included: true, ...screenSync } : { included: false },
+    controllerTiming: options.controllerTiming
+      ? { included: true, ...controllerTiming }
+      : { included: false }
+  };
+  const report = createGithubIssueReport({
+    problem: input.problem,
+    appVersion: app.getVersion(),
+    platform: process.platform,
+    osVersion: os.release(),
+    architecture: process.arch,
+    diagnostics
+  });
+  createGithubIssueUrl(report);
+  const previewId = randomUUID();
+  preparedSupportIssue = { previewId, ...report };
+  return {
+    previewId,
+    title: report.title,
+    body: report.body,
+    hasDiagnostics: report.hasDiagnostics,
+    attachmentContent: report.attachmentContent
+  };
+});
+ipcMain.handle("support:open-github", async (event, previewId) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
+      event.senderFrame !== event.sender.mainFrame) {
+    throw new Error("Only the ULLeds window can open a support request.");
+  }
+  if (typeof previewId !== "string" || previewId !== preparedSupportIssue?.previewId) {
+    throw new Error("Review the support request again before opening GitHub.");
+  }
+  const attachmentSaved = preparedSupportIssue.hasDiagnostics;
+  if (attachmentSaved) {
+    const date = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "Save optional diagnostics to attach to your GitHub issue",
+      defaultPath: path.join(
+        app.getPath("documents"),
+        `ULLeds-support-${app.getVersion()}-${date}.json`
+      ),
+      filters: [{ name: "ULLeds support diagnostics", extensions: ["json"] }]
+    });
+    if (result.canceled || !result.filePath) return { canceled: true };
+    if (preparedSupportIssue?.previewId !== previewId) {
+      throw new Error("The support request changed. Preview it again before continuing.");
+    }
+    await fs.promises.writeFile(result.filePath, preparedSupportIssue.attachmentContent, "utf8");
+  }
+  await shell.openExternal(createGithubIssueUrl(preparedSupportIssue));
+  preparedSupportIssue = null;
+  return { opened: true, attachmentSaved };
+});
+ipcMain.handle("support:discard", (event, previewId) => {
+  if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents ||
+      event.senderFrame !== event.sender.mainFrame) {
+    throw new Error("Only the ULLeds window can discard a support request.");
+  }
+  if (typeof previewId === "string" && preparedSupportIssue?.previewId === previewId) {
+    preparedSupportIssue = null;
+  }
+  return { discarded: true };
 });
 ipcMain.handle("scenes:import", async () => {
   const result = await dialog.showOpenDialog(mainWindow, {

@@ -304,6 +304,16 @@
           </div>
         </section>
 
+        <section class="card group" aria-labelledby="group-support">
+          <div class="group-head">
+            <h3 id="group-support">Support</h3>
+            <p class="hint">Describe the problem and choose whether to include diagnostics.</p>
+          </div>
+          <div>
+            <button class="btn" id="open-support" type="button">Contact support</button>
+          </div>
+        </section>
+
         <section class="card group group-danger" aria-labelledby="group-reset">
           <div class="group-head">
             <h3 id="group-reset">Reset</h3>
@@ -430,6 +440,45 @@
       <button class="btn btn-danger" id="confirm-reset" type="button">Delete and reset</button>
     </div>
   </form>
+</dialog>
+
+<dialog class="dialog dialog-support" id="support-dialog">
+  <div class="support-form">
+    <h2>Contact support</h2>
+    <p class="dialog-copy">Describe what went wrong. A draft will open on GitHub so you can review it and submit it yourself.</p>
+    <label class="row-title" for="support-problem">What happened?</label>
+    <textarea class="input input-text support-problem" id="support-problem" maxlength="5000" rows="5" required placeholder="What were you doing, and what did you expect to happen?"></textarea>
+    <fieldset class="support-options">
+      <legend>Optional diagnostics</legend>
+      <label class="row row-inline" for="support-screen-sync">
+        <span class="row-text">
+          <span class="row-title">Screen Sync diagnostics</span>
+          <span class="row-desc">Recent timings and LED counts. No screen captures or sampled colors.</span>
+        </span>
+        <input class="switch" id="support-screen-sync" type="checkbox">
+      </label>
+      <label class="row row-inline" for="support-controller-timing">
+        <span class="row-text">
+          <span class="row-title">Controller timing diagnostics</span>
+          <span class="row-desc">Recent USB write timings. No device ID or device path.</span>
+        </span>
+        <input class="switch" id="support-controller-timing" type="checkbox">
+      </label>
+    </fieldset>
+    <p class="hint">The GitHub draft includes your description and app/Windows versions. Settings, colors, device identifiers, screen images, audio, and diagnostic logs are not put in the draft URL.</p>
+    <p class="hint">Selected logs are limited to their newest 8 KB and saved as a local JSON file. You can review and attach that file yourself in GitHub before submitting the public issue.</p>
+    <p class="hint" id="support-status" role="status" aria-live="polite"></p>
+    <pre class="support-file-preview" id="support-preview" aria-label="GitHub issue contents preview" tabindex="0" hidden></pre>
+    <details class="support-attachment" id="support-attachment" hidden>
+      <summary>Review diagnostics attachment</summary>
+      <pre class="support-file-preview" id="support-attachment-preview" aria-label="Local diagnostics attachment contents" tabindex="0"></pre>
+    </details>
+    <div class="dialog-actions">
+      <button class="btn" id="cancel-support" type="button">Cancel</button>
+      <button class="btn" id="preview-support" type="button">Preview request</button>
+      <button class="btn btn-primary" id="send-support" type="button" disabled>Open GitHub draft</button>
+    </div>
+  </div>
 </dialog>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
