@@ -410,6 +410,11 @@ function paintSessionPixels(session) {
 }
 
 function renderEdgePixels(container, indices, edge) {
+  const pixelGap = `${25 / Math.max(indices.length, 1)}%`;
+  if (container.style.getPropertyValue("--pixel-gap") !== pixelGap) {
+    container.style.setProperty("--pixel-gap", pixelGap);
+  }
+
   const sameLayout = container.children.length === indices.length &&
     indices.every((index, position) => Number(container.children[position]?.dataset.ledIndex) === index);
 
@@ -1818,10 +1823,10 @@ function updateProfileCount() {
 
 function profileEdgeDiagram(activeEdges) {
   const coordinates = {
-    top: [12, 8, 60, 8],
-    right: [60, 8, 60, 40],
-    bottom: [12, 40, 60, 40],
-    left: [12, 8, 12, 40]
+    top: [18, 8, 54, 8],
+    right: [60, 14, 60, 34],
+    bottom: [54, 40, 18, 40],
+    left: [12, 34, 12, 14]
   };
   const lines = Object.entries(coordinates).map(([edge, [x1, y1, x2, y2]]) =>
     svg("line", {
@@ -1878,11 +1883,14 @@ function renderProfileEdgePicker() {
     : profileEstimatedLayout().counts;
   const buttons = PROFILE_EDGES.map((edge) => {
     const count = counts?.[edge] ?? 0;
+    const active = profileDraft.activeEdges.includes(edge);
     const button = h("button", {
-      class: `profile-edge-option${profileDraft.activeEdges.includes(edge) ? " is-active" : ""}`,
+      class: `profile-edge-option${active ? " is-active" : ""}`,
       type: "button",
-      "aria-pressed": String(profileDraft.activeEdges.includes(edge)),
-      "aria-label": `${PROFILE_EDGE_LABELS[edge]} edge`,
+      "aria-pressed": String(active),
+      "aria-label": active
+        ? `${PROFILE_EDGE_LABELS[edge]} edge, ${count} LEDs`
+        : `${PROFILE_EDGE_LABELS[edge]} edge, off`,
       onclick: () => {
         const next = new Set(profileDraft.activeEdges);
         if (next.has(edge)) {
@@ -1901,8 +1909,8 @@ function renderProfileEdgePicker() {
       h("span", { class: "profile-edge-label", text: PROFILE_EDGE_LABELS[edge] }),
       h("span", {
         class: "profile-edge-count",
-        text: profileDraft.activeEdges.includes(edge)
-          ? `${profileDraft.allocationMode === "auto" ? "~" : ""}${count} LEDs`
+        text: active
+          ? `${profileDraft.allocationMode === "auto" ? "~" : ""}${count}`
           : "Off"
       })
     );
@@ -2025,47 +2033,46 @@ function renderProfileEditor() {
     h("span", { class: "profile-direction-label", text: "LED 1 starts from" }),
     h("div", { class: "profile-direction-choices", id: "profile-direction-choices" })
     ),
-    h("details", { class: "disclosure profile-allocation", id: "profile-allocation-details" },
-    h("summary", {},
-      h("span", { text: "LED counts" }),
-      h("span", { class: "profile-allocation-summary", id: "profile-allocation-summary" })
-    ),
-    h("div", { class: "profile-allocation-content" },
-    h("div", { class: "profile-allocation-mode", id: "profile-allocation-mode" },
-      ...[
-        ["auto", "Estimate automatically"],
-        ["manual", "Enter counts manually"]
-      ].map(([mode, label]) => {
-        const button = h("button", {
-          class: "profile-allocation-option",
-          type: "button",
-          text: label,
-          "aria-pressed": String(profileDraft.allocationMode === mode),
-          onclick: () => {
-            profileDraft.allocationMode = mode;
-            if (mode === "manual") $("#profile-allocation-details").open = true;
-            if (mode === "manual" && !profileDraft.edgeCounts) {
-              profileDraft.edgeCounts = { ...profileEstimatedLayout().counts };
-            }
-            renderProfileAllocation();
-            $(`#profile-allocation-mode [data-allocation-mode="${mode}"]`)?.focus();
-          }
-        });
-        button.dataset.allocationMode = mode;
-        return button;
-      })
-    ),
-    h("p", { class: "hint", id: "profile-allocation-hint" }),
-    h("p", { class: "profile-allocation-total", id: "profile-allocation-total" }),
-    h("div", { class: "profile-manual-counts hidden", id: "profile-manual-counts" })
-    ),
-    ),
-    h("details", { class: "disclosure profile-advanced" },
-      h("summary", { text: "Color order" }),
+    h("details", { class: "disclosure profile-advanced", id: "profile-advanced-details" },
+      h("summary", { text: "Advanced" }),
       h("div", { class: "profile-advanced-content" },
-        h("p", { class: "hint", text: "Most controllers use RGB. Change this only if colors appear in the wrong order." }),
-        selectField("LED color order", "profile-color-order", "colorOrder", current.colorOrder || "RGB",
-          ["RGB", "GRB", "RBG", "GBR", "BRG", "BGR"].map((order) => [order, order]))
+        h("section", { class: "profile-advanced-section" },
+          h("h3", { text: "LED counts" }),
+          h("div", { class: "profile-allocation-summary", id: "profile-allocation-summary" }),
+          h("div", { class: "profile-allocation-mode", id: "profile-allocation-mode" },
+            ...[
+              ["auto", "Estimate automatically"],
+              ["manual", "Enter counts manually"]
+            ].map(([mode, label]) => {
+              const button = h("button", {
+                class: "profile-allocation-option",
+                type: "button",
+                text: label,
+                "aria-pressed": String(profileDraft.allocationMode === mode),
+                onclick: () => {
+                  profileDraft.allocationMode = mode;
+                  if (mode === "manual") $("#profile-advanced-details").open = true;
+                  if (mode === "manual" && !profileDraft.edgeCounts) {
+                    profileDraft.edgeCounts = { ...profileEstimatedLayout().counts };
+                  }
+                  renderProfileAllocation();
+                  $(`#profile-allocation-mode [data-allocation-mode="${mode}"]`)?.focus();
+                }
+              });
+              button.dataset.allocationMode = mode;
+              return button;
+            })
+          ),
+          h("p", { class: "hint", id: "profile-allocation-hint" }),
+          h("p", { class: "profile-allocation-total", id: "profile-allocation-total" }),
+          h("div", { class: "profile-manual-counts hidden", id: "profile-manual-counts" })
+        ),
+        h("section", { class: "profile-advanced-section" },
+          h("h3", { text: "Color order" }),
+          h("p", { class: "hint", text: "Most controllers use RGB. Change this only if colors appear in the wrong order." }),
+          selectField("LED color order", "profile-color-order", "colorOrder", current.colorOrder || "RGB",
+            ["RGB", "GRB", "RBG", "GBR", "BRG", "BGR"].map((order) => [order, order]))
+        )
       )
     )
   );

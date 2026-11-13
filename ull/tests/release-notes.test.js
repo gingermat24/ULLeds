@@ -10,8 +10,8 @@ const html = fs.readFileSync(path.join(__dirname, "..", "ui", "index.html"), "ut
 
 test("GitHub release text is generated from every in-app changelog entry", () => {
   const entries = extractReleaseNotes(html);
-  assert.equal(entries.length, 82);
-  for (let version = 0; version <= 82; version += 1) {
+  assert.equal(entries.length, 83);
+  for (let version = 0; version <= 83; version += 1) {
     if (version === 67) continue;
     assert.ok(entries.some((entry) => entry.version === `1.0.${version}`));
   }
@@ -27,6 +27,11 @@ test("release workflow writes each generated Markdown line separately", () => {
 });
 
 test("release note output preserves categories and user-facing items", () => {
+  const latestNotes = formatReleaseNotes(html, "1.0.83");
+  assert.equal(
+    latestNotes,
+    "## ULLeds 1.0.83\n\n### Improved\n\n- Refined the strip profile editor with a centered monitor-edge picker, concise LED counts, and one Advanced section for LED counts and color order.\n- Adjusted live-preview LED spacing to the number of LEDs on each monitor edge.\n- Kept monitor edges in a consistent order and clarified manual LED-count validation.\n\n### Fixed\n\n- Separated selected monitor-edge indicators at the corners so adjacent bars stay visually distinct."
+  );
   const notes = formatReleaseNotes(html, "1.0.82");
   assert.equal(
     notes,

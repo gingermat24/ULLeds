@@ -447,31 +447,41 @@ test("release notes have one combined entry for 1.0.68 instead of duplicate vers
   assert.equal(releaseVersions.filter((version) => version === "1.0.67").length, 0);
   assert.equal(releaseVersions.filter((version) => version === "1.0.68").length, 1);
   assert.equal(releaseVersions.filter((version) => version === "1.0.77").length, 1);
-  assert.equal(releaseVersions[0], "1.0.82");
+  assert.equal(releaseVersions[0], "1.0.83");
+  assert.equal(releaseVersions.filter((version) => version === "1.0.83").length, 1);
+  assert.match(changelog.releases[0].notes.Improved[0], /centered monitor-edge picker/);
+  assert.match(changelog.releases[0].notes.Improved[1], /live-preview LED spacing/);
+  assert.match(changelog.releases[0].notes.Fixed[0], /adjacent bars stay visually distinct/);
+  assert.equal(releaseVersions[1], "1.0.82");
   assert.equal(releaseVersions.filter((version) => version === "1.0.82").length, 1);
-  assert.match(changelog.releases[0].notes.Fixed[0], /Preserved headings and bullet lists/);
-  assert.equal(releaseVersions[1], "1.0.81");
-  assert.match(changelog.releases[1].notes.Changed[0], /Replaced the per-LED placement editor from 1\.0\.80/);
-  assert.match(changelog.releases[1].notes.Changed[0], /exact per-edge counts/);
-  assert.match(changelog.releases[1].notes.Changed[1], /Screen Sync sampling to follow the selected edge layout/);
-  assert.equal(changelog.releases[1].notes.New, undefined);
-  assert.equal(releaseVersions[2], "1.0.80");
+  assert.match(changelog.releases[1].notes.Fixed[0], /Preserved headings and bullet lists/);
+  assert.equal(releaseVersions[2], "1.0.81");
+  assert.match(changelog.releases[2].notes.Changed[0], /Replaced the per-LED placement editor from 1\.0\.80/);
+  assert.match(changelog.releases[2].notes.Changed[0], /exact per-edge counts/);
+  assert.match(changelog.releases[2].notes.Changed[1], /Screen Sync sampling to follow the selected edge layout/);
+  assert.equal(changelog.releases[2].notes.New, undefined);
+  assert.equal(releaseVersions[3], "1.0.80");
   assert.equal(releaseVersions.filter((version) => version === "1.0.80").length, 1);
-  assert.match(changelog.releases[2].notes.New[0], /Arrange every detected LED manually around your screen/);
+  assert.match(changelog.releases[3].notes.New[0], /Arrange every detected LED manually around your screen/);
   assert.match(changelog.releases.find(({ version }) => version === "1.0.68").notes.Improved[0], /Reduced idle controller work/);
   assert.match(changelog.legacy.versions[0], /^1\.0\.\d+$/);
 });
 
 test("LED preview scales with its card and selected LEDs stay within their grid cells", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.match(css, /\.preview-stage \{[^}]*container-type: size;/s);
   assert.match(css, /--rail: clamp\(0\.4rem, 1\.1vw, 0\.8rem\)/);
-  assert.match(css, /\.led-edge \{[^}]*display: grid;[^}]*gap: 0\.125rem;/s);
+  assert.match(css, /\.led-edge \{[^}]*display: grid;[^}]*gap: min\(0\.375rem, var\(--pixel-gap, 25%\)\);/s);
+  assert.match(css, /\.led-top, \.led-bottom \{[^}]*grid-auto-columns: minmax\(0, 1fr\);/s);
+  assert.match(css, /\.led-left, \.led-right \{[^}]*grid-auto-rows: minmax\(0, 1fr\);/s);
   assert.match(css, /\.led-pixel \{[^}]*border-radius: calc\(var\(--r-sm\) \/ 2\);/s);
   assert.match(css, /\.led-pixel\.selected \{[^}]*box-shadow: 0 0 0 0\.125rem var\(--text\);/s);
   assert.match(css, /:focus-visible/);
   assert.doesNotMatch(css, /\.led-pixel(?:\.selected)?:hover\s*\{[^}]*transform:\s*scale/);
+  assert.match(app, /const pixelGap = `\$\{25 \/ Math\.max\(indices\.length, 1\)\}%`/);
+  assert.match(app, /container\.style\.setProperty\("--pixel-gap", pixelGap\)/);
 });
 
 test("Device and Updates views use available width without enlarging the LED preview", () => {
@@ -991,7 +1001,10 @@ test("strip profile editor selects individual edges and supports estimated or ma
   assert.match(app, /The controller reports the total only/);
   assert.match(app, /document\.createElementNS\("http:\/\/www\.w3\.org\/2000\/svg", tag\)/);
   assert.match(app, /return svg\("svg", \{ class: "profile-diagram"/);
+  assert.match(app, /top: \[18, 8, 54, 8\],\s+right: \[60, 14, 60, 34\],\s+bottom: \[54, 40, 18, 40\],\s+left: \[12, 34, 12, 14\]/);
   assert.match(app, /profileDraft\.allocationMode === "auto" \? "~" : ""/);
+  assert.match(app, /text: active\s+\? `\$\{profileDraft\.allocationMode === "auto" \? "~" : ""\}\$\{count\}`\s+: "Off"/);
+  assert.doesNotMatch(app, /`\$\{profileDraft\.allocationMode === "auto" \? "~" : ""\}\$\{count\} LEDs`/);
   assert.match(app, /edgeCounts: allocationMode === "manual" \? layout\.counts : null/);
   assert.doesNotMatch(app, /PROFILE_EDGE_LAYOUTS/);
   assert.match(app, /id: "profile-edge-picker"/);
@@ -1010,14 +1023,22 @@ test("strip profile editing keeps optional counts and color order out of the mai
   assert.doesNotMatch(html, /wizard-back|wizard-next|class="steps"/);
   assert.match(app, /h\("legend", \{ text: "Choose your monitor edges" \}\)/);
   assert.match(app, /h\("div", \{ class: "profile-direction-row", role: "group", "aria-label": "LED 1 starts from" \}/);
-  assert.match(app, /h\("summary", \{\},\s+h\("span", \{ text: "LED counts" \}\)/);
-  assert.match(app, /id: "profile-allocation-details"/);
-  assert.match(app, /if \(mode === "manual"\) \$\("#profile-allocation-details"\)\.open = true/);
-  assert.match(app, /h\("summary", \{ text: "Color order" \}\)/);
+  assert.match(app, /h\("summary", \{ text: "Advanced" \}\)/);
+  assert.match(app, /id: "profile-advanced-details"/);
+  assert.match(app, /if \(mode === "manual"\) \$\("#profile-advanced-details"\)\.open = true/);
+  assert.match(app, /h\("h3", \{ text: "LED counts" \}\)/);
+  assert.match(app, /h\("h3", \{ text: "Color order" \}\)/);
+  assert.doesNotMatch(app, /id: "profile-allocation-details"|h\("summary", \{ text: "Color order" \}\)/);
   assert.match(app, /profileDraft\.installationMethod/);
   assert.match(app, /if \(setupOnboarding\) changes\.onboarded = true/);
   assert.match(app, /await saveSettingsNow\(changes\);\s+\$\("#setup-dialog"\)\.close\(\)/);
   assert.doesNotMatch(app, /wizardStep|setWizardStep|advanceWizard/);
+
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  assert.match(css, /\.profile-edge-picker \{[^}]*grid-template-areas: "\. top \." "left monitor right" "\. bottom \.";[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);[^}]*width: min\(100%, 21rem\);/s);
+  assert.match(css, /\.profile-edge-option \{[^}]*min-height: 3\.25rem;/s);
+  assert.match(css, /\.profile-diagram \{[^}]*width: min\(4\.5rem, 100%\);/s);
+  assert.match(css, /\.profile-advanced-content \{[^}]*display: grid;/s);
 });
 
 test("screen sync uses an updated strip layout immediately after profile edits", () => {
