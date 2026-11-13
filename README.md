@@ -46,6 +46,11 @@ Windows installer for each published version, labeled **Update** or
 in-app updater; restart ULLeds from the update prompt to install it. Earlier
 versions must be updated manually.
 
+The release-notes carousel reads published release descriptions from GitHub
+when online. The app also bundles a local copy of the changelog so notes remain
+available if GitHub cannot be reached; published GitHub notes take precedence
+when they load successfully.
+
 ## Screen Sync and privacy
 
 Screen Sync analyzes the display locally to choose colors for the LEDs. ULLeds
@@ -78,31 +83,15 @@ saved picture area. You can also disable detection or select
 Closing the window keeps ULLeds running in the system tray, so Screen Sync can
 continue. Choose **Quit** from the tray menu to exit completely.
 
-## Build from source
+## License
 
-For developers: use Windows 10 or 11, Node.js 22.12 or newer, and npm.
+ULLeds original source code and project materials are proprietary and
+All Rights Reserved. No permission is granted to copy, modify, publish, or
+redistribute them. See [LICENSE](./LICENSE).
 
-```powershell
-npm install
-npm start
-```
-
-To run the tests and build the Windows installer:
-
-```powershell
-npm test
-npm run dist:win
-```
-
-The installer is created in `dist/`. ULLeds settings are stored under
-`%APPDATA%\ULLeds`.
-
-The Spotify media helper source is `ull/spotify-media.cs`. To rebuild its
-Windows executable, run `npm run build:spotify-helper` with the Windows 10 SDK
-installed.
-
-To publish a Windows release, add the matching in-app changelog entry and
-version, then push a `v<version>` tag. GitHub Actions runs the tests, builds the
-installer, and publishes the installer and update assets. The release notes are
-generated from the in-app changelog so both stay in sync. The bundled
-Cormorant Garamond and Noto Sans font licenses are in `ull/assets/fonts/`.
+The repository is public, so GitHub users can still view and fork it under
+GitHub's platform terms. This notice states that no reuse license is granted;
+it cannot technically prevent access to or copying of publicly visible
+content. Third-party dependencies and assets remain under their respective
+licenses; bundled Cormorant Garamond and Noto Sans font licenses are in
+`ull/assets/fonts/`.
