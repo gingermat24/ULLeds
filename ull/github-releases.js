@@ -1,6 +1,7 @@
 "use strict";
 
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+const FIRST_GITHUB_RELEASE_VERSION = "1.0.47";
 
 function compareVersions(left, right) {
   if (!VERSION_PATTERN.test(left) || !VERSION_PATTERN.test(right)) {
@@ -105,6 +106,9 @@ function getArchivedReleases(archive) {
         !Array.isArray(release.categories)) {
       throw new TypeError("An archived release entry is invalid.");
     }
+    if (compareVersions(release.version, FIRST_GITHUB_RELEASE_VERSION) >= 0) {
+      throw new TypeError(`Only versions before v${FIRST_GITHUB_RELEASE_VERSION} may be archived.`);
+    }
     const categories = release.categories.map((category) => {
       if (!category || typeof category.name !== "string" || !category.name.trim() ||
           !Array.isArray(category.items) || category.items.length === 0 ||
@@ -122,6 +126,9 @@ function getArchivedReleases(archive) {
   for (const version of archive.legacy.versions) {
     if (typeof version !== "string" || !VERSION_PATTERN.test(version)) {
       throw new TypeError("An archived legacy release version is invalid.");
+    }
+    if (compareVersions(version, FIRST_GITHUB_RELEASE_VERSION) >= 0) {
+      throw new TypeError(`Only versions before v${FIRST_GITHUB_RELEASE_VERSION} may be archived.`);
     }
     releases.push({
       version,

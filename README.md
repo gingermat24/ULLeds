@@ -46,11 +46,11 @@ Windows installer for each published version, labeled **Update** or
 in-app updater; restart ULLeds from the update prompt to install it. Earlier
 versions must be updated manually.
 
-The release-notes carousel loads published release descriptions from GitHub.
-Older notes for versions without a GitHub Release are kept in a repository-hosted
-archive and loaded separately; neither source is bundled with the app. When
-online, published release notes take precedence. If GitHub is unreachable, the
-carousel reports that the changelog cannot load.
+The release-notes carousel loads v1.0.47 and later release descriptions from
+GitHub, so edits to those releases appear in the app. Only earlier versions,
+which predate the first GitHub Release, are kept in a repository-hosted archive.
+Neither source is bundled with the app. If GitHub is unreachable, the carousel
+reports that the changelog cannot load.
 
 ## Screen Sync and privacy
 

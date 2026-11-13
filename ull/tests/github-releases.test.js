@@ -122,6 +122,11 @@ test("archived notes fill unpublished versions while GitHub notes take precedenc
   });
   const merged = mergeReleaseHistory([
     {
+      version: "1.0.47",
+      date: "2026-01-04T03:04:05Z",
+      categories: [{ name: "Added", items: ["Published on GitHub."] }]
+    },
+    {
       version: "1.0.9",
       date: "2026-01-02T03:04:05Z",
       categories: [{ name: "Fixed", items: ["Current GitHub note."] }]
@@ -129,12 +134,25 @@ test("archived notes fill unpublished versions while GitHub notes take precedenc
     { version: "1.0.10", date: "2026-01-03T03:04:05Z", categories: [] }
   ], archived);
 
-  assert.deepEqual(merged.map(({ version }) => version), ["1.0.10", "1.0.9", "1.0.8", "1.0.1"]);
-  assert.deepEqual(merged[1].categories, [{ name: "Fixed", items: ["Current GitHub note."] }]);
-  assert.equal(merged[1].date, "2026-01-02T03:04:05Z");
-  assert.deepEqual(merged[2].categories, [{ name: "Improved", items: ["Archived note."] }]);
-  assert.deepEqual(merged[3].categories, [{ name: "History", items: ["Older history."] }]);
+  assert.deepEqual(merged.map(({ version }) => version), ["1.0.47", "1.0.10", "1.0.9", "1.0.8", "1.0.1"]);
+  assert.deepEqual(merged[0].categories, [{ name: "Added", items: ["Published on GitHub."] }]);
+  assert.deepEqual(merged[2].categories, [{ name: "Fixed", items: ["Current GitHub note."] }]);
+  assert.equal(merged[2].date, "2026-01-02T03:04:05Z");
+  assert.deepEqual(merged[3].categories, [{ name: "Improved", items: ["Archived note."] }]);
+  assert.deepEqual(merged[4].categories, [{ name: "History", items: ["Older history."] }]);
   assert.throws(() => getArchivedReleases({ schemaVersion: 1, legacy: {}, releases: [] }), /archived release history is invalid/);
+});
+
+test("the archive rejects versions published through GitHub starting at v1.0.47", () => {
+  const archive = {
+    schemaVersion: 1,
+    legacy: { note: "Older history.", versions: [] },
+    releases: [{ version: "1.0.47", categories: [{ name: "Fixed", items: ["Release note."] }] }]
+  };
+  assert.throws(() => getArchivedReleases(archive), /Only versions before v1\.0\.47 may be archived/);
+  archive.releases = [];
+  archive.legacy.versions = ["1.0.47"];
+  assert.throws(() => getArchivedReleases(archive), /Only versions before v1\.0\.47 may be archived/);
 });
 
 test("GitHub release HTML exposes published version tags and pagination", () => {
