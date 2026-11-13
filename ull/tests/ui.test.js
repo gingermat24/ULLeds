@@ -411,10 +411,13 @@ test("Device settings are grouped by controller, sync, startup, and reset", () =
 test("support request requires user details and explicit opt-in before opening a public GitHub draft", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
   const supportBundle = fs.readFileSync(path.join(__dirname, "..", "support-bundle.js"), "utf8");
 
+  assert.match(html, /class="support-attachment disclosure" id="support-attachment" hidden/);
+  assert.match(html, /class="disclosure-body"[\s\S]*id="support-attachment-preview"/);
   assert.match(html, /id="support-problem"[^>]*maxlength="5000"[^>]*required/);
   assert.match(html, /id="support-screen-sync" type="checkbox"/);
   assert.match(html, /id="support-controller-timing" type="checkbox"/);
@@ -422,6 +425,12 @@ test("support request requires user details and explicit opt-in before opening a
   assert.match(html, /diagnostic logs are not put in the draft URL/);
   assert.match(html, /saved as a local JSON file\. You can review and attach that file yourself in GitHub/);
   assert.match(html, /id="support-attachment" hidden/);
+  assert.match(css, /\.dialog-support\s*\{\s*width: min\(42rem, calc\(100vw - 2rem\)\);/);
+  assert.match(css, /\.support-form \{ display: grid; gap: var\(--sp-4\); \}/);
+  assert.match(css, /\.support-problem \{[\s\S]*?min-height: 10rem;/);
+  assert.match(css, /\.dialog h2 \{ font-size: var\(--fs-xl\); \}/);
+  assert.match(css, /\.dialog-profile \.dialog-actions,\s+\.dialog-support \.dialog-actions \{/);
+  assert.match(css, /\.disclosure > summary::after/);
   assert.match(app, /problem: \$\("#support-problem"\)\.value/);
   assert.match(app, /screenSync: \$\("#support-screen-sync"\)\.checked/);
   assert.match(app, /controllerTiming: \$\("#support-controller-timing"\)\.checked/);

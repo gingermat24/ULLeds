@@ -488,9 +488,11 @@
     <p class="hint">Selected logs are limited to their newest 8 KB and saved as a local JSON file. You can review and attach that file yourself in GitHub before submitting the public issue.</p>
     <p class="hint" id="support-status" role="status" aria-live="polite"></p>
     <pre class="support-file-preview" id="support-preview" aria-label="GitHub issue contents preview" tabindex="0" hidden></pre>
-    <details class="support-attachment" id="support-attachment" hidden>
-      <summary>Review diagnostics attachment</summary>
-      <pre class="support-file-preview" id="support-attachment-preview" aria-label="Local diagnostics attachment contents" tabindex="0"></pre>
+    <details class="support-attachment disclosure" id="support-attachment" hidden>
+      <summary>Review local diagnostics file</summary>
+      <div class="disclosure-body">
+        <pre class="support-file-preview" id="support-attachment-preview" aria-label="Local diagnostics attachment contents" tabindex="0"></pre>
+      </div>
     </details>
     <div class="dialog-actions">
       <button class="btn" id="cancel-support" type="button">Cancel</button>

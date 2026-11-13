@@ -785,17 +785,21 @@ main {
 .dialog[open] { animation: pop-in 0.18s var(--ease); }
 .dialog::backdrop { background: var(--scrim); }
 .dialog-profile { width: min(30rem, calc(100vw - 2rem)); }
+.dialog-support {
+  width: min(42rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+}
 .dialog form { display: grid; gap: var(--sp-4); }
-.support-form { display: grid; gap: var(--sp-3); }
+.support-form { display: grid; gap: var(--sp-4); }
 .support-problem {
   height: auto;
-  min-height: 7rem;
+  min-height: 10rem;
   padding: var(--sp-3);
   resize: vertical;
   user-select: text;
   white-space: pre-wrap;
 }
-.dialog h2 { font-size: var(--fs-lg); }
+.dialog h2 { font-size: var(--fs-xl); }
 .dialog-copy { color: var(--muted); }
 .dialog-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--sp-2); }
 .support-options { display: grid; gap: var(--sp-2); border: 0; }
@@ -812,9 +816,10 @@ main {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.support-attachment summary { margin-bottom: var(--sp-2); cursor: pointer; }
+.support-attachment > summary { color: var(--text); }
 .support-attachment[hidden] { display: none; }
-.dialog-profile .dialog-actions {
+.dialog-profile .dialog-actions,
+.dialog-support .dialog-actions {
   position: sticky;
   bottom: calc(-1 * var(--pad));
   z-index: 1;
