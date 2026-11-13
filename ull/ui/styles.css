@@ -181,6 +181,7 @@ dialog { margin: auto; }
   transition: background var(--fast), color var(--fast);
 }
 .icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.icon-btn:disabled { opacity: 0.4; cursor: default; }
 .icon-btn svg {
   width: 1rem;
   height: 1rem;

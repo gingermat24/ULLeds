@@ -143,13 +143,22 @@ test("archived notes fill unpublished versions while GitHub notes take precedenc
   assert.throws(() => getArchivedReleases({ schemaVersion: 1, legacy: {}, releases: [] }), /archived release history is invalid/);
 });
 
-test("the archive rejects versions published through GitHub starting at v1.0.47", () => {
+test("the archive accepts explicitly stale GitHub-era entries and rejects other published-era entries", () => {
   const archive = {
     schemaVersion: 1,
     legacy: { note: "Older history.", versions: [] },
     releases: [{ version: "1.0.47", categories: [{ name: "Fixed", items: ["Release note."] }] }]
   };
-  assert.throws(() => getArchivedReleases(archive), /Only versions before v1\.0\.47 may be archived/);
+  assert.throws(() => getArchivedReleases(archive), /Only versions before v1\.0\.47 or entries marked stale may be archived/);
+  archive.releases = [{
+    version: "1.0.67",
+    stale: true,
+    categories: [{ name: "History", items: ["A stale release record."] }]
+  }];
+  assert.deepEqual(getArchivedReleases(archive), [{
+    version: "1.0.67",
+    categories: [{ name: "History", items: ["A stale release record."] }]
+  }]);
   archive.releases = [];
   archive.legacy.versions = ["1.0.47"];
   assert.throws(() => getArchivedReleases(archive), /Only versions before v1\.0\.47 may be archived/);

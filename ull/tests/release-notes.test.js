@@ -5,7 +5,7 @@ const path = require("node:path");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { formatReleaseNotes } = require("../../scripts/release-notes");
-const { compareVersions, getArchivedReleases } = require("../../ull/github-releases");
+const { compareVersions, getArchivedReleases, mergeReleaseHistory } = require("../../ull/github-releases");
 
 const root = path.join(__dirname, "..", "..");
 const version = require(path.join(root, "package.json")).version;
@@ -26,11 +26,19 @@ test("release notes are maintained outside the app package", () => {
 test("historical changelog entries remain available in the non-bundled repository archive", () => {
   const archive = JSON.parse(fs.readFileSync(path.join(root, "docs", "release-history.json"), "utf8"));
   const releases = getArchivedReleases(archive);
-  assert.equal(releases.length, 47);
+  assert.equal(releases.length, 48);
   assert.ok(releases.some((release) => release.version === "1.0.11" && release.categories[0].name === "History"));
   assert.ok(releases.some((release) => release.version === "1.0.46"));
-  assert.ok(releases.every((release) => compareVersions(release.version, "1.0.47") < 0));
+  assert.ok(releases.some((release) => release.version === "1.0.67" &&
+    release.categories.some((category) => category.items.some((item) => item.includes("deleted because it was corrupted")))));
+  assert.equal(releases.filter((release) => compareVersions(release.version, "1.0.47") < 0).length, 47);
   assert.doesNotMatch(packageConfigFiles(), /docs\/release-history\.json/);
+
+  const merged = mergeReleaseHistory([
+    { version: "1.0.68", categories: [{ name: "Improved", items: ["Next release."] }] },
+    { version: "1.0.66", categories: [{ name: "Fixed", items: ["Previous release."] }] }
+  ], releases);
+  assert.deepEqual(merged.slice(0, 3).map((release) => release.version), ["1.0.68", "1.0.67", "1.0.66"]);
 });
 
 function packageConfigFiles() {
@@ -48,7 +56,8 @@ test("release workflow publishes the matching versioned Markdown notes", () => {
 
 test("release note formatting validates version, category, and bullet", () => {
   const notes = fs.readFileSync(releaseNotesPath, "utf8");
-  assert.match(formatReleaseNotes(notes, version), /Give Contact support a roomier layout/);
+  assert.match(formatReleaseNotes(notes, version), /Align changelog navigation numbers with release versions/);
+  assert.match(formatReleaseNotes(notes, version), /corrupted release was deleted/);
   assert.throws(() => formatReleaseNotes(notes, "bad-version"), /X\.Y\.Z/);
   assert.throws(() => formatReleaseNotes(`## ULLeds ${version}\n\nNo category`, version), /category and at least one bullet/);
   assert.throws(() => formatReleaseNotes("## ULLeds 1.0.83\n\n### Fixed\n\n- Note", version), /must start/);

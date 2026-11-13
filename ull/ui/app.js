@@ -1672,7 +1672,7 @@ function releaseEntries() {
   return window.ullGithubReleases.mergeReleaseHistory(
     [...(releases.published?.values() ?? [])],
     releases.archived ?? []
-  );
+  ).reverse();
 }
 
 function releaseBadge(version) {
@@ -1744,8 +1744,6 @@ function renderReleases() {
     releases.selected = null;
     $("#release-position").value = "";
     $("#release-total").textContent = "0";
-    $("#release-newer").hidden = true;
-    $("#release-older").hidden = true;
     if (releases.published || releases.archived) {
       status.textContent = "No release notes are available on GitHub.";
       status.classList.remove("hidden");
@@ -1755,7 +1753,7 @@ function renderReleases() {
 
   status.classList.add("hidden");
   const selected = releases.versions.indexOf(releases.selected);
-  showRelease(selected >= 0 ? selected : 0);
+  showRelease(selected >= 0 ? selected : entries.length - 1);
 }
 
 function showRelease(index) {
@@ -1769,7 +1767,7 @@ function showRelease(index) {
   const previous = releases.previousIndex;
   if (previous !== null && previous !== current &&
       !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    const direction = current > previous ? 1 : -1;
+    const direction = current > previous ? -1 : 1;
     entries[current].animate(
       [{ opacity: 0, transform: `translateX(${direction * 8}px)` }, { opacity: 1, transform: "translateX(0)" }],
       { duration: 200, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
@@ -1779,10 +1777,10 @@ function showRelease(index) {
   releases.selected = releases.versions[current];
   releases.previousIndex = current;
   const position = $("#release-position");
-  position.value = String(current + 1);
-  $("#release-total").textContent = String(count);
-  $("#release-newer").hidden = current === 0;
-  $("#release-older").hidden = current === count - 1;
+  position.value = String(current);
+  $("#release-total").textContent = String(count - 1);
+  $("#release-newer").disabled = current === count - 1;
+  $("#release-older").disabled = current === 0;
 }
 
 const stepRelease = (delta) => {
@@ -1795,10 +1793,10 @@ function commitReleaseJump() {
   const raw = position.value.trim();
   const requested = Number(raw);
   const count = releases.versions.length;
-  if (/^\d+$/.test(raw) && Number.isSafeInteger(requested) && requested >= 1 && requested <= count) {
-    showRelease(requested - 1);
+  if (/^\d+$/.test(raw) && Number.isSafeInteger(requested) && requested >= 0 && requested < count) {
+    showRelease(requested);
   } else {
-    position.value = String(releases.previousIndex + 1);
+    position.value = String(releases.previousIndex);
   }
 }
 
@@ -2542,8 +2540,8 @@ function bindUpdates() {
   $("#check-updates").addEventListener("click", checkUpdates);
   $("#version-notice-dismiss").addEventListener("click", dismissVersionNotice);
 
-  $("#release-newer").addEventListener("click", () => stepRelease(-1));
-  $("#release-older").addEventListener("click", () => stepRelease(1));
+  $("#release-newer").addEventListener("click", () => stepRelease(1));
+  $("#release-older").addEventListener("click", () => stepRelease(-1));
   $("#release-position").addEventListener("change", commitReleaseJump);
   $("#release-position").addEventListener("focus", (event) => event.currentTarget.select());
   $("#release-position").addEventListener("keydown", (event) => {

@@ -19,6 +19,18 @@
   },
   "releases": [
     {
+      "version": "1.0.67",
+      "stale": true,
+      "categories": [
+        {
+          "name": "History",
+          "items": [
+            "The 1.0.67 release was deleted because it was corrupted, and all of its changes were republished in 1.0.68. Its release commit described reduced idle controller work: reconnect checks pause while connected, timing diagnostics flush only after new data arrives, and steady-color LEDs are left undisturbed."
+          ]
+        }
+      ]
+    },
+    {
       "version": "1.0.46",
       "categories": [
         {

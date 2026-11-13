@@ -470,23 +470,45 @@ test("release carousel has dated entries and compact bounded navigation", () => 
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const { mergeReleaseHistory } = require("../github-releases");
+  const releaseEntriesStart = app.indexOf("function releaseEntries()");
+  const releaseEntriesEnd = app.indexOf("\nfunction buildReleaseEntry", releaseEntriesStart);
 
   assert.match(html, /id="release-track"[^>]*aria-live="polite"/);
-  assert.match(html, /<button[^>]*id="release-newer"[^>]*aria-label="Newer release"[^>]*>[\s\S]*?<svg/);
-  assert.match(html, /<button[^>]*id="release-older"[^>]*aria-label="Older release"[^>]*>[\s\S]*?<svg/);
+  assert.match(html, /id="release-newer"[^>]*aria-label="Newer release"[^>]*>[\s\S]*?<path d="M8\.5 3L4\.5 7l4 4"/);
+  assert.match(html, /id="release-older"[^>]*aria-label="Older release"[^>]*>[\s\S]*?<path d="M5\.5 3l4 4-4 4"/);
   assert.match(html, /id="release-position" type="text" inputmode="numeric" pattern="\[0-9\]\*"[^>]*aria-describedby="release-total"/);
   assert.match(html, /id="release-total"/);
   assert.doesNotMatch(html, /release-progress-markers|release-marker/);
   assert.match(app, /function releaseDate\(release\)/);
   assert.match(app, /releases\.published \? h\("span", \{ class: "release-date", text: "Date unavailable" \}\) : null/);
+  assert.ok(releaseEntriesEnd > releaseEntriesStart);
+  const context = {
+    window: { ullGithubReleases: { mergeReleaseHistory } },
+    releases: {
+      published: new Map([["1.0.91", { version: "1.0.91" }]]),
+      archived: [{ version: "1.0.0" }, { version: "1.0.1" }]
+    }
+  };
+  vm.runInNewContext(
+    `${app.slice(releaseEntriesStart, releaseEntriesEnd)}; globalThis.entries = releaseEntries();`,
+    context
+  );
+  assert.deepEqual(Array.from(context.entries, (entry) => entry.version), ["1.0.0", "1.0.1", "1.0.91"]);
+  assert.match(app, /showRelease\(selected >= 0 \? selected : entries\.length - 1\)/);
+  assert.match(app, /const direction = current > previous \? -1 : 1/);
   assert.match(app, /const stepRelease = \(delta\) => \{\s+const count = releases\.versions\.length;\s+if \(count\) showRelease\(releases\.previousIndex \+ delta\);/);
-  assert.match(app, /position\.value = String\(current \+ 1\);\s+\$\("#release-total"\)\.textContent = String\(count\)/);
-  assert.match(app, /function commitReleaseJump\(\)[\s\S]*Number\.isSafeInteger\(requested\) && requested >= 1 && requested <= count[\s\S]*showRelease\(requested - 1\)[\s\S]*position\.value = String\(releases\.previousIndex \+ 1\)/);
+  assert.match(app, /position\.value = String\(current\);\s+\$\("#release-total"\)\.textContent = String\(count - 1\)/);
+  assert.match(app, /function commitReleaseJump\(\)[\s\S]*Number\.isSafeInteger\(requested\) && requested >= 0 && requested < count[\s\S]*showRelease\(requested\)[\s\S]*position\.value = String\(releases\.previousIndex\)/);
   assert.match(app, /\$\("#release-position"\)\.addEventListener\("change", commitReleaseJump\)/);
   assert.match(app, /\$\("#release-position"\)\.addEventListener\("focus", \(event\) => event\.currentTarget\.select\(\)\)/);
   assert.match(app, /event\.key === "Enter"[\s\S]*commitReleaseJump\(\)[\s\S]*event\.key === "Escape"/);
-  assert.match(app, /\$\("#release-newer"\)\.hidden = current === 0/);
-  assert.match(app, /\$\("#release-older"\)\.hidden = current === count - 1/);
+  assert.match(app, /\$\("#release-newer"\)\.disabled = current === count - 1/);
+  assert.match(app, /\$\("#release-older"\)\.disabled = current === 0/);
+  assert.doesNotMatch(app, /\$\("#release-(?:newer|older)"\)\.hidden\s*=/);
+  assert.match(css, /\.icon-btn:disabled \{[^}]*opacity: 0\.4;[^}]*cursor: default;/s);
+  assert.match(app, /\$\("#release-newer"\)\.addEventListener\("click", \(\) => stepRelease\(1\)\)/);
+  assert.match(app, /\$\("#release-older"\)\.addEventListener\("click", \(\) => stepRelease\(-1\)\)/);
   assert.match(app, /entries\[current\]\.animate\(/);
   assert.match(app, /prefers-reduced-motion: reduce/);
   assert.match(css, /\.release-nav\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center/s);
@@ -494,20 +516,58 @@ test("release carousel has dated entries and compact bounded navigation", () => 
   assert.match(css, /\.release-position \{[^}]*width: 3\.25rem;[^}]*background: var\(--surface-2\);[^}]*text-align: center;/s);
 });
 
+test("release arrows stay visible and disable at the ends of the history", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const start = app.indexOf("function showRelease(index) {");
+  const end = app.indexOf("\nconst stepRelease", start);
+  const newer = { disabled: false, hidden: false };
+  const older = { disabled: false, hidden: false };
+  const entries = [{ hidden: false }, { hidden: false }];
+  const elements = {
+    "#release-track": { children: entries },
+    "#release-position": { value: "" },
+    "#release-total": { textContent: "" },
+    "#release-newer": newer,
+    "#release-older": older
+  };
+  const context = {
+    clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
+    releases: { versions: ["1.0.0", "1.0.1"], previousIndex: null },
+    $: (selector) => elements[selector],
+    window: { matchMedia: () => ({ matches: true }) }
+  };
+
+  assert.notEqual(start, -1);
+  assert.ok(end > start);
+  vm.runInNewContext(`${app.slice(start, end)}; showRelease(0);`, context);
+  assert.equal(older.disabled, true);
+  assert.equal(newer.disabled, false);
+  assert.equal(older.hidden, false);
+  assert.equal(newer.hidden, false);
+
+  vm.runInNewContext(`${app.slice(start, end)}; showRelease(1);`, context);
+  assert.equal(older.disabled, false);
+  assert.equal(newer.disabled, true);
+  assert.equal(older.hidden, false);
+  assert.equal(newer.hidden, false);
+});
+
 test("release number jumps only to valid entries and restores invalid input", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const start = app.indexOf("function commitReleaseJump() {");
   const end = app.indexOf("\nasync function loadReleaseDownloads()", start);
-  const position = { value: "4" };
+  const versions = Array.from({ length: 92 }, (_value, index) => `1.0.${index}`);
+  const position = { value: "0" };
   const context = {
-    releases: { versions: ["1.0.77", "1.0.76", "1.0.75", "1.0.74"], previousIndex: 1 },
+    releases: { versions, previousIndex: 91 },
     $(selector) {
       assert.equal(selector, "#release-position");
       return position;
     },
     showRelease(index) {
       context.releases.previousIndex = index;
-      position.value = String(index + 1);
+      context.releases.selected = versions[index];
+      position.value = String(index);
       context.visitedIndex = index;
     }
   };
@@ -515,14 +575,21 @@ test("release number jumps only to valid entries and restores invalid input", ()
   assert.notEqual(start, -1);
   assert.ok(end > start);
   vm.runInNewContext(`${app.slice(start, end)}; commitReleaseJump();`, context);
-  assert.equal(context.visitedIndex, 3);
-  assert.equal(position.value, "4");
+  assert.equal(context.visitedIndex, 0);
+  assert.equal(context.releases.selected, "1.0.0");
+  assert.equal(position.value, "0");
 
-  for (const invalid of ["0", "5", "1.5", ""]) {
+  position.value = "91";
+  vm.runInNewContext(`${app.slice(start, end)}; commitReleaseJump();`, context);
+  assert.equal(context.visitedIndex, 91);
+  assert.equal(context.releases.selected, "1.0.91");
+  assert.equal(position.value, "91");
+
+  for (const invalid of ["-1", "92", "1.5", ""]) {
     position.value = invalid;
     vm.runInNewContext(`${app.slice(start, end)}; commitReleaseJump();`, context);
-    assert.equal(context.releases.previousIndex, 3);
-    assert.equal(position.value, "4");
+    assert.equal(context.releases.previousIndex, 91);
+    assert.equal(position.value, "91");
   }
 });
 

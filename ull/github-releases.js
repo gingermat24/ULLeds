@@ -103,11 +103,12 @@ function getArchivedReleases(archive) {
 
   const releases = archive.releases.map((release) => {
     if (!release || typeof release.version !== "string" || !VERSION_PATTERN.test(release.version) ||
-        !Array.isArray(release.categories)) {
+        !Array.isArray(release.categories) ||
+        (release.stale !== undefined && typeof release.stale !== "boolean")) {
       throw new TypeError("An archived release entry is invalid.");
     }
-    if (compareVersions(release.version, FIRST_GITHUB_RELEASE_VERSION) >= 0) {
-      throw new TypeError(`Only versions before v${FIRST_GITHUB_RELEASE_VERSION} may be archived.`);
+    if (compareVersions(release.version, FIRST_GITHUB_RELEASE_VERSION) >= 0 && release.stale !== true) {
+      throw new TypeError(`Only versions before v${FIRST_GITHUB_RELEASE_VERSION} or entries marked stale may be archived.`);
     }
     const categories = release.categories.map((category) => {
       if (!category || typeof category.name !== "string" || !category.name.trim() ||
