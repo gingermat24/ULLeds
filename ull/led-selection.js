@@ -31,6 +31,34 @@ function colorChanges(currentColor, currentLedColors, selection, color) {
   return { ledColors };
 }
 
+function dominantColor(selection, ledColors, baseColor, ledCount) {
+  const indices = selection === null
+    ? Number.isInteger(ledCount) && ledCount > 0
+      ? Array.from({ length: ledCount }, (_, index) => index)
+      : []
+    : selection;
+  if (indices.length === 0 || indices.size === 0) return baseColor;
+
+  const counts = new Map();
+  for (const index of indices) {
+    const color = ledColors[index] || baseColor;
+    const key = color.toLowerCase();
+    const current = counts.get(key);
+    if (current) current.count += 1;
+    else counts.set(key, { color, count: 1 });
+  }
+
+  let result = baseColor;
+  let maximum = 0;
+  for (const { color, count } of counts.values()) {
+    if (count > maximum) {
+      result = color;
+      maximum = count;
+    }
+  }
+  return result;
+}
+
 function fixedColorChanges(currentColor, currentLedColors, selection, color) {
   if (selection !== null && selection.size === 0) {
     throw new RangeError("Select at least one LED before changing its color.");
@@ -82,6 +110,7 @@ const ledSelection = Object.freeze({
   selectLed,
   selectLedRange,
   colorChanges,
+  dominantColor,
   fixedColorChanges,
   isLedSelected,
   isEdgeSelected,

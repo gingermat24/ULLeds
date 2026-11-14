@@ -56,6 +56,8 @@ let state = {
   device: { connected: false, name: "", serialNumber: "" }
 };
 let remoteControlBusy = false;
+let resetAttemptSequence = 0;
+let activeReset = null;
 
 // Debounced settings writes.
 const queue = { changes: {}, timer: null, flushing: null };
@@ -451,9 +453,12 @@ function renderEdgePixels(container, indices, edge) {
 }
 
 function selectedColor() {
-  if (!selectedLedIndices?.size) return state.settings.color;
-  const first = selectedLedIndices.values().next().value;
-  return state.settings.ledColors?.[first] || state.settings.color;
+  return window.ullLedSelection.dominantColor(
+    selectedLedIndices,
+    state.settings.ledColors,
+    state.settings.color,
+    profileCount()
+  );
 }
 
 /** Re-render everything that depends on settings, device or selection. */
@@ -2317,20 +2322,74 @@ function bindProfileEditor() {
   $("#profile-save").addEventListener("click", saveProfile);
 }
 
+function resetButtonIdle() {
+  const button = $("#confirm-reset");
+  button.disabled = false;
+  button.textContent = "Delete and reset";
+}
+
+async function cancelReset() {
+  const current = activeReset;
+  if (!current) {
+    $("#reset-dialog").close();
+    return;
+  }
+
+  if (current.backendStarted) {
+    if (current.cancelling) return;
+    current.cancelling = true;
+    try {
+      const result = await window.ull.cancelResetData(current.id);
+      if (!result.cancelled) {
+        current.cancelling = false;
+        toast("Reset has already started and cannot be canceled.");
+        return;
+      }
+      if (result.remoteControl) {
+        state.remoteControl = result.remoteControl;
+        renderRemoteControl(state.remoteControl);
+      }
+    } catch (error) {
+      current.cancelling = false;
+      toast(`Could not cancel reset: ${error.message}`);
+      return;
+    }
+  }
+
+  current.attempt.cancel();
+  if (activeReset === current) activeReset = null;
+  resetButtonIdle();
+  $("#reset-dialog").close();
+}
+
 async function resetAllData() {
+  if (activeReset) return;
+  const current = {
+    id: ++resetAttemptSequence,
+    attempt: window.ullResetOperation.createResetAttempt(),
+    backendStarted: false
+  };
+  activeReset = current;
   const button = $("#confirm-reset");
   button.disabled = true;
   button.textContent = "Resetting…";
   clearTimeout(queue.timer);
   queue.timer = null;
   queue.changes = {};
-  if (queue.flushing) await queue.flushing;
-  queue.changes = {};
-  stopScreenSync();
-  sync.autoAttempted = true;
-
   try {
-    const result = await window.ull.resetData();
+    if (queue.flushing) {
+      const flushed = await current.attempt.wait(queue.flushing);
+      if (flushed.cancelled) return;
+    }
+    queue.changes = {};
+    stopScreenSync();
+    sync.autoAttempted = true;
+
+    current.backendStarted = true;
+    const pendingReset = current.attempt.wait(window.ull.resetData(current.id));
+    const outcome = await pendingReset;
+    if (outcome.cancelled || outcome.value.cancelled) return;
+    const result = outcome.value;
     state.settings = result.settings;
     state.device = result.device;
     state.remoteControl = result.remoteControl;
@@ -2345,10 +2404,12 @@ async function resetAllData() {
       : "All ULLeds data was reset.";
     toast(result.device.connected ? message : `${message} The controller is not connected; scan again after setup.`);
   } catch (error) {
-    toast(`Could not reset ULLeds data: ${error.message}`);
+    if (!current.attempt.cancelled) toast(`Could not reset ULLeds data: ${error.message}`);
   } finally {
-    button.disabled = false;
-    button.textContent = "Delete and reset";
+    if (activeReset === current) {
+      activeReset = null;
+      resetButtonIdle();
+    }
   }
 }
 
@@ -2612,6 +2673,12 @@ function bindDeviceSettings() {
   $("#open-setup").addEventListener("click", () => openSetup(false));
   $("#reset-all-data").addEventListener("click", () => $("#reset-dialog").showModal());
   $("#confirm-reset").addEventListener("click", resetAllData);
+  $("#cancel-reset").addEventListener("click", () => { void cancelReset(); });
+  $("#reset-dialog").addEventListener("cancel", (event) => {
+    if (!activeReset) return;
+    event.preventDefault();
+    void cancelReset();
+  });
 
   bindSetting("#sync-fps-range", "syncFps");
   $("#sync-fps-number").addEventListener("input", (event) => {

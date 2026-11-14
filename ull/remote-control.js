@@ -403,7 +403,10 @@ function createRemoteControlService({
         if (keys.length === 0 || keys.some((key) => !REMOTE_SETTINGS.has(key))) {
           throw Object.assign(new TypeError("This setting cannot be changed from the phone."), { statusCode: 400 });
         }
-        await updateSettings(input);
+        const changes = Object.hasOwn(input, "color")
+          ? { ...input, ledColors: {} }
+          : input;
+        await updateSettings(changes);
         sendJson(response, 200, { updated: true });
       } catch (error) {
         sendError(response, error.statusCode || 400, error.message || "The setting could not be updated.");
@@ -542,6 +545,7 @@ function createRemoteControlService({
     if (!currentServer?.listening) return;
     await new Promise((resolve, reject) => {
       currentServer.close((error) => error ? reject(error) : resolve());
+      currentServer.closeAllConnections();
     });
   }
 

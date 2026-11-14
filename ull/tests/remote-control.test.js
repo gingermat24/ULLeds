@@ -207,6 +207,53 @@ test("paired phone requests cannot change settings outside the allowlist", async
   assert.equal(sync.status, 409);
 });
 
+test("phone color changes update the main color and clear individual LED overrides", async (t) => {
+  const updates = [];
+  const service = createService({
+    updateSettings: async (input) => updates.push(input)
+  });
+  t.after(() => service.stop());
+  const status = await service.start("127.0.0.1");
+  const paired = await post(status.url, "/api/pair", { pin: status.pin });
+  const cookie = paired.headers.get("set-cookie").split(";")[0];
+
+  const response = await post(status.url, "/api/settings", { color: "#12ab34" }, { cookie });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(updates, [{ color: "#12ab34", ledColors: {} }]);
+});
+
+test("stopping phone control does not wait for an in-flight state request", async (t) => {
+  let releaseState;
+  let markStarted;
+  const requestStarted = new Promise((resolve) => { markStarted = resolve; });
+  const service = createService({
+    getState: () => {
+      markStarted();
+      return new Promise((resolve) => { releaseState = resolve; });
+    }
+  });
+  t.after(async () => {
+    releaseState?.({ settings: {}, device: {} });
+    await service.stop();
+  });
+  const status = await service.start("127.0.0.1");
+  const paired = await post(status.url, "/api/pair", { pin: status.pin });
+  const cookie = paired.headers.get("set-cookie").split(";")[0];
+  const request = fetch(`${status.url}/api/state`, { headers: { Cookie: cookie } }).catch(() => null);
+  await requestStarted;
+
+  const stop = service.stop();
+  const stoppedPromptly = await Promise.race([
+    stop.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 100))
+  ]);
+  releaseState({ settings: {}, device: {} });
+  await Promise.all([stop, request]);
+
+  assert.equal(stoppedPromptly, true);
+});
+
 test("repeated incorrect PINs are rate limited", async (t) => {
   const service = createService();
   t.after(() => service.stop());

@@ -4,6 +4,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   colorChanges,
+  dominantColor,
   gradientChanges,
   fixedColorChanges,
   isLedSelected,
@@ -31,6 +32,15 @@ test("a color change updates only selected LED indices", () => {
     colorChanges("#000000", { 1: "#111111", 7: "#777777" }, new Set([1, 3]), "#ff00ff"),
     { ledColors: { 1: "#ff00ff", 3: "#ff00ff", 7: "#777777" } }
   );
+});
+
+test("the selected LED color is the most common color in the selection", () => {
+  const colors = { 0: "#ff0000", 1: "#ff0000", 2: "#0000ff" };
+
+  assert.equal(dominantColor(new Set([2, 0, 1]), colors, "#008100", 3), "#ff0000");
+  assert.equal(dominantColor(new Set([2, 0]), colors, "#008100", 3), "#0000ff");
+  assert.equal(dominantColor(new Set(), colors, "#008100", 3), "#008100");
+  assert.equal(dominantColor(null, colors, "#008100", 3), "#ff0000");
 });
 
 test("a whole-strip color change clears individual overrides", () => {

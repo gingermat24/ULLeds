@@ -36,6 +36,7 @@ const {
 } = require("./controller-catalog");
 const { createHidOutputQueue } = require("./hid-output");
 const { resetStoredData } = require("./reset-data");
+const { createResetAttempt } = require("./reset-operation");
 const { normalizeActiveEdges } = require("./strip-layout");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
@@ -129,7 +130,7 @@ let githubReleaseCache = null;
 let githubReleaseRequest = null;
 let archivedReleaseCache = null;
 let archivedReleaseRequest = null;
-let resetPromise = null;
+let resetAttempt = null;
 let screenSyncDiagnostics = null;
 let preparedSupportIssue = null;
 let remoteControlService = null;
@@ -1313,13 +1314,44 @@ handleMainWindow("window:close", () => {
   mainWindow.close();
 });
 
-handleMainWindow("settings:reset", async () => {
-  if (resetPromise) return resetPromise;
-  resetPromise = (async () => {
-    if (connectionPromise) await connectionPromise;
+handleMainWindow("settings:reset", async (_event, requestId) => {
+  if (!Number.isSafeInteger(requestId) || requestId < 1) {
+    throw new TypeError("Reset request ID is invalid.");
+  }
+  if (resetAttempt) {
+    if (resetAttempt.id === requestId) return resetAttempt.promise;
+    throw new Error("A data reset is already in progress.");
+  }
+
+  const operation = {
+    id: requestId,
+    attempt: createResetAttempt(),
+    committed: false,
+    promise: null
+  };
+  resetAttempt = operation;
+  operation.promise = (async () => {
+    if (connectionPromise) {
+      const connected = await operation.attempt.wait(connectionPromise);
+      if (connected.cancelled) return { cancelled: true };
+    }
+    if (operation.attempt.cancelled) return { cancelled: true };
+
+    const remoteStatus = remoteControlService?.getStatus();
+    const restoreRemoteControl = Boolean(remoteStatus?.running);
+    if (restoreRemoteControl) {
+      await remoteControlService.stop();
+      if (operation.attempt.cancelled) {
+        await remoteControlService.start(remoteStatus.address, remoteStatus.interfaceName);
+        return { cancelled: true };
+      }
+    }
+    if (operation.attempt.cancelled) return { cancelled: true };
+
+    operation.committed = true;
     screenSyncActive = false;
-    await remoteControlService?.stop({ revokeSessions: true });
     remoteControlError = "";
+    await remoteControlService?.stop({ revokeSessions: true });
 
     const activeProfile = connectedInfo?.profile || settings.deviceProfile;
     const activePath = connectedInfo?.path || settings.devicePath;
@@ -1330,19 +1362,29 @@ handleMainWindow("settings:reset", async () => {
     configureLoginItem();
 
     if (hidDevice) updateAnimation();
-    const device = hidDevice ? deviceState() : await scanAndConnect();
     return {
       settings: settingsSnapshot(),
-      device,
+      device: deviceState(),
       remoteControl: getRemoteControlStatus(),
       removedLegacyProfiles
     };
   })();
   try {
-    return await resetPromise;
+    return await operation.promise;
   } finally {
-    resetPromise = null;
+    if (resetAttempt === operation) resetAttempt = null;
   }
+});
+handleMainWindow("settings:reset:cancel", (_event, requestId) => {
+  if (!resetAttempt || resetAttempt.id !== requestId || resetAttempt.committed) {
+    return { cancelled: false };
+  }
+  const operation = resetAttempt;
+  operation.attempt.cancel();
+  return operation.promise.then(() => ({
+    cancelled: true,
+    remoteControl: getRemoteControlStatus()
+  }));
 });
 handleMainWindow("app:initial-state", () => ({
   version: app.getVersion(),

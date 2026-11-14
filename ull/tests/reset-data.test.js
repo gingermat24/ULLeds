@@ -6,6 +6,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { resetStoredData } = require("../reset-data");
+const { createResetAttempt } = require("../reset-operation");
 
 test("full reset removes ULLeds settings and only the imported legacy profile files", async (t) => {
   const appData = await fs.mkdtemp(path.join(os.tmpdir(), "ulleds-reset-"));
@@ -34,4 +35,24 @@ test("full reset removes ULLeds settings and only the imported legacy profile fi
 
 test("reset rejects an empty data path", () => {
   assert.throws(() => resetStoredData(""), /non-empty string/);
+});
+
+test("canceling a pending reset releases its waiter before data deletion", async () => {
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  const attempt = createResetAttempt();
+  let deletionStarted = false;
+  const reset = attempt.wait(pending).then((result) => {
+    if (!result.cancelled) deletionStarted = true;
+    return result;
+  });
+
+  assert.equal(attempt.cancel(), true);
+  assert.deepEqual(await reset, { cancelled: true });
+  assert.equal(deletionStarted, false);
+  release();
+  assert.deepEqual(await createResetAttempt().wait(Promise.resolve("done")), {
+    cancelled: false,
+    value: "done"
+  });
 });

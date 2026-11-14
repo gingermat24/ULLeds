@@ -345,6 +345,8 @@ test("LED selection starts empty when the renderer opens", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   assert.match(app, /let selectedLedIndices = new Set\(\)/);
+  assert.match(app, /window\.ullLedSelection\.dominantColor\(/);
+  assert.match(app, /state\.settings\.color,\s+profileCount\(\)/);
   assert.match(html, /id="selection-label">No LEDs selected</);
 });
 
@@ -1200,18 +1202,24 @@ test("full reset is confirmed, clears app and imported profile data, and preserv
 
   assert.match(html, /id="reset-all-data"/);
   assert.match(html, /id="reset-dialog"/);
+  assert.match(html, /id="cancel-reset" type="button">Keep my data/);
   assert.match(html, /preferences and imported profiles/);
   assert.doesNotMatch(html, /DX Light|DX-Light|QuikLight/);
   assert.match(html, /The active controller stays connected/);
-  assert.match(app, /window\.ull\.resetData\(\)/);
+  assert.match(app, /window\.ull\.resetData\(current\.id\)/);
+  assert.match(app, /window\.ull\.cancelResetData\(current\.id\)/);
+  assert.match(app, /current\.attempt\.wait\(queue\.flushing\)/);
   assert.match(app, /queue\.changes = \{\}/);
   assert.match(app, /sync\.generation \+= 1/);
   assert.match(app, /generation !== sync\.generation/);
-  assert.match(preload, /resetData: \(\) => ipcRenderer\.invoke\("settings:reset"\)/);
+  assert.match(preload, /resetData: \(requestId\) => ipcRenderer\.invoke\("settings:reset", requestId\)/);
+  assert.match(preload, /cancelResetData: \(requestId\) => ipcRenderer\.invoke\("settings:reset:cancel", requestId\)/);
   assert.match(main, /handleMainWindow\("settings:reset"/);
+  assert.match(main, /handleMainWindow\("settings:reset:cancel"/);
   assert.match(main, /settings = settingsAfterReset\(defaultSettings\(\), activeProfile, activePath\)/);
   const resetHandler = main.slice(main.indexOf('handleMainWindow("settings:reset"'), main.indexOf('handleMainWindow("app:initial-state"'));
   assert.doesNotMatch(resetHandler, /await disconnectDevice\(\)/);
+  assert.doesNotMatch(resetHandler, /await scanAndConnect\(\)/);
   assert.match(resetHandler, /if \(hidDevice\) updateAnimation\(\)/);
   assert.match(main, /configureLoginItem\(\)/);
   assert.match(resetData, /path\.join\(root, "ULLeds", "settings\.json"\)/);
