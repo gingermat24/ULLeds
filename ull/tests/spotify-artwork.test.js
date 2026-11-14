@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseSpotifyArtworkOutput } = require("../spotify-artwork");
+const { parseSpotifyArtworkOutput, parseSpotifyPlaybackStatus } = require("../spotify-artwork");
 
 test("Spotify media output exposes bounded artwork and local track details", () => {
   const media = {
@@ -36,4 +36,11 @@ test("Spotify media output rejects malformed metadata and oversized artwork", ()
     ...media,
     data: "A".repeat(2_800_000)
   })), /invalid Spotify media details/);
+});
+
+test("Spotify playback-status output is lightweight and validated", () => {
+  assert.equal(parseSpotifyPlaybackStatus("Playing\r\n"), "Playing");
+  assert.equal(parseSpotifyPlaybackStatus("NONE"), null);
+  assert.throws(() => parseSpotifyPlaybackStatus("unknown"), /invalid Spotify playback status/);
+  assert.throws(() => parseSpotifyPlaybackStatus("{\"playbackStatus\":\"Playing\"}"), /invalid Spotify playback status/);
 });

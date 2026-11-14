@@ -33,4 +33,16 @@ function parseSpotifyArtworkOutput(output) {
   return artwork;
 }
 
-module.exports = { parseSpotifyArtworkOutput };
+function parseSpotifyPlaybackStatus(output) {
+  if (typeof output !== "string") {
+    throw new TypeError("Windows returned an invalid Spotify playback status.");
+  }
+  const status = output.trim();
+  if (status === "NONE") return null;
+  if (!PLAYBACK_STATES.has(status)) {
+    throw new Error("Windows returned an invalid Spotify playback status.");
+  }
+  return status;
+}
+
+module.exports = { parseSpotifyArtworkOutput, parseSpotifyPlaybackStatus };

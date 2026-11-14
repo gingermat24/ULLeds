@@ -93,11 +93,46 @@ function renderScenes(scenes) {
   }
   root.className = "scenes";
   root.replaceChildren(...scenes.map((scene) => {
-    const row = document.createElement("div");
-    row.className = "scene-row";
+    const colors = scene.effect === "palette"
+      ? scene.palette
+      : Object.values(scene.ledColors || {}).slice(0, 8);
+    const previewColors = colors.length ? colors : [scene.color];
+    const stops = previewColors.map((color, index) =>
+      `${color} ${(index / previewColors.length) * 100}% ${((index + 1) / previewColors.length) * 100}%`
+    ).join(", ");
+    const card = document.createElement("article");
+    card.className = "scene-card";
+    const preview = document.createElement("div");
+    preview.className = "scene-preview";
+    preview.setAttribute("aria-hidden", "true");
+    preview.style.background = `linear-gradient(90deg, ${stops})`;
+    const copy = document.createElement("div");
+    copy.className = "scene-copy";
     const name = document.createElement("strong");
     name.className = "scene-name";
     name.textContent = scene.name;
+    const effectName = {
+      steady: "Solid",
+      breathe: "Breathe",
+      spectrum: "Spectrum",
+      palette: "Palette drift"
+    }[scene.effect] || scene.effect;
+    const details = [
+      effectName,
+      scene.effect === "steady" ? null : `${scene.speed}% speed`,
+      `${scene.brightness}% brightness`
+    ].filter(Boolean);
+    const individual = Object.keys(scene.ledColors || {}).length;
+    if (individual) details.push(`${individual} individual LEDs`);
+    const metadata = document.createElement("div");
+    metadata.className = "scene-meta";
+    metadata.setAttribute("aria-label", `Details for ${scene.name}`);
+    for (const detail of details) {
+      const item = document.createElement("span");
+      item.textContent = detail;
+      metadata.append(item);
+    }
+    copy.append(name, metadata);
     const actions = document.createElement("div");
     actions.className = "scene-actions";
     const apply = document.createElement("button");
@@ -118,8 +153,8 @@ function renderScenes(scenes) {
       }
     });
     actions.append(apply, remove);
-    row.append(name, actions);
-    return row;
+    card.append(preview, copy, actions);
+    return card;
   }));
 }
 

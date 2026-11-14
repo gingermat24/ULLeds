@@ -20,6 +20,8 @@ const MAX_SCENES = 30;
 const MAX_PALETTE_COLORS = 8;
 const MAX_LEDS = 253;
 const SCENE_NAME_MAX = 36;
+const SPOTIFY_AUTO_START_POLL_MS = 2500;
+const SPOTIFY_AUTO_START_ERROR_POLL_MS = 10000;
 const FPS = { min: 5, max: 60, fallback: 30 };
 const TOAST_MS = 2600;
 const VERSION_NOTICE_MS = 8000;
@@ -47,6 +49,7 @@ let state = {
     power: true,
     onboarded: false,
     spotifySensitivity: 100,
+    spotifyAutoStart: true,
     syncFps: FPS.fallback,
     syncContentMode: "display",
     syncAutoDetect: true,
@@ -74,8 +77,13 @@ const sync = {
   requestedMode: null,
   autoAttempted: false,
   screenError: "",
-  spotifyError: ""
+  spotifyError: "",
+  spotifyAutoStartError: ""
 };
+const spotifyAutoStartGate = window.ullSpotifyAutoStart.createSpotifyAutoStartGate();
+let spotifyAutoStartTimer = null;
+let spotifyAutoStartInFlight = false;
+let spotifyAutoStartNoticeShown = false;
 
 // Device discovery.
 const devices = { list: [], connecting: false, connectingPath: "" };
@@ -572,6 +580,7 @@ function renderControls(settings) {
   const sensitivity = $("#spotify-sensitivity");
   if (document.activeElement !== sensitivity) sensitivity.value = settings.spotifySensitivity ?? 100;
   $("#spotify-sensitivity-value").textContent = `${sensitivity.value}%`;
+  $("#spotify-auto-start").checked = settings.spotifyAutoStart !== false;
 }
 
 function renderSyncControls(settings) {
@@ -580,7 +589,7 @@ function renderSyncControls(settings) {
   const startingSpotify = lifecycle.isStarting && sync.requestedMode === "spotify";
   const restoringScreen = settings.startupMode === "screen" &&
     sync.autoAttempted && !sync.session && !sync.screenError;
-  const restoringSpotify = settings.startupMode === "spotify" &&
+  const restoringSpotify = settings.spotifyAutoStart !== false && settings.startupMode === "spotify" &&
     sync.autoAttempted && !sync.session && !sync.spotifyError;
 
   const setToggle = (button, { active, starting, resumingNow = false }) => {
@@ -624,7 +633,7 @@ function renderSyncControls(settings) {
         : sync.session.playbackStatus === "Paused" ? "Spotify is paused"
           : "Waiting for Spotify playback")
     : spotifyStarting ? "Starting Spotify Sync…"
-      : sync.spotifyError || "Match LEDs to Spotify";
+      : sync.spotifyError || sync.spotifyAutoStartError || "Match LEDs to Spotify";
 }
 
 function render() {
@@ -815,7 +824,7 @@ function renderScenes() {
   $("#export-scenes").disabled = scenes.length === 0;
 
   if (!scenes.length) {
-    root.replaceChildren(h("div", { class: "empty" },
+    root.replaceChildren(h("div", { class: "empty card" },
       h("h3", { text: "Save a setup for later" }),
       h("p", { text: "Your current color, brightness, effect, speed, palette and individual LED colors are saved together." }),
       h("button", { class: "btn", type: "button", text: "Save current setup", onclick: () => openSceneDialog("create") })
@@ -834,12 +843,12 @@ function buildSceneCard(scene) {
   ).join(", ");
 
   const individual = Object.keys(scene.ledColors).length;
-  const summary = [
+  const details = [
     EFFECT_LABELS[scene.effect] ?? scene.effect,
     scene.effect === "steady" ? null : `${scene.speed}% speed`,
     `${scene.brightness}% brightness`,
     individual ? `${individual} individual LEDs` : null
-  ].filter(Boolean).join(" · ");
+  ].filter(Boolean);
 
   const action = (label, className, handler) => h("button", {
     class: className,
@@ -852,9 +861,14 @@ function buildSceneCard(scene) {
   const ribbon = h("div", { class: "scene-ribbon", "aria-hidden": "true" });
   ribbon.style.background = `linear-gradient(90deg, ${stops})`;
 
-  return h("article", { class: "scene" },
+  return h("article", { class: "scene card" },
     ribbon,
-    h("div", {}, h("h3", { text: scene.name }), h("p", { text: summary })),
+    h("div", { class: "scene-copy" },
+      h("h3", { text: scene.name }),
+      h("ul", { class: "scene-meta", "aria-label": `Details for ${scene.name}` },
+        ...details.map((detail) => h("li", { text: detail }))
+      )
+    ),
     h("div", { class: "scene-actions" },
       action("Apply", "btn btn-primary btn-sm", () => applyScene(scene)),
       action("Rename", "btn btn-ghost btn-sm", () => openSceneDialog("rename", scene)),
@@ -1025,9 +1039,11 @@ function stopScreenSync(message = "") {
   if (message) toast(message);
   return pending.then(() => {
     updatePreview();
+    scheduleSpotifyAutoStartPoll(0);
   }, (error) => {
     updatePreview();
     toast(`Could not stop screen sync cleanly: ${error.message}`);
+    scheduleSpotifyAutoStartPoll(0);
   });
 }
 
@@ -1271,6 +1287,7 @@ function maybeRestoreStartupMode() {
   if (sync.autoAttempted || !state.device.connected || !state.settings.power ||
       !window.ullStartupMode.isSyncStartupMode(mode)) return;
   sync.autoAttempted = true;
+  if (mode === "spotify" && state.settings.spotifyAutoStart === false) return;
   updatePreview();
   if (mode === "screen") void startScreenSync({ automatic: true });
   else void startSpotifySync({ automatic: true });
@@ -1278,7 +1295,73 @@ function maybeRestoreStartupMode() {
 
 /* --- Spotify Sync --------------------------------------------------------- */
 
-function startSpotifySync({ automatic = false } = {}) {
+function clearSpotifyAutoStartPoll() {
+  clearTimeout(spotifyAutoStartTimer);
+  spotifyAutoStartTimer = null;
+}
+
+function scheduleSpotifyAutoStartPoll(delay = SPOTIFY_AUTO_START_POLL_MS) {
+  clearSpotifyAutoStartPoll();
+  if (state.settings.spotifyAutoStart === false ||
+      sync.session?.mode === "spotify" || sync.requestedMode === "spotify") return;
+  spotifyAutoStartTimer = window.setTimeout(() => {
+    spotifyAutoStartTimer = null;
+    void pollSpotifyAutoStart();
+  }, delay);
+}
+
+function observeSpotifyPlaybackForAutoStart(status) {
+  const shouldStart = spotifyAutoStartGate.observe(status, state.settings.spotifyAutoStart !== false);
+  if (sync.session?.mode === "spotify" && shouldStart) spotifyAutoStartGate.markAttempted();
+  return shouldStart;
+}
+
+async function pollSpotifyAutoStart() {
+  if (state.settings.spotifyAutoStart === false || spotifyAutoStartInFlight) return;
+  spotifyAutoStartInFlight = true;
+  let renderStatus = false;
+  try {
+    if (typeof window.ull.getSpotifyPlaybackStatus !== "function") {
+      throw new Error("Spotify playback detection is not available in this app environment.");
+    }
+    const status = await window.ull.getSpotifyPlaybackStatus();
+    if (state.settings.spotifyAutoStart === false) return;
+    renderStatus = Boolean(sync.spotifyAutoStartError);
+    sync.spotifyAutoStartError = "";
+
+    if (!observeSpotifyPlaybackForAutoStart(status)) return;
+    if (!state.device.connected || !state.settings.power ||
+        sync.lifecycle.isStarting || sync.lifecycle.isStopping) return;
+    if (sync.session?.mode === "spotify" || sync.requestedMode === "spotify") {
+      spotifyAutoStartGate.markAttempted();
+      return;
+    }
+    if (sync.session) await stopActiveSync();
+    if (sync.lifecycle.isStopping || sync.session ||
+        !state.device.connected || !state.settings.power) return;
+
+    spotifyAutoStartGate.markAttempted();
+    await startSpotifySync({ automatic: true, playbackTriggered: true });
+  } catch (error) {
+    const message = error.message || "Could not detect Spotify playback.";
+    if (sync.spotifyAutoStartError !== message) {
+      sync.spotifyAutoStartError = message;
+      console.error("Could not detect Spotify playback:", error);
+      renderStatus = true;
+    }
+  } finally {
+    spotifyAutoStartInFlight = false;
+    if (renderStatus) renderSyncControls(state.settings);
+    if (state.settings.spotifyAutoStart !== false &&
+        sync.session?.mode !== "spotify" && sync.requestedMode !== "spotify") {
+      scheduleSpotifyAutoStartPoll(
+        sync.spotifyAutoStartError ? SPOTIFY_AUTO_START_ERROR_POLL_MS : SPOTIFY_AUTO_START_POLL_MS
+      );
+    }
+  }
+}
+
+function startSpotifySync({ automatic = false, playbackTriggered = false } = {}) {
   if (!state.device.connected) {
     toast("Connect the LED controller before starting Spotify Sync.");
     return Promise.resolve(false);
@@ -1321,21 +1404,23 @@ function startSpotifySync({ automatic = false } = {}) {
 
   sync.requestedMode = "spotify";
   const pending = sync.lifecycle.start(() =>
-    runSpotifySyncStart(audioCapture, audioContext, audioReady, automatic)
+    runSpotifySyncStart(audioCapture, audioContext, audioReady, automatic, playbackTriggered)
   );
   updatePreview();
   return pending.catch((error) => {
     void audioCapture.then(stopTracks, () => {});
     closeAudioContext(audioContext);
     sync.spotifyError = error.message;
-    toast(`${automatic ? "Could not resume" : "Could not start"} Spotify Sync: ${error.message}`);
+    const action = playbackTriggered ? "Could not automatically start"
+      : automatic ? "Could not resume" : "Could not start";
+    toast(`${action} Spotify Sync: ${error.message}`);
   }).finally(() => {
     if (sync.requestedMode === "spotify") sync.requestedMode = null;
     updatePreview();
   });
 }
 
-async function runSpotifySyncStart(audioCapture, audioContext, audioReady, automatic) {
+async function runSpotifySyncStart(audioCapture, audioContext, audioReady, automatic, playbackTriggered) {
   const generation = ++sync.generation;
   const cancelled = () => generation !== sync.generation;
 
@@ -1357,6 +1442,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
     const [artwork, stream] = await Promise.all([window.ull.getSpotifyArtwork(), audioCapture, audioReady]);
     audioStream = stream;
     if (!artwork) throw new Error("Start a track in the Spotify desktop app before enabling Spotify Sync.");
+    observeSpotifyPlaybackForAutoStart(artwork.playbackStatus);
     if (!stream.getAudioTracks().length) {
       throw new Error("Windows did not provide desktop audio. Check the system audio capture permission.");
     }
@@ -1406,7 +1492,12 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
     await applySpotifyArtwork(session, artwork, sendLatestFrame);
     scheduleSpotifyAudioSample(session, sendLatestFrame);
     session.pollTimer = window.setTimeout(() => void pollSpotifyArtwork(session, sendLatestFrame), 1500);
-    toast("Spotify Sync is active. Music response uses local desktop audio.");
+    if (playbackTriggered && !spotifyAutoStartNoticeShown) {
+      spotifyAutoStartNoticeShown = true;
+      toast("Spotify detected. Sync started. Turn off automatic start in Device > Sync.");
+    } else {
+      toast("Spotify Sync is active. Music response uses local desktop audio.");
+    }
   } catch (error) {
     if (sync.session === session) {
       await stopScreenSync();
@@ -1451,6 +1542,7 @@ async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
     artwork.title, artwork.artist, artwork.album, artwork.contentType, artwork.playbackStatus, artwork.data
   ].join("\u0000");
   session.playbackStatus = artwork.playbackStatus;
+  observeSpotifyPlaybackForAutoStart(artwork.playbackStatus);
   session.hasMedia = true;
   sync.spotifyError = "";
   $("#spotify-cover-image").src = image.src;
@@ -1526,6 +1618,7 @@ async function pollSpotifyArtwork(session, sendLatestFrame) {
     if (sync.session !== session) return;
     sync.spotifyError = "";
     if (!artwork) {
+      observeSpotifyPlaybackForAutoStart(null);
       if (session.hasMedia) {
         session.hasMedia = false;
         session.artworkIdentity = "";
@@ -1803,6 +1896,20 @@ function releaseAction(version) {
   return button;
 }
 
+function renderReleaseText(text) {
+  const parts = [];
+  const bold = /\*\*(.+?)\*\*/g;
+  let cursor = 0;
+  for (const match of text.matchAll(bold)) {
+    const index = match.index;
+    if (index > cursor) parts.push(text.slice(cursor, index));
+    parts.push(h("strong", { text: match[1] }));
+    cursor = index + match[0].length;
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts.length ? parts : [text];
+}
+
 function buildReleaseEntry(entry) {
   const { version } = entry;
   const published = releases.published?.get(version);
@@ -1820,7 +1927,7 @@ function buildReleaseEntry(entry) {
       ? categories.map(({ name, items }) =>
         h("div", { class: "release-category" },
           h("strong", { text: name }),
-          h("ul", {}, ...items.map((item) => h("li", { text: item })))
+          h("ul", {}, ...items.map((item) => h("li", {}, ...renderReleaseText(item))))
         )
       )
       : [h("p", { class: "hint", text: "No release notes were published for this version." })])
@@ -2704,6 +2811,16 @@ function bindDeviceSettings() {
     }
   });
 
+  $("#spotify-auto-start").addEventListener("change", (event) => {
+    const enabled = event.currentTarget.checked;
+    spotifyAutoStartGate.reset();
+    sync.spotifyAutoStartError = "";
+    if (!enabled) clearSpotifyAutoStartPoll();
+    queueSettings({ spotifyAutoStart: enabled }, true);
+    renderSyncControls(state.settings);
+    if (enabled) scheduleSpotifyAutoStartPoll(0);
+  });
+
   bindSetting("#start-with-windows", "startWithWindows", { event: "change", immediate: true, read: (el) => el.checked });
   $("#remote-control-enabled").addEventListener("change", (event) => {
     void updateRemoteControl(event.currentTarget.checked, $("#remote-interface").value);
@@ -2738,8 +2855,10 @@ function bindMainProcessEvents() {
   window.ull.onDeviceStatus((device) => {
     applyDeviceState(device);
     render();
-    if (!device.connected) sync.autoAttempted = false;
-    else maybeRestoreStartupMode();
+    if (!device.connected) {
+      sync.autoAttempted = false;
+      spotifyAutoStartGate.reset();
+    } else maybeRestoreStartupMode();
   });
   window.ull.onMovieFormatApplied(applyDetectedMovieFormat);
   window.ull.onSettingsUpdated((settings) => {
@@ -2853,6 +2972,7 @@ async function start() {
     void loadReleaseDownloads();
     if (!state.settings.onboarded) openSetup(true);
     maybeRestoreStartupMode();
+    scheduleSpotifyAutoStartPoll(0);
   } catch (error) {
     toast(`ULLeds could not load: ${error.message}`);
   }

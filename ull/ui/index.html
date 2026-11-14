@@ -293,8 +293,8 @@
 
         <section class="card group" aria-labelledby="group-sync">
           <div class="group-head">
-            <h3 id="group-sync">Screen Sync</h3>
-            <p class="hint">What part of the display to sample, and how often.</p>
+            <h3 id="group-sync">Sync</h3>
+            <p class="hint">Adjust display sampling and Spotify behavior.</p>
           </div>
           <div class="list">
             <div class="row">
@@ -325,6 +325,13 @@
                 <span class="row-desc">Ask before using a stable detected ratio.</span>
               </span>
               <input class="switch" id="sync-auto-detect" type="checkbox">
+            </label>
+            <label class="row row-inline" for="spotify-auto-start">
+              <span class="row-text">
+                <span class="row-title">Start Spotify Sync automatically</span>
+                <span class="row-desc">When Spotify plays and the LEDs are on. Takes priority over Screen Sync.</span>
+              </span>
+              <input class="switch" id="spotify-auto-start" type="checkbox" checked>
             </label>
           </div>
         </section>
@@ -551,6 +558,7 @@
 <script src="../scene-data.js"></script>
 <script src="../screen-sync-lifecycle.js"></script>
 <script src="../startup-mode.js"></script>
+<script src="../spotify-auto-start.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -87,6 +87,7 @@ test("renderer scripts load together and expose their APIs", () => {
   assert.equal(typeof context.ullSpotifySync?.createSpotifySyncColors, "function");
   assert.equal(typeof context.ullGithubReleases?.getReleasedInstallers, "function");
   assert.equal(typeof context.ullStartupMode?.isSyncStartupMode, "function");
+  assert.equal(typeof context.ullSpotifyAutoStart?.createSpotifyAutoStartGate, "function");
   assert.equal(context.plural(1, "LED"), "1 LED");
   assert.equal(context.plural(2, "LED"), "2 LEDs");
   assert.equal(context.plural(2, "lighting setup"), "2 lighting setups");
@@ -220,7 +221,7 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(app, /Number\(state\.settings\.spotifySensitivity \?\? 100\)/);
   assert.match(app, /queueSettings\(\{ spotifySensitivity: Number\(event\.target\.value\) \}, true\)/);
   assert.match(app, /artwork\.title, artwork\.artist, artwork\.album, artwork\.contentType, artwork\.playbackStatus, artwork\.data/);
-  assert.match(app, /if \(!artwork\) \{\s+if \(session\.hasMedia\)/);
+  assert.match(app, /if \(!artwork\) \{\s+observeSpotifyPlaybackForAutoStart\(null\);\s+if \(session\.hasMedia\)/);
   assert.match(app, /session\.hasMedia = true/);
   assert.match(app, /Waiting for a Spotify track/);
   assert.match(app, /if \(sync\.session\?\.mode === mode\)/);
@@ -250,6 +251,51 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(preload, /screenSyncSource: \(\) => ipcRenderer\.invoke\("screen-sync:source"\)/);
   assert.match(preload, /startScreenSync: \(mode = "screen"\) => ipcRenderer\.invoke\("screen-sync:start", mode\)/);
   assert.match(app, /stopTracks\(audioStream\)/);
+});
+
+test("saved scene cards have room for setup details and actions on desktop and phone", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const remote = fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8");
+  const remoteCss = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
+
+  assert.match(app, /class: "scene card"/);
+  assert.match(app, /class: "scene-copy"/);
+  assert.match(app, /class: "scene-meta"/);
+  assert.match(css, /\.scene-list \{[^}]*minmax\(min\(100%, 24rem\), 1fr\)/);
+  assert.match(css, /\.scene-meta \{[^}]*flex-wrap: wrap;/);
+  assert.match(remote, /card\.className = "scene-card"/);
+  assert.match(remote, /preview\.className = "scene-preview"/);
+  assert.match(remoteCss, /\.scene-card \{/);
+  assert.match(remoteCss, /\.scene-actions \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto;/);
+});
+
+test("Spotify auto-start is default-on, user-controllable, and uses status-only polling", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+  const helper = fs.readFileSync(path.join(__dirname, "..", "spotify-media.cs"), "utf8");
+
+  const lightingView = html.slice(html.indexOf('id="view-light"'), html.indexOf("<!-- Scenes -->"));
+  const deviceView = html.slice(html.indexOf('id="view-settings"'), html.indexOf("<!-- Updates -->"));
+  const syncSettings = deviceView.slice(deviceView.indexOf('aria-labelledby="group-sync"'), deviceView.indexOf('aria-labelledby="group-remote-control"'));
+  assert.doesNotMatch(lightingView, /id="spotify-auto-start"/);
+  assert.match(syncSettings, /<label class="row row-inline" for="spotify-auto-start">/);
+  assert.match(syncSettings, /id="spotify-auto-start"[^>]*type="checkbox"[^>]*checked/);
+  assert.match(syncSettings, /When Spotify plays and the LEDs are on\. Takes priority over Screen Sync\./);
+  assert.match(app, /spotifyAutoStart: true/);
+  assert.match(app, /createSpotifyAutoStartGate\(\)/);
+  assert.match(app, /getSpotifyPlaybackStatus\(\)/);
+  assert.match(app, /scheduleSpotifyAutoStartPoll/);
+  assert.match(app, /runSpotifySyncStart\(audioCapture, audioContext, audioReady, automatic, playbackTriggered\)/);
+  assert.match(app, /if \(playbackTriggered && !spotifyAutoStartNoticeShown\)[\s\S]*Spotify detected\. Sync started\. Turn off automatic start in Device > Sync\./);
+  assert.match(main, /spotifyAutoStart: true/);
+  assert.match(main, /typeof input\.spotifyAutoStart !== "boolean"/);
+  assert.match(main, /handleMainWindow\("spotify-sync:playback-status"/);
+  assert.match(main, /parseSpotifyPlaybackStatus\(stdout\)/);
+  assert.match(preload, /getSpotifyPlaybackStatus: \(\) => ipcRenderer\.invoke\("spotify-sync:playback-status"\)/);
+  assert.match(helper, /args\.Contains\("--status", StringComparer\.OrdinalIgnoreCase\)/);
 });
 
 test("update feedback includes an accessible progress bar and reports download size", () => {
@@ -671,6 +717,48 @@ test("archived release entries preserve their historical publication date", () =
   assert.equal(context.dateInput.date, "2026-11-09");
 });
 
+test("in-app release notes render Markdown bold instead of displaying asterisks", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const start = app.indexOf("function renderReleaseText(text) {");
+  const end = app.indexOf("\nfunction renderReleases()", start);
+  const context = {
+    releases: { published: new Map() },
+    cleanCategories: (categories) => categories,
+    releaseBadge: () => null,
+    releaseAction: () => null,
+    releaseDate: () => null,
+    h(tag, attrs, ...children) {
+      return { tag, attrs, children };
+    }
+  };
+
+  assert.notEqual(start, -1);
+  assert.ok(end > start);
+  vm.runInNewContext(
+    `${app.slice(start, end)}; globalThis.card = buildReleaseEntry({
+      version: "1.0.96",
+      categories: [{ name: "Fixed", items: ["**Keep my data** now cancels a reset."] }]
+    });`,
+    context
+  );
+  const findElement = (node, tag) => {
+    if (node?.tag === tag) return node;
+    for (const child of node?.children ?? []) {
+      const found = findElement(child, tag);
+      if (found) return found;
+    }
+    return null;
+  };
+  const listItem = findElement(context.card, "li");
+
+  assert.ok(listItem);
+  assert.deepEqual(
+    listItem.children.map((child) => child?.tag ?? child),
+    ["strong", " now cancels a reset."]
+  );
+  assert.equal(listItem.children[0].attrs.text, "Keep my data");
+});
+
 test("release number jumps only to valid entries and restores invalid input", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const start = app.indexOf("function commitReleaseJump() {");
@@ -932,9 +1020,9 @@ test("saved sync modes preserve output during reconnect and fall back when resum
   assert.match(app, /startingScreen \? "Starting display capture…"/);
   assert.match(app, /!sessionOwnsStream && \(hardwareSyncStarted \|\| automatic\) && !sync\.lifecycle\.isStopping/);
   assert.match(app, /const result = await window\.ull\.stopScreenSync\(\);\s+state\.settings\.startupMode = result\.startupMode;/);
-  assert.match(app, /runSpotifySyncStart\(audioCapture, audioContext, audioReady, automatic\)/);
+  assert.match(app, /runSpotifySyncStart\(audioCapture, audioContext, audioReady, automatic, playbackTriggered\)/);
   assert.match(app, /\(hardwareSyncStarted \|\| automatic\) && !sync\.lifecycle\.isStopping\) \{\s+try \{\s+const result = await window\.ull\.stopScreenSync\(\);\s+state\.settings\.startupMode = result\.startupMode;/);
-  assert.match(app, /sync\.autoAttempted = true;\s+updatePreview\(\);\s+if \(mode === "screen"\) void startScreenSync\(\{ automatic: true \}\);\s+else void startSpotifySync\(\{ automatic: true \}\)/);
+  assert.match(app, /sync\.autoAttempted = true;\s+if \(mode === "spotify" && state\.settings\.spotifyAutoStart === false\) return;\s+updatePreview\(\);\s+if \(mode === "screen"\) void startScreenSync\(\{ automatic: true \}\);\s+else void startSpotifySync\(\{ automatic: true \}\)/);
 });
 
 test("hidden Windows startup keeps a window alive for session-end LED shutdown", () => {

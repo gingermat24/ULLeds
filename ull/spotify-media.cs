@@ -7,11 +7,12 @@ using Windows.Media.Control;
 
 internal static class SpotifyMedia
 {
-    private static int Main()
+    private static int Main(string[] args)
     {
         try
         {
             Console.OutputEncoding = new UTF8Encoding(false);
+            var statusOnly = args.Contains("--status", StringComparer.OrdinalIgnoreCase);
             var manager = GlobalSystemMediaTransportControlsSessionManager
                 .RequestAsync().AsTask().GetAwaiter().GetResult();
             var sessions = manager.GetSessions()
@@ -25,6 +26,12 @@ internal static class SpotifyMedia
             if (session == null)
             {
                 Console.WriteLine("NONE");
+                return 0;
+            }
+
+            if (statusOnly)
+            {
+                Console.WriteLine(session.GetPlaybackInfo().PlaybackStatus.ToString());
                 return 0;
             }
 

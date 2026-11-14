@@ -40,7 +40,7 @@ const { createResetAttempt } = require("./reset-operation");
 const { normalizeActiveEdges } = require("./strip-layout");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
-const { parseSpotifyArtworkOutput } = require("./spotify-artwork");
+const { parseSpotifyArtworkOutput, parseSpotifyPlaybackStatus } = require("./spotify-artwork");
 const {
   createGithubIssueReport,
   createGithubIssueUrl,
@@ -91,6 +91,7 @@ const DEFAULTS = Object.freeze({
   power: true,
   onboarded: false,
   spotifySensitivity: 100,
+  spotifyAutoStart: true,
   syncFps: 30,
   syncContentMode: "display",
   syncAutoDetect: true,
@@ -175,6 +176,32 @@ function readSpotifyArtwork() {
       }
       try {
         resolve(parseSpotifyArtworkOutput(stdout));
+      } catch (parseError) {
+        reject(parseError);
+      }
+    });
+  });
+}
+
+function readSpotifyPlaybackStatus() {
+  if (process.platform !== "win32") {
+    return Promise.reject(new Error("Spotify Sync is available on Windows only."));
+  }
+  const helperPath = app.isPackaged
+    ? path.join(process.resourcesPath, "app.asar.unpacked", "ull", "spotify-media.exe")
+    : path.join(__dirname, "spotify-media.exe");
+  return new Promise((resolve, reject) => {
+    execFile(helperPath, ["--status"], {
+      windowsHide: true,
+      timeout: 5000,
+      maxBuffer: 4096
+    }, (error, stdout, stderr) => {
+      if (error) {
+        reject(new Error(stderr.trim() || `Could not read Spotify playback status: ${error.message}`));
+        return;
+      }
+      try {
+        resolve(parseSpotifyPlaybackStatus(stdout));
       } catch (parseError) {
         reject(parseError);
       }
@@ -329,6 +356,12 @@ function validateSettings(input) {
       throw new RangeError("Spotify response must be an integer from 0 to 100.");
     }
     next.spotifySensitivity = value;
+  }
+  if ("spotifyAutoStart" in input) {
+    if (typeof input.spotifyAutoStart !== "boolean") {
+      throw new TypeError("Spotify auto-start must be enabled or disabled.");
+    }
+    next.spotifyAutoStart = input.spotifyAutoStart;
   }
   if ("syncContentMode" in input) {
     if (!["display", "cinema235"].includes(input.syncContentMode)) {
@@ -1559,6 +1592,7 @@ handleMainWindow("screen-sync:start", (_event, mode = "screen") => {
   return { active: true };
 });
 handleMainWindow("spotify-sync:artwork", () => readSpotifyArtwork());
+handleMainWindow("spotify-sync:playback-status", () => readSpotifyPlaybackStatus());
 handleMainWindow("screen-sync:colors", (_event, colors) => {
   if (!screenSyncActive || !hidDevice || !settings.power) return { active: false };
   const ledCount = settings.deviceProfile?.ledCount;
