@@ -34,6 +34,19 @@ matches the response message ID, and validates the reported count before
 opening the device for lighting control. A saved count is never used as a
 substitute when that query fails.
 
+Optional phone control is served by `ull/remote-control.js` over HTTP on a
+user-selected private IPv4 interface. Requests are restricted to that
+interface's subnet, state-changing requests require the remote page's origin,
+and pairing requires a rate-limited PIN before a time-limited in-memory session
+is issued. Only lighting settings, saved scenes, and sync-mode requests are
+exposed; the phone API does not expose device paths, serial numbers, or general
+Electron IPC. The server stops when remote control is disabled or ULLeds quits.
+Because this local HTTP traffic is not encrypted, users should pair only on a
+trusted private network and must not forward the port to the internet.
+Enabling phone control also keeps ULLeds in the tray and restores the server at
+Windows sign-in. Screen and Spotify Sync requests are relayed through the
+trusted renderer; the PC may still need to grant capture permissions.
+
 ## HID output
 
 The PC SYNC Backlight accepts `RB` section commands over HID. Each section is

@@ -216,6 +216,8 @@ select:disabled { opacity: 0.4; cursor: default; }
 .input, .input-text, .notice, .folder-path { user-select: text; -webkit-user-select: text; }
 .input-number { width: 5rem; text-align: center; }
 .input, .release-position { font-variant-numeric: tabular-nums; }
+.number-with-unit { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--muted); font-size: var(--fs-sm); }
+.number-with-unit .input-number { width: 4rem; }
 
 .swatch {
   flex: none;
@@ -354,6 +356,21 @@ input[type="range"]::-webkit-slider-thumb {
 .row-control input[type="range"] { width: clamp(7rem, 11vw, 10rem); }
 .row.is-stacked { flex-direction: column; align-items: stretch; }
 label.row { cursor: pointer; }
+.remote-pairing {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+.remote-pairing img { width: 9rem; aspect-ratio: 1; border-radius: var(--r-sm); background: white; }
+.remote-pairing-copy { display: grid; gap: var(--sp-2); min-width: 0; }
+.remote-pairing-copy strong { font-size: var(--fs-xl); letter-spacing: 0.12em; font-variant-numeric: tabular-nums; }
+.remote-pairing-copy code { overflow-wrap: anywhere; color: var(--muted); font-size: var(--fs-sm); }
+#remote-control-status[data-error="true"] { color: var(--danger); }
+.remote-warning { max-width: 62ch; }
 
 .choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--sp-3); }
 .choice {
@@ -711,6 +728,8 @@ main {
 .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr)); gap: var(--sp-4); align-items: stretch; align-content: start; }
 .group { display: grid; align-content: start; gap: var(--sp-4); }
 .group-head { display: grid; gap: var(--sp-1); }
+.utility-stack { display: grid; min-width: 0; align-content: start; gap: var(--sp-3); }
+.utility-stack > .group { padding: var(--sp-4); gap: var(--sp-3); }
 
 /* --------------------------------------------------------------------------
    Updates
@@ -958,5 +977,7 @@ main {
 @media (max-width: 40rem) {
   .tab { padding: 0 var(--sp-3); }
   .status-label { display: none; }
+  .remote-pairing { grid-template-columns: 1fr; }
+  .remote-pairing img { width: min(100%, 12rem); }
   .release-category { grid-template-columns: 1fr; gap: var(--sp-1); }
 }

@@ -8,13 +8,8 @@ const { formatReleaseNotes } = require("../../scripts/release-notes");
 const { compareVersions, getArchivedReleases, mergeReleaseHistory } = require("../../ull/github-releases");
 
 const root = path.join(__dirname, "..", "..");
-const version = require(path.join(root, "package.json")).version;
-const releaseNotesPath = path.join(root, "docs", "releases", `${version}.md`);
 
 test("release notes are maintained outside the app package", () => {
-  const notes = fs.readFileSync(releaseNotesPath, "utf8");
-  assert.equal(formatReleaseNotes(notes, version), notes.trim().replace(/\r\n/g, "\n"));
-
   const html = fs.readFileSync(path.join(root, "ull", "ui", "index.html"), "utf8");
   const app = fs.readFileSync(path.join(root, "ull", "ui", "app.js"), "utf8");
   const packageConfig = require(path.join(root, "package.json"));
@@ -29,8 +24,11 @@ test("historical changelog entries remain available in the non-bundled repositor
   assert.equal(releases.length, 48);
   assert.ok(releases.some((release) => release.version === "1.0.11" && release.categories[0].name === "History"));
   assert.ok(releases.some((release) => release.version === "1.0.46"));
-  assert.ok(releases.some((release) => release.version === "1.0.67" &&
-    release.categories.some((category) => category.items.some((item) => item.includes("deleted because it was corrupted")))));
+  const staleEntry = releases.find((release) => release.version === "1.0.67");
+  assert.ok(staleEntry);
+  assert.equal(staleEntry.date, "2026-11-09");
+  assert.ok(staleEntry.categories.some((category) =>
+    category.items.some((item) => item.includes("deleted because it was corrupted"))));
   assert.equal(releases.filter((release) => compareVersions(release.version, "1.0.47") < 0).length, 47);
   assert.doesNotMatch(packageConfigFiles(), /docs\/release-history\.json/);
 
@@ -39,6 +37,7 @@ test("historical changelog entries remain available in the non-bundled repositor
     { version: "1.0.66", categories: [{ name: "Fixed", items: ["Previous release."] }] }
   ], releases);
   assert.deepEqual(merged.slice(0, 3).map((release) => release.version), ["1.0.68", "1.0.67", "1.0.66"]);
+  assert.equal(merged[1].date, "2026-11-09");
 });
 
 function packageConfigFiles() {
@@ -51,13 +50,15 @@ test("release workflow publishes the matching versioned Markdown notes", () => {
     "utf8"
   );
   assert.match(workflow, /node scripts\/release-notes\.js \$version \| Set-Content -Path \$notesPath -Encoding utf8NoBOM/);
-  assert.match(fs.readFileSync(releaseNotesPath, "utf8"), new RegExp(`^## ULLeds ${version}$`, "m"));
+  assert.match(workflow, /gh release create \$tag[\s\S]*?--notes-file \$notesPath/);
+  const releaseScript = fs.readFileSync(path.join(root, "scripts", "release-notes.js"), "utf8");
+  assert.match(releaseScript, /path\.join\(root, "docs", "releases", `\$\{version\}\.md`\)/);
 });
 
 test("release note formatting validates version, category, and bullet", () => {
-  const notes = fs.readFileSync(releaseNotesPath, "utf8");
-  assert.match(formatReleaseNotes(notes, version), /Align changelog navigation numbers with release versions/);
-  assert.match(formatReleaseNotes(notes, version), /corrupted release was deleted/);
+  const version = "9.8.7";
+  const notes = `## ULLeds ${version}\n\n### Improved\n\n- Keep published release notes on GitHub.`;
+  assert.equal(formatReleaseNotes(notes, version), notes);
   assert.throws(() => formatReleaseNotes(notes, "bad-version"), /X\.Y\.Z/);
   assert.throws(() => formatReleaseNotes(`## ULLeds ${version}\n\nNo category`, version), /category and at least one bullet/);
   assert.throws(() => formatReleaseNotes("## ULLeds 1.0.83\n\n### Fixed\n\n- Note", version), /must start/);

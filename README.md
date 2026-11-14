@@ -119,8 +119,10 @@ installed.
 To publish a Windows release, add `docs/releases/<version>.md` with the release
 notes, update the package version, then push a matching `v<version>` tag.
 GitHub Actions runs the tests, builds the installer, and publishes the installer
-and release notes. Keep historical entries in `docs/release-history.json`; that
-repository-hosted archive is fetched by the app but excluded from its package.
+and release notes. After publication succeeds, delete the versioned Markdown
+file; published notes remain on GitHub. Keep historical entries in
+`docs/release-history.json`; that repository-hosted archive is fetched by the
+app but excluded from its package.
 The bundled Cormorant Garamond and Noto Sans font licenses are in
 `ull/assets/fonts/`.
 

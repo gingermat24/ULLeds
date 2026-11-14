@@ -111,7 +111,10 @@
             <div class="field">
               <div class="field-head">
                 <label for="brightness">Brightness</label>
-                <output id="brightness-value" for="brightness">50%</output>
+                <span class="number-with-unit">
+                  <input class="input input-number" id="brightness-number" type="number" min="0" max="100" step="1" value="50" aria-label="Brightness percentage">
+                  <span aria-hidden="true">%</span>
+                </span>
               </div>
               <input id="brightness" type="range" min="0" max="100" value="50">
             </div>
@@ -323,41 +326,73 @@
           </div>
         </section>
 
-        <section class="card group" aria-labelledby="group-startup">
+        <section class="card group" aria-labelledby="group-remote-control">
           <div class="group-head">
-            <h3 id="group-startup">Startup</h3>
-            <p class="hint">ULLeds restores your previous mode when it starts.</p>
+            <h3 id="group-remote-control">Phone remote</h3>
+            <p class="hint">Control your lights from Safari on a phone connected to this private Wi-Fi network. ULLeds never opens an internet connection for remote control.</p>
           </div>
           <div class="list">
-            <label class="row row-inline" for="start-with-windows">
+            <label class="row row-inline" for="remote-control-enabled">
               <span class="row-text">
-                <span class="row-title">Start with Windows</span>
-                <span class="row-desc">Launch in the tray when you sign in.</span>
+                <span class="row-title">Allow phone control</span>
+                <span class="row-desc">Keep ULLeds in the tray and restore remote access at Windows sign-in.</span>
               </span>
-              <input class="switch" id="start-with-windows" type="checkbox">
+              <input class="switch" id="remote-control-enabled" type="checkbox">
             </label>
+            <div class="row is-stacked" id="remote-network-row">
+              <label class="row-title" for="remote-interface">Wi-Fi or Ethernet network</label>
+              <select id="remote-interface"></select>
+            </div>
+            <div class="remote-pairing hidden" id="remote-pairing">
+              <img id="remote-qr" alt="Scan to open ULLeds remote on your phone">
+              <div class="remote-pairing-copy">
+                <span class="row-desc">Scan this code, then enter this PIN on your phone.</span>
+                <strong id="remote-pin">------</strong>
+                <code id="remote-url"></code>
+              </div>
+            </div>
+            <p class="hint" id="remote-control-status" role="status" aria-live="polite">Remote control is off.</p>
+            <p class="hint remote-warning">Pair only on a trusted private network. Devices on the same Wi-Fi may be able to observe unencrypted local traffic.</p>
           </div>
         </section>
 
-        <section class="card group" aria-labelledby="group-support">
-          <div class="group-head">
-            <h3 id="group-support">Support</h3>
-            <p class="hint">Describe the problem and choose whether to include diagnostics.</p>
-          </div>
-          <div>
-            <button class="btn" id="open-support" type="button">Contact support</button>
-          </div>
-        </section>
+        <div class="utility-stack">
+          <section class="card group" aria-labelledby="group-startup">
+            <div class="group-head">
+              <h3 id="group-startup">Startup</h3>
+              <p class="hint" id="start-with-windows-description">ULLeds restores your previous mode when it starts.</p>
+            </div>
+            <div class="list">
+              <label class="row row-inline" for="start-with-windows">
+                <span class="row-text">
+                  <span class="row-title">Start with Windows</span>
+                  <span class="row-desc">Launch in the tray when you sign in.</span>
+                </span>
+                <input class="switch" id="start-with-windows" type="checkbox">
+              </label>
+            </div>
+          </section>
 
-        <section class="card group group-danger" aria-labelledby="group-reset">
-          <div class="group-head">
-            <h3 id="group-reset">Reset</h3>
-            <p class="hint">Clears scenes, colors, device and sync settings. The app stays installed.</p>
-          </div>
-          <div>
-            <button class="btn btn-danger" id="reset-all-data" type="button">Reset all data</button>
-          </div>
-        </section>
+          <section class="card group" aria-labelledby="group-support">
+            <div class="group-head">
+              <h3 id="group-support">Support</h3>
+              <p class="hint">Describe the problem and choose whether to include diagnostics.</p>
+            </div>
+            <div>
+              <button class="btn" id="open-support" type="button">Contact support</button>
+            </div>
+          </section>
+
+          <section class="card group group-danger" aria-labelledby="group-reset">
+            <div class="group-head">
+              <h3 id="group-reset">Reset</h3>
+              <p class="hint">Clears scenes, colors, device and sync settings. The app stays installed.</p>
+            </div>
+            <div>
+              <button class="btn btn-danger" id="reset-all-data" type="button">Reset all data</button>
+            </div>
+          </section>
+        </div>
 
       </div>
     </section>

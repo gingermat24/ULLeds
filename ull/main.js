@@ -49,12 +49,19 @@ const {
 const { normalizeStartupMode, isSyncStartupMode } = require("./startup-mode");
 const {
   normalizeScenes,
+  sceneFromLighting,
+  settingsFromScene,
   createSceneBackup,
   readSceneBackup,
   mergeScenes
 } = require("./scene-data");
 const { acquireSingleInstanceLock } = require("./single-instance");
 const { shouldTurnOffForSessionEnd, turnOffForSessionEnd } = require("./shutdown-power");
+const {
+  createRemoteControlService,
+  getPrivateNetworkInterfaces,
+  isPrivateIPv4
+} = require("./remote-control");
 const {
   compareVersions,
   findReleaseInstaller,
@@ -87,6 +94,9 @@ const DEFAULTS = Object.freeze({
   syncContentMode: "display",
   syncAutoDetect: true,
   startWithWindows: true,
+  remoteControlEnabled: false,
+  remoteInterface: "",
+  remoteInterfaceName: "",
   startupMode: "lighting"
 });
 const EFFECTS = new Set(["steady", "breathe", "spectrum", "palette"]);
@@ -122,6 +132,10 @@ let archivedReleaseRequest = null;
 let resetPromise = null;
 let screenSyncDiagnostics = null;
 let preparedSupportIssue = null;
+let remoteControlService = null;
+let remoteControlError = "";
+let mainWindowRendererReady = false;
+const pendingRemoteSyncRequests = new Map();
 let pendingMovieFormat = null;
 let movieFormatPromptWindow = null;
 let movieFormatPromptTimer = null;
@@ -170,7 +184,7 @@ function readSpotifyArtwork() {
 function configureLoginItem() {
   if (process.platform !== "win32" || !app.isPackaged) return;
   app.setLoginItemSettings({
-    openAtLogin: settings.startWithWindows,
+    openAtLogin: settings.startWithWindows || settings.remoteControlEnabled,
     args: ["--hidden"]
   });
 }
@@ -433,6 +447,25 @@ function validateSettings(input) {
       if (typeof input[key] !== "boolean") throw new TypeError(`${key} must be a boolean.`);
       next[key] = input[key];
     }
+  }
+  if ("remoteControlEnabled" in input) {
+    if (typeof input.remoteControlEnabled !== "boolean") {
+      throw new TypeError("Remote control state must be boolean.");
+    }
+    next.remoteControlEnabled = input.remoteControlEnabled;
+  }
+  if ("remoteInterface" in input) {
+    if (typeof input.remoteInterface !== "string" ||
+        (input.remoteInterface !== "" && !isPrivateIPv4(input.remoteInterface))) {
+      throw new TypeError("Remote control must use a private IPv4 address.");
+    }
+    next.remoteInterface = input.remoteInterface;
+  }
+  if ("remoteInterfaceName" in input) {
+    if (typeof input.remoteInterfaceName !== "string" || input.remoteInterfaceName.length > 128) {
+      throw new TypeError("Remote control network name is invalid.");
+    }
+    next.remoteInterfaceName = input.remoteInterfaceName;
   }
   return next;
 }
@@ -790,7 +823,12 @@ async function scanAndConnect() {
   };
 }
 
-function setSettings(input, updateOutput = true) {
+function sendSettingsUpdateToRenderer() {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+  mainWindow.webContents.send("settings:updated", settingsSnapshot());
+}
+
+function setSettings(input, updateOutput = true, broadcast = true) {
   if (input && Object.hasOwn(input, "ledCount")) {
     throw new TypeError("LED count is read from the controller and cannot be changed here.");
   }
@@ -821,7 +859,211 @@ function setSettings(input, updateOutput = true) {
     .some((key) => Object.hasOwn(changes, key))) {
     updateAnimation();
   }
+  if (broadcast) sendSettingsUpdateToRenderer();
   return { settings: settingsSnapshot(), ...deviceState() };
+}
+
+function getRemoteControlStatus() {
+  const status = remoteControlService?.getStatus() || {
+    running: false,
+    interfaces: getPrivateNetworkInterfaces(),
+    address: "",
+    url: "",
+    pin: "",
+    qrDataUrl: ""
+  };
+  return {
+    ...status,
+    enabled: settings.remoteControlEnabled,
+    preferredAddress: settings.remoteInterface,
+    preferredInterfaceName: settings.remoteInterfaceName,
+    error: remoteControlError
+  };
+}
+
+function createRemoteControl() {
+  remoteControlService = createRemoteControlService({
+    getState: () => ({
+      settings: {
+        color: settings.color,
+        brightness: settings.brightness,
+        channelGains: [...settings.channelGains],
+        effect: settings.effect,
+        speed: settings.speed,
+        palette: [...settings.palette],
+        power: settings.power,
+        syncFps: settings.syncFps,
+        spotifySensitivity: settings.spotifySensitivity,
+        syncContentMode: settings.syncContentMode,
+        syncAutoDetect: settings.syncAutoDetect,
+        scenes: normalizeScenes(settings.scenes)
+      },
+      device: {
+        connected: Boolean(hidDevice),
+        name: connectedInfo?.name || "USB LED controller",
+        ledCount: connectedInfo?.profile?.ledCount || settings.ledCount
+      },
+      sync: {
+        active: screenSyncActive,
+        mode: screenSyncActive ? settings.startupMode : null
+      }
+    }),
+    updateSettings: async (input) => {
+      const powerChanged = Object.hasOwn(input, "power");
+      if (input.power === false && screenSyncActive) {
+        await requestRemoteSync("lighting");
+      }
+      const result = setSettings(input, !powerChanged);
+      if (powerChanged) await updateAnimation({ waitForOutput: true });
+      return result;
+    },
+    applyScene: async (id) => {
+      const scene = settings.scenes.find((item) => item.id === id);
+      if (!scene) throw new Error("That saved scene no longer exists.");
+      if (screenSyncActive) await requestRemoteSync("lighting");
+      setSettings(settingsFromScene(scene));
+    },
+    manageScene: (input) => {
+      const scenes = normalizeScenes(settings.scenes);
+      if (input.action === "save") {
+        if (typeof input.name !== "string" || !input.name.trim() || input.name.trim().length > 36) {
+          throw new TypeError("Enter a scene name from 1 to 36 characters.");
+        }
+        if (scenes.length >= 30) throw new Error("You can save up to 30 lighting scenes.");
+        scenes.push(sceneFromLighting(`scene-${randomUUID()}`, input.name.trim(), settings));
+      } else {
+        if (typeof input.id !== "string" || input.id.length > 64) {
+          throw new TypeError("Choose a saved scene.");
+        }
+        const index = scenes.findIndex((scene) => scene.id === input.id);
+        if (index < 0) throw new Error("That saved scene no longer exists.");
+        if (input.action === "delete") scenes.splice(index, 1);
+        else {
+          if (typeof input.name !== "string" || !input.name.trim() || input.name.trim().length > 36) {
+            throw new TypeError("Enter a scene name from 1 to 36 characters.");
+          }
+          scenes[index] = { ...scenes[index], name: input.name.trim() };
+        }
+      }
+      setSettings({ scenes }, false);
+    },
+    setSyncMode: requestRemoteSync
+  });
+}
+
+async function enableRemoteControl(address = settings.remoteInterface) {
+  if (!remoteControlService) createRemoteControl();
+  const previous = remoteControlService.getStatus();
+  const previousEnabled = settings.remoteControlEnabled;
+  const previousAddress = settings.remoteInterface;
+  const previousInterfaceName = settings.remoteInterfaceName;
+  const requestedInterfaceName = previous.interfaces.find((item) => item.address === address)?.name ||
+    (address === previousAddress ? previousInterfaceName : "");
+  if (previous.running && address && address !== previous.address) {
+    await remoteControlService.stop();
+  }
+  let status;
+  try {
+    status = await remoteControlService.start(address, requestedInterfaceName);
+  } catch (error) {
+    if (previous.running && !remoteControlService.getStatus().running) {
+      try {
+        await remoteControlService.start(previous.address, previous.interfaceName);
+      } catch (restoreError) {
+        console.error("Could not restore the previous phone remote network:", restoreError);
+      }
+    }
+    throw error;
+  }
+  try {
+    settings.remoteControlEnabled = true;
+    settings.remoteInterface = status.address;
+    settings.remoteInterfaceName = status.interfaceName;
+    saveSettings();
+    configureLoginItem();
+    remoteControlError = "";
+    return getRemoteControlStatus();
+  } catch (error) {
+    await remoteControlService.stop();
+    settings.remoteControlEnabled = previousEnabled;
+    settings.remoteInterface = previousAddress;
+    settings.remoteInterfaceName = previousInterfaceName;
+    try {
+      saveSettings();
+      configureLoginItem();
+      if (previous.running) await remoteControlService.start(previous.address, previous.interfaceName);
+    } catch (restoreError) {
+      console.error("Could not restore phone remote settings after an error:", restoreError);
+    }
+    throw error;
+  }
+}
+
+async function disableRemoteControl() {
+  const previousAddress = remoteControlService?.getStatus().address || settings.remoteInterface;
+  const previousInterfaceName = remoteControlService?.getStatus().interfaceName || settings.remoteInterfaceName;
+  const previousEnabled = settings.remoteControlEnabled;
+  await remoteControlService?.stop();
+  settings.remoteControlEnabled = false;
+  try {
+    saveSettings();
+    configureLoginItem();
+  } catch (error) {
+    settings.remoteControlEnabled = previousEnabled;
+    try {
+      saveSettings();
+      configureLoginItem();
+      if (remoteControlService) await remoteControlService.start(previousAddress, previousInterfaceName);
+    } catch (restoreError) {
+      console.error("Could not restore phone remote access after a settings error:", restoreError);
+    }
+    throw error;
+  }
+  remoteControlError = "";
+  return getRemoteControlStatus();
+}
+
+async function requestRemoteSync(mode) {
+  if (!["lighting", "screen", "spotify"].includes(mode)) {
+    throw new TypeError("Choose lighting, Screen Sync, or Spotify Sync.");
+  }
+  if (mode !== "lighting" && !hidDevice) {
+    throw new Error("Connect the LED controller before starting sync.");
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow({ showWhenReady: false, loadUI: true });
+  }
+  const window = mainWindow;
+  if (!mainWindowPageLoaded) loadMainWindowPage?.();
+
+  if (!mainWindowRendererReady) {
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        window.webContents.removeListener("did-finish-load", onReady);
+        reject(new Error("ULLeds could not prepare its sync controls."));
+      }, 10000);
+      const onReady = () => {
+        clearTimeout(timeout);
+        resolve();
+      };
+      window.webContents.once("did-finish-load", onReady);
+      if (mainWindowRendererReady) onReady();
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const requestId = randomUUID();
+    const timeout = setTimeout(() => {
+      pendingRemoteSyncRequests.delete(requestId);
+      reject(new Error("The sync request timed out."));
+    }, 30000);
+    pendingRemoteSyncRequests.set(requestId, (result) => {
+      clearTimeout(timeout);
+      if (result.ok) resolve();
+      else reject(new Error(result.error || "The sync mode could not be changed."));
+    });
+    window.webContents.send("remote:sync-request", { requestId, mode });
+  });
 }
 
 function showMainWindow() {
@@ -957,6 +1199,15 @@ function onMainWindow(channel, handler) {
   });
 }
 
+onMainWindow("remote:sync-result", (_event, result) => {
+  if (!result || typeof result.requestId !== "string" ||
+      typeof result.ok !== "boolean") return;
+  const settle = pendingRemoteSyncRequests.get(result.requestId);
+  if (!settle) return;
+  pendingRemoteSyncRequests.delete(result.requestId);
+  settle(result);
+});
+
 function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
   const window = new BrowserWindow({
     width: 1240,
@@ -978,6 +1229,7 @@ function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
   });
   mainWindow = window;
   mainWindowPageLoaded = false;
+  mainWindowRendererReady = false;
   showMainWindowWhenReady = showWhenReady;
   const pagePath = path.join(__dirname, "ui", "index.html");
   restrictWindowNavigation(window, pagePath);
@@ -989,6 +1241,9 @@ function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
       console.error("Could not load the ULLeds window:", error);
     });
   };
+  window.webContents.once("did-finish-load", () => {
+    if (mainWindow === window) mainWindowRendererReady = true;
+  });
   window.once("ready-to-show", () => {
     if (showMainWindowWhenReady) window.show();
   });
@@ -1022,6 +1277,7 @@ function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
     if (mainWindow === window) {
       mainWindow = null;
       mainWindowPageLoaded = false;
+      mainWindowRendererReady = false;
       showMainWindowWhenReady = false;
       loadMainWindowPage = null;
     }
@@ -1059,6 +1315,8 @@ handleMainWindow("settings:reset", async () => {
   resetPromise = (async () => {
     if (connectionPromise) await connectionPromise;
     screenSyncActive = false;
+    await remoteControlService?.stop();
+    remoteControlError = "";
 
     const activeProfile = connectedInfo?.profile || settings.deviceProfile;
     const activePath = connectedInfo?.path || settings.devicePath;
@@ -1073,6 +1331,7 @@ handleMainWindow("settings:reset", async () => {
     return {
       settings: settingsSnapshot(),
       device,
+      remoteControl: getRemoteControlStatus(),
       removedLegacyProfiles
     };
   })();
@@ -1085,11 +1344,22 @@ handleMainWindow("settings:reset", async () => {
 handleMainWindow("app:initial-state", () => ({
   version: app.getVersion(),
   settings: settingsSnapshot(),
-  device: deviceState()
+  device: deviceState(),
+  remoteControl: getRemoteControlStatus()
 }));
+handleMainWindow("remote-control:status", () => getRemoteControlStatus());
+handleMainWindow("remote-control:enable", async (_event, address) => {
+  try {
+    return await enableRemoteControl(address);
+  } catch (error) {
+    remoteControlError = error.message;
+    throw error;
+  }
+});
+handleMainWindow("remote-control:disable", () => disableRemoteControl());
 handleMainWindow("settings:update", async (_event, input) => {
   const powerChanged = input && Object.hasOwn(input, "power");
-  const result = setSettings(input, !powerChanged);
+  const result = setSettings(input, !powerChanged, false);
   if (powerChanged) await updateAnimation({ waitForOutput: true });
   return result;
 });
@@ -1217,7 +1487,7 @@ handleMainWindow("scenes:import", async () => {
 });
 onMainWindow("settings:flush", (event, input) => {
   try {
-    event.returnValue = { result: setSettings(input) };
+    event.returnValue = { result: setSettings(input, true, false) };
   } catch (error) {
     event.returnValue = { error: error.message };
   }
@@ -1642,7 +1912,22 @@ app.whenReady().then(async () => {
   configureLoginItem();
   Menu.setApplicationMenu(null);
   createTray();
-  createWindow({ loadUI: !startHidden || isSyncStartupMode(settings.startupMode) });
+  if (settings.remoteControlEnabled) {
+    createRemoteControl();
+    try {
+      const status = await remoteControlService.start(settings.remoteInterface, settings.remoteInterfaceName);
+      settings.remoteInterface = status.address;
+      settings.remoteInterfaceName = status.interfaceName;
+      saveSettings();
+      remoteControlError = "";
+    } catch (error) {
+      remoteControlError = error.message;
+      console.error("Could not restore remote control:", error);
+    }
+  }
+  createWindow({
+    loadUI: !startHidden || isSyncStartupMode(settings.startupMode) || settings.remoteControlEnabled
+  });
   void scanAndConnect().catch((error) => {
     console.error("Could not scan for the LED controller:", error);
     deviceError = error.message;
@@ -1667,6 +1952,13 @@ app.on("before-quit", () => {
     console.error("Could not finalize controller timing diagnostics:", error);
   });
   stopDeviceWatcher();
+  for (const [requestId, settle] of pendingRemoteSyncRequests) {
+    pendingRemoteSyncRequests.delete(requestId);
+    settle({ ok: false, error: "ULLeds is closing." });
+  }
+  void remoteControlService?.stop().catch((error) => {
+    console.error("Could not stop the local remote control server:", error);
+  });
   screenSyncActive = false;
   disconnectDevice();
   tray?.destroy();

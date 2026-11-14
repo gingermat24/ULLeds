@@ -110,6 +110,10 @@ function getArchivedReleases(archive) {
     if (compareVersions(release.version, FIRST_GITHUB_RELEASE_VERSION) >= 0 && release.stale !== true) {
       throw new TypeError(`Only versions before v${FIRST_GITHUB_RELEASE_VERSION} or entries marked stale may be archived.`);
     }
+    if (release.date !== undefined &&
+        (typeof release.date !== "string" || Number.isNaN(Date.parse(release.date)))) {
+      throw new TypeError(`Archived release ${release.version} has an invalid date.`);
+    }
     const categories = release.categories.map((category) => {
       if (!category || typeof category.name !== "string" || !category.name.trim() ||
           !Array.isArray(category.items) || category.items.length === 0 ||
@@ -121,7 +125,11 @@ function getArchivedReleases(archive) {
     if (categories.length === 0) {
       throw new TypeError(`Archived release ${release.version} has no notes.`);
     }
-    return { version: release.version, categories };
+    return {
+      version: release.version,
+      ...(release.date === undefined ? {} : { date: release.date }),
+      categories
+    };
   });
 
   for (const version of archive.legacy.versions) {

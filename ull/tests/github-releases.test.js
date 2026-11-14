@@ -153,12 +153,16 @@ test("the archive accepts explicitly stale GitHub-era entries and rejects other 
   archive.releases = [{
     version: "1.0.67",
     stale: true,
+    date: "2026-11-09",
     categories: [{ name: "History", items: ["A stale release record."] }]
   }];
   assert.deepEqual(getArchivedReleases(archive), [{
     version: "1.0.67",
+    date: "2026-11-09",
     categories: [{ name: "History", items: ["A stale release record."] }]
   }]);
+  archive.releases[0].date = "not-a-date";
+  assert.throws(() => getArchivedReleases(archive), /Archived release 1\.0\.67 has an invalid date/);
   archive.releases = [];
   archive.legacy.versions = ["1.0.47"];
   assert.throws(() => getArchivedReleases(archive), /Only versions before v1\.0\.47 may be archived/);

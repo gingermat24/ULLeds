@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-src 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>ULLeds Remote</title>
+  <link rel="stylesheet" href="remote.css">
+  <script src="remote.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <a class="wordmark" href="/" aria-label="ULLeds Remote home">ULLeds</a>
+      <span class="connection"><i id="connection-dot"></i><span id="connection-label">Connecting</span></span>
+    </header>
+
+    <section class="pairing panel" id="pairing-panel" hidden>
+      <h1>Connect to your lights</h1>
+      <p>Enter the six-digit PIN shown in ULLeds on your PC.</p>
+      <form id="pairing-form">
+        <label for="pairing-pin">Pairing PIN</label>
+        <input id="pairing-pin" name="pin" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+        <button class="primary" type="submit">Pair this phone</button>
+      </form>
+      <p class="message" id="pairing-message" role="status"></p>
+    </section>
+
+    <section id="remote-panel" hidden>
+      <header class="welcome">
+        <div>
+          <p class="eyebrow">Local control</p>
+          <h1 id="device-name">ULLeds</h1>
+          <p id="device-status">Checking controller…</p>
+        </div>
+        <button class="power" id="power-toggle" type="button" aria-pressed="true">On</button>
+      </header>
+
+      <section class="panel controls">
+        <div class="field color-field">
+          <label for="color">Color</label>
+          <input id="color" type="color" value="#008100" aria-label="Lighting color">
+          <output id="color-value">#008100</output>
+        </div>
+        <div class="field">
+          <div class="field-head">
+            <label for="brightness">Brightness</label>
+            <span class="number-with-unit">
+              <input id="brightness-number" type="number" min="0" max="100" step="1" value="50" aria-label="Brightness percentage">
+              <span aria-hidden="true">%</span>
+            </span>
+          </div>
+          <input id="brightness" type="range" min="0" max="100" value="50">
+        </div>
+        <div class="field">
+          <label for="effect">Effect</label>
+          <select id="effect">
+            <option value="steady">Solid</option>
+            <option value="breathe">Breathe</option>
+            <option value="spectrum">Spectrum</option>
+            <option value="palette">Palette drift</option>
+          </select>
+        </div>
+        <div class="field" id="speed-field" hidden>
+          <div class="field-head"><label for="speed">Speed</label><output id="speed-value">48%</output></div>
+          <input id="speed" type="range" min="1" max="100" value="48">
+        </div>
+        <details class="advanced" id="palette-section" hidden>
+          <summary>Effect palette</summary>
+          <div class="palette" id="palette"></div>
+          <div class="actions">
+            <button class="quiet" id="add-color" type="button">Add color</button>
+          </div>
+        </details>
+        <details class="advanced">
+          <summary>Color balance</summary>
+          <div class="field"><div class="field-head"><label for="gain-red">Red</label><output id="gain-red-value">100%</output></div><input id="gain-red" type="range" min="50" max="150"></div>
+          <div class="field"><div class="field-head"><label for="gain-green">Green</label><output id="gain-green-value">100%</output></div><input id="gain-green" type="range" min="50" max="150"></div>
+          <div class="field"><div class="field-head"><label for="gain-blue">Blue</label><output id="gain-blue-value">100%</output></div><input id="gain-blue" type="range" min="50" max="150"></div>
+        </details>
+        <p class="message" id="control-message" role="status"></p>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><div><p class="eyebrow">Saved setups</p><h2>Scenes</h2></div><button class="quiet" id="save-scene" type="button">Save current</button></div>
+        <div class="scenes" id="scenes"></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><div><p class="eyebrow">Live modes</p><h2>Sync</h2></div></div>
+        <p class="hint">Screen Sync reads your PC display; Spotify Sync analyzes audio on your PC.</p>
+        <div class="sync-actions">
+          <button class="sync-button" id="screen-sync" type="button">Screen Sync</button>
+          <button class="sync-button" id="spotify-sync" type="button">Spotify Sync</button>
+          <button class="quiet stop-sync" id="stop-sync" type="button">Stop sync</button>
+        </div>
+        <details class="advanced">
+          <summary>Sync settings</summary>
+          <div class="field">
+            <div class="field-head"><label for="sync-fps">Screen Sync speed</label><output id="sync-fps-value">30 FPS</output></div>
+            <input id="sync-fps" type="range" min="5" max="60" step="1">
+          </div>
+          <div class="field"><label for="sync-content">Picture area</label>
+            <select id="sync-content"><option value="display">Full display</option><option value="cinema235">Cinema widescreen (2.35:1)</option></select>
+          </div>
+          <label class="check"><input id="sync-auto-detect" type="checkbox"><span>Ask before adapting to a detected widescreen movie</span></label>
+          <div class="field">
+            <div class="field-head"><label for="spotify-sensitivity">Spotify audio response</label><output id="spotify-sensitivity-value">100%</output></div>
+            <input id="spotify-sensitivity" type="range" min="0" max="100" step="1">
+          </div>
+        </details>
+        <p class="message" id="sync-message" role="status"></p>
+      </section>
+
+      <footer class="footer">
+        <p>Only paired devices on this local network can control ULLeds. Keep your Wi-Fi private.</p>
+        <button class="quiet" id="unpair" type="button">Unpair this phone</button>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

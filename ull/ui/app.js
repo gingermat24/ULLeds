@@ -55,6 +55,7 @@ let state = {
   },
   device: { connected: false, name: "", serialNumber: "" }
 };
+let remoteControlBusy = false;
 
 // Debounced settings writes.
 const queue = { changes: {}, timer: null, flushing: null };
@@ -542,8 +543,12 @@ function renderControls(settings) {
   const color = selectedColor();
   $("#color-picker").value = color;
   $("#hex-color").value = color;
-  $("#brightness").value = settings.brightness;
-  $("#brightness-value").textContent = `${settings.brightness}%`;
+  if (document.activeElement !== $("#brightness")) {
+    $("#brightness").value = settings.brightness;
+  }
+  if (document.activeElement !== $("#brightness-number")) {
+    $("#brightness-number").value = settings.brightness;
+  }
   $("#speed").value = settings.speed;
   $("#speed-value").textContent = `${settings.speed}%`;
   $("#effect").value = settings.effect;
@@ -616,11 +621,85 @@ function renderSyncControls(settings) {
 function render() {
   $("#app-version").textContent = state.version || "—";
   $("#start-with-windows").checked = state.settings.startWithWindows;
+  renderRemoteControl(state.remoteControl);
   renderUpdates();
   renderScenes();
   renderPalette();
   renderConnection();
   updatePreview();
+}
+
+function renderRemoteControl(remote = {}) {
+  if (!remote) return;
+  const enabled = Boolean(remote.enabled);
+  const selector = $("#remote-interface");
+  const interfaces = Array.isArray(remote.interfaces) ? remote.interfaces : [];
+  const selectedAddress = remote.address ||
+    interfaces.find((item) => item.name === remote.preferredInterfaceName)?.address ||
+    interfaces.find((item) => item.address === remote.preferredAddress)?.address ||
+    interfaces[0]?.address || "";
+  const options = interfaces.map((item) => {
+    return h("option", {
+      value: item.address,
+      text: `${item.name} · ${item.address}`
+    });
+  });
+  if (!options.length) {
+    options.push(h("option", { value: "", text: "No private network is available" }));
+  }
+  selector.replaceChildren(...options);
+  selector.value = selectedAddress;
+  selector.disabled = remoteControlBusy || !interfaces.length;
+
+  const toggle = $("#remote-control-enabled");
+  toggle.checked = enabled;
+  toggle.disabled = remoteControlBusy || (!enabled && !interfaces.length);
+  const pairing = $("#remote-pairing");
+  pairing.classList.toggle("hidden", !remote.running);
+  $("#remote-pin").textContent = remote.pin
+    ? `${remote.pin.slice(0, 3)} ${remote.pin.slice(3)}`
+    : "------";
+  $("#remote-url").textContent = remote.url || "";
+  $("#remote-qr").src = remote.qrDataUrl || "";
+  $("#remote-network-row").classList.toggle("hidden", !interfaces.length);
+  $("#start-with-windows").disabled = enabled;
+  $("#start-with-windows-description").textContent = enabled
+    ? "Required to restore phone control after you sign in."
+    : "Launch in the tray when you sign in.";
+
+  const status = $("#remote-control-status");
+  status.textContent = remote.error
+    ? remote.running
+      ? `Network switch failed: ${remote.error} Phone control remains at ${remote.url}.`
+      : `Remote control could not start: ${remote.error}`
+    : remote.running
+      ? `Phone control is ready at ${remote.url}.`
+      : enabled
+        ? "Phone control is enabled and will retry when ULLeds starts."
+        : interfaces.length
+          ? "Phone control is off."
+          : "Connect to a private Wi-Fi or Ethernet network to use phone control.";
+  status.dataset.error = String(Boolean(remote.error));
+}
+
+async function updateRemoteControl(enabled, address) {
+  remoteControlBusy = true;
+  renderRemoteControl(state.remoteControl);
+  try {
+    state.remoteControl = enabled
+      ? await window.ull.enableRemoteControl(address)
+      : await window.ull.disableRemoteControl();
+  } catch (error) {
+    try {
+      state.remoteControl = await window.ull.remoteControlStatus();
+    } catch (statusError) {
+      console.error("Could not read phone remote status:", statusError);
+    }
+    if (!state.remoteControl?.error) state.remoteControl = { ...state.remoteControl, error: error.message };
+  } finally {
+    remoteControlBusy = false;
+    renderRemoteControl(state.remoteControl);
+  }
 }
 
 function renderPalette() {
@@ -1719,7 +1798,7 @@ function buildReleaseEntry(entry) {
       h("h3", { text: `ULLeds ${version}` }),
       badge && h("span", { class: "badge", text: badge }),
       releaseAction(version),
-      releaseDate(published)
+      releaseDate(published ?? entry)
     ),
     ...(categories.length
       ? categories.map(({ name, items }) =>
@@ -2243,6 +2322,7 @@ async function resetAllData() {
     const result = await window.ull.resetData();
     state.settings = result.settings;
     state.device = result.device;
+    state.remoteControl = result.remoteControl;
     selectedLedIndices = new Set();
     selectedLedAnchorIndex = null;
     sync.screenError = "";
@@ -2342,6 +2422,19 @@ function bindLighting() {
   $("#apply-gradient").addEventListener("click", () => void applyGradient());
 
   bindSetting("#brightness", "brightness");
+  $("#brightness-number").addEventListener("change", (event) => {
+    const input = event.currentTarget;
+    const value = input.valueAsNumber;
+    if (input.value === "" || !Number.isInteger(value) || value < 0 || value > 100) {
+      input.value = state.settings.brightness;
+      toast("Brightness must be a whole number from 0 to 100.");
+      return;
+    }
+    input.value = String(value);
+    queueSettings({ brightness: value }, true);
+  });
+  $("#brightness-number").addEventListener("blur", () => updatePreview());
+  $("#brightness").addEventListener("blur", () => updatePreview());
   bindSetting("#speed", "speed");
   bindSetting("#effect", "effect", { event: "change", immediate: true, read: (el) => el.value });
 
@@ -2534,6 +2627,12 @@ function bindDeviceSettings() {
   });
 
   bindSetting("#start-with-windows", "startWithWindows", { event: "change", immediate: true, read: (el) => el.checked });
+  $("#remote-control-enabled").addEventListener("change", (event) => {
+    void updateRemoteControl(event.currentTarget.checked, $("#remote-interface").value);
+  });
+  $("#remote-interface").addEventListener("change", (event) => {
+    if (state.remoteControl?.enabled) void updateRemoteControl(true, event.currentTarget.value);
+  });
 }
 
 function bindUpdates() {
@@ -2565,6 +2664,15 @@ function bindMainProcessEvents() {
     else maybeRestoreStartupMode();
   });
   window.ull.onMovieFormatApplied(applyDetectedMovieFormat);
+  window.ull.onSettingsUpdated((settings) => {
+    state.settings = { ...settings, ...queue.changes };
+    renderConnection();
+    updatePreview();
+    renderScenes();
+    renderPalette();
+    if ($("#setup-dialog").open) updateProfileCount();
+  });
+  window.ull.onRemoteSyncRequest((request) => { void handleRemoteSyncRequest(request); });
 
   window.ull.onUpdateProgress((progress) => {
     setUpdatePhase("downloading", {
@@ -2602,6 +2710,41 @@ function bindMainProcessEvents() {
       console.error("Could not save the latest ULLeds settings before closing:", error);
     }
   });
+}
+
+async function handleRemoteSyncRequest(request) {
+  const { requestId, mode } = request || {};
+  let result = { requestId, ok: false, error: "The sync request is invalid." };
+  try {
+    if (typeof requestId !== "string" ||
+        !["lighting", "screen", "spotify"].includes(mode)) {
+      throw new TypeError("The sync request is invalid.");
+    }
+    if (mode === "lighting") {
+      await stopScreenSync();
+      if (sync.session || sync.lifecycle.isStarting || sync.lifecycle.isStopping) {
+        throw new Error("Sync has not stopped yet. Try again.");
+      }
+    } else {
+      if (sync.session?.mode === mode) {
+        result = { requestId, ok: true };
+        window.ull.reportRemoteSyncResult(result);
+        return;
+      }
+      if (sync.session || sync.lifecycle.isStarting || sync.lifecycle.isStopping) {
+        await stopScreenSync();
+      }
+      if (mode === "screen") await startScreenSync();
+      else await startSpotifySync();
+      if (sync.session?.mode !== mode) {
+        throw new Error("Open ULLeds and start this sync mode there. It may need permission from the PC.");
+      }
+    }
+    result = { requestId, ok: true };
+  } catch (error) {
+    result = { requestId, ok: false, error: error.message || "The sync mode could not be changed." };
+  }
+  window.ull.reportRemoteSyncResult(result);
 }
 
 function bindEvents() {

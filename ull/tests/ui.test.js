@@ -117,6 +117,27 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(css, /animation: drain 8s linear forwards/);
 });
 
+test("phone remote settings expose pairing details and require startup restoration", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+
+  assert.match(html, /id="remote-control-enabled"/);
+  assert.match(html, /id="remote-interface"/);
+  assert.match(html, /id="remote-qr"/);
+  assert.match(html, /id="remote-pin"/);
+  assert.match(html, /unencrypted local traffic/);
+  assert.match(css, /\.remote-pairing\s*\{/);
+  assert.match(app, /window\.ull\.enableRemoteControl\(address\)/);
+  assert.match(app, /onRemoteSyncRequest\(\(request\)/);
+  assert.match(app, /reportRemoteSyncResult\(result\)/);
+  assert.match(preload, /remote-control:enable/);
+  assert.match(main, /openAtLogin: settings\.startWithWindows \|\| settings\.remoteControlEnabled/);
+  assert.match(main, /createWindow\(\{\s+loadUI: [^}]*settings\.remoteControlEnabled/s);
+});
+
 test("Spotify Sync combines local cover art with live desktop audio analysis", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
@@ -247,7 +268,7 @@ test("power off always reaches the controller and the switch reports the live st
   assert.match(app, /\$\("#power-state"\)\.textContent = settings\.power \? "On" : "Off"/);
   assert.match(app, /root\.setProperty\("--led-opacity", settings\.power \? String\(settings\.brightness \/ 100\) : "0"\)/);
   assert.match(app, /\$\("#monitor"\)\.dataset\.power = settings\.power \? "on" : "off"/);
-  assert.match(main, /handleMainWindow\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+const result = setSettings\(input, !powerChanged\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
+  assert.match(main, /handleMainWindow\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+const result = setSettings\(input, !powerChanged, false\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
   assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| isSyncStartupMode\(settings\.startupMode\)\)\) return;/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
   assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{[\s\S]*?if \(hidDevice\) \{[\s\S]*?writeColor\(settings\.color\)[\s\S]*?return;\s+\}/);
@@ -281,6 +302,27 @@ test("LED selection starts empty when the renderer opens", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   assert.match(app, /let selectedLedIndices = new Set\(\)/);
   assert.match(html, /id="selection-label">No LEDs selected</);
+});
+
+test("brightness is directly editable on PC and phone and changes sync between them", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const remoteHtml = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const remote = fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+
+  for (const page of [html, remoteHtml]) {
+    assert.match(page, /id="brightness-number" type="number" min="0" max="100" step="1"/);
+    assert.match(page, /aria-label="Brightness percentage"/);
+  }
+  assert.match(app, /brightness-number"\)\.addEventListener\("change"/);
+  assert.match(app, /Brightness must be a whole number from 0 to 100/);
+  assert.match(remote, /brightness-number"\)\.addEventListener\("change"/);
+  assert.match(remote, /saveBrightness\(input\.valueAsNumber, input\)/);
+  assert.match(main, /mainWindow\.webContents\.send\("settings:updated", settingsSnapshot\(\)\)/);
+  assert.match(preload, /onSettingsUpdated: \(callback\) => listen\("settings:updated", callback\)/);
+  assert.match(app, /window\.ull\.onSettingsUpdated\(\(settings\) =>/);
 });
 
 test("topbar omits the wordmark and adapts navigation to the window", () => {
@@ -387,7 +429,7 @@ test("settings changes stay ordered and sliders flush their final value", () => 
   assert.match(css, /\.switch \{[\s\S]*border-radius: var\(--r-full\);/);
 });
 
-test("Device settings are grouped by controller, sync, startup, and reset", () => {
+test("Device settings stack compact startup, support, and reset panels together", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
   const sectionOrder = [
@@ -406,6 +448,9 @@ test("Device settings are grouped by controller, sync, startup, and reset", () =
   assert.match(html, /aria-labelledby="group-support"[\s\S]*id="open-support"/);
   assert.match(html, /aria-labelledby="group-reset"[\s\S]*id="reset-all-data"/);
   assert.match(css, /\.groups \{[^}]*display: grid;[^}]*gap: var\(--sp-4\);/s);
+  assert.match(html, /<div class="utility-stack">[\s\S]*aria-labelledby="group-startup"[\s\S]*aria-labelledby="group-support"[\s\S]*aria-labelledby="group-reset"[\s\S]*<\/div>/);
+  assert.match(css, /\.utility-stack \{[^}]*display: grid;[^}]*gap: var\(--sp-3\);/s);
+  assert.match(css, /\.utility-stack > \.group \{[^}]*padding: var\(--sp-4\);/s);
 });
 
 test("support request requires user details and explicit opt-in before opening a public GitHub draft", () => {
@@ -482,6 +527,7 @@ test("release carousel has dated entries and compact bounded navigation", () => 
   assert.doesNotMatch(html, /release-progress-markers|release-marker/);
   assert.match(app, /function releaseDate\(release\)/);
   assert.match(app, /releases\.published \? h\("span", \{ class: "release-date", text: "Date unavailable" \}\) : null/);
+  assert.match(app, /releaseDate\(published \?\? entry\)/);
   assert.ok(releaseEntriesEnd > releaseEntriesStart);
   const context = {
     window: { ullGithubReleases: { mergeReleaseHistory } },
@@ -550,6 +596,32 @@ test("release arrows stay visible and disable at the ends of the history", () =>
   assert.equal(newer.disabled, true);
   assert.equal(older.hidden, false);
   assert.equal(newer.hidden, false);
+});
+
+test("archived release entries preserve their historical publication date", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const start = app.indexOf("function buildReleaseEntry(entry) {");
+  const end = app.indexOf("\nfunction renderReleases()", start);
+  const context = {
+    releases: { published: new Map() },
+    cleanCategories: () => [],
+    releaseBadge: () => null,
+    releaseAction: () => null,
+    releaseDate(release) {
+      context.dateInput = release;
+      return null;
+    },
+    h: (...args) => args
+  };
+
+  assert.notEqual(start, -1);
+  assert.ok(end > start);
+  vm.runInNewContext(
+    `${app.slice(start, end)}; buildReleaseEntry({ version: "1.0.67", date: "2026-11-09", categories: [] });`,
+    context
+  );
+  assert.equal(context.dateInput.version, "1.0.67");
+  assert.equal(context.dateInput.date, "2026-11-09");
 });
 
 test("release number jumps only to valid entries and restores invalid input", () => {
@@ -770,10 +842,10 @@ test("saved mode is restored at Windows sign-in and sync modes resume automatica
   assert.match(main, /acquireSingleInstanceLock\(app, showMainWindow\)/);
   assert.match(main, /if \(!hasSingleInstanceLock\) return/);
   assert.match(main, /startWithWindows: true/);
-  assert.match(main, /openAtLogin: settings\.startWithWindows/);
+  assert.match(main, /openAtLogin: settings\.startWithWindows \|\| settings\.remoteControlEnabled/);
   assert.match(main, /args: \["--hidden"\]/);
   assert.match(main, /void scanAndConnect\(\)\.catch/);
-  assert.match(main, /createTray\(\);\s+createWindow\(\{ loadUI: !startHidden \|\| isSyncStartupMode\(settings\.startupMode\) \}\);/);
+  assert.match(main, /createTray\(\);[\s\S]*createWindow\(\{\s+loadUI: !startHidden \|\| isSyncStartupMode\(settings\.startupMode\) \|\| settings\.remoteControlEnabled\s+\}\);/);
   assert.doesNotMatch(main.slice(main.indexOf("app.whenReady()"), main.indexOf("}).catch((error) => {", main.indexOf("app.whenReady()"))), /if \(!startHidden/);
   assert.match(html, /id="start-with-windows"/);
   assert.doesNotMatch(html, /resume-screen-sync|Resume Screen Sync/);
@@ -795,7 +867,7 @@ test("saved mode is restored at Windows sign-in and sync modes resume automatica
   assert.match(app, /function maybeRestoreStartupMode\(\)/);
   assert.match(app, /if \(mode === "screen"\) void startScreenSync\(\{ automatic: true \}\);\s+else void startSpotifySync\(\{ automatic: true \}\)/);
   assert.doesNotMatch(app.slice(app.indexOf("async function start()"), app.indexOf("\nstart();")), /scanDevices\(/);
-  assert.match(main, /createTray\(\);\s+createWindow\(\{ loadUI: !startHidden \|\| isSyncStartupMode\(settings\.startupMode\) \}\);/);
+  assert.match(main, /createTray\(\);[\s\S]*createWindow\(\{\s+loadUI: !startHidden \|\| isSyncStartupMode\(settings\.startupMode\) \|\| settings\.remoteControlEnabled\s+\}\);/);
 });
 
 test("saved sync modes preserve output during reconnect and fall back when resume fails", () => {
@@ -822,7 +894,7 @@ test("hidden Windows startup keeps a window alive for session-end LED shutdown",
   const startup = main.slice(main.indexOf("app.whenReady()"), main.indexOf("}).catch((error) => {", main.indexOf("app.whenReady()")));
   const createWindow = main.slice(main.indexOf("function createWindow"), main.indexOf('mainWindow.on("close"'));
 
-  assert.match(startup, /createTray\(\);\s+createWindow\(\{ loadUI: !startHidden \|\| isSyncStartupMode\(settings\.startupMode\) \}\);/);
+  assert.match(startup, /createTray\(\);[\s\S]*createWindow\(\{\s+loadUI: !startHidden \|\| isSyncStartupMode\(settings\.startupMode\) \|\| settings\.remoteControlEnabled\s+\}\);/);
   assert.match(createWindow, /show: false/);
   assert.match(createWindow, /window\.on\("query-session-end"/);
   assert.match(createWindow, /if \(loadUI\) loadMainWindowPage\(\)/);
