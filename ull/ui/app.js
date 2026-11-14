@@ -107,6 +107,10 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+function plural(count, singular) {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
+}
+
 /** Tiny element builder: h("button", { class: "btn", onclick }, "Label") */
 function h(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
@@ -979,7 +983,7 @@ function teardownSession(session) {
   clearInterval(session.performanceTimer);
   clearTimeout(session.pollTimer);
   cancelAnimationFrame(session.frame);
-  cancelAnimationFrame(session.audioFrame);
+  clearTimeout(session.audioTimer);
   if (session.videoFrame && typeof session.video?.cancelVideoFrameCallback === "function") {
     session.video.cancelVideoFrameCallback(session.videoFrame);
   }
@@ -1383,7 +1387,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
       audioContext,
       analyser,
       frequencyData: new Float32Array(analyser.frequencyBinCount),
-      audioFrame: 0,
+      audioTimer: null,
       lastMeterUpdate: 0,
       startedAt: performance.now(),
       layout,
@@ -1395,7 +1399,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
     const sendLatestFrame = createFrameSender(session, "Spotify Sync stopped");
     updatePreview();
     await applySpotifyArtwork(session, artwork, sendLatestFrame);
-    session.audioFrame = requestAnimationFrame((now) => sampleSpotifyAudio(session, now, sendLatestFrame));
+    scheduleSpotifyAudioSample(session, sendLatestFrame);
     session.pollTimer = window.setTimeout(() => void pollSpotifyArtwork(session, sendLatestFrame), 1500);
     toast("Spotify Sync is active. Music response uses local desktop audio.");
   } catch (error) {
@@ -1500,7 +1504,14 @@ function sampleSpotifyAudio(session, now, sendLatestFrame) {
   );
   session.lastAudioSampleAt = now;
   renderSpotifyFrame(session, now, sendLatestFrame);
-  session.audioFrame = requestAnimationFrame((next) => sampleSpotifyAudio(session, next, sendLatestFrame));
+  scheduleSpotifyAudioSample(session, sendLatestFrame);
+}
+
+function scheduleSpotifyAudioSample(session, sendLatestFrame) {
+  session.audioTimer = window.setTimeout(
+    () => sampleSpotifyAudio(session, performance.now(), sendLatestFrame),
+    1000 / FPS.max
+  );
 }
 
 async function pollSpotifyArtwork(session, sendLatestFrame) {

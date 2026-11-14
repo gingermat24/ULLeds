@@ -2,6 +2,7 @@
 
 const $ = (selector) => document.querySelector(selector);
 const pairPanel = $("#pairing-panel");
+const connectionPanel = $("#connection-panel");
 const remotePanel = $("#remote-panel");
 const connection = $(".connection");
 let latestState = null;
@@ -28,12 +29,20 @@ function message(selector, text, isError = false) {
 
 function showPairing() {
   pairPanel.hidden = false;
+  connectionPanel.hidden = true;
   remotePanel.hidden = true;
   $("#pairing-pin").focus();
 }
 
+function showDisconnected() {
+  pairPanel.hidden = true;
+  connectionPanel.hidden = false;
+  remotePanel.hidden = true;
+}
+
 function showRemote() {
   pairPanel.hidden = true;
+  connectionPanel.hidden = true;
   remotePanel.hidden = false;
 }
 
@@ -166,7 +175,7 @@ async function loadState() {
       setConnection(true, "Pairing needed");
     } else {
       setConnection(false, "Reconnecting");
-      if (!latestState) showPairing();
+      if (!latestState) showDisconnected();
     }
   }
 }
@@ -219,6 +228,7 @@ $("#pairing-form").addEventListener("submit", async (event) => {
   }
 });
 
+$("#retry-connection").addEventListener("click", () => void loadState());
 $("#power-toggle").addEventListener("click", () => {
   if (latestState) void updateSettings({ power: !latestState.settings.power });
 });
@@ -280,6 +290,26 @@ $("#unpair").addEventListener("click", async () => {
   }
 });
 
-void loadState();
-refreshTimer = window.setInterval(() => void loadState(), 2000);
-window.addEventListener("pagehide", () => window.clearInterval(refreshTimer), { once: true });
+function stopRefresh() {
+  if (refreshTimer === null) return;
+  window.clearInterval(refreshTimer);
+  refreshTimer = null;
+}
+
+function startRefresh() {
+  if (refreshTimer !== null) return;
+  void loadState();
+  refreshTimer = window.setInterval(() => {
+    if (!document.hidden) void loadState();
+  }, 2000);
+}
+
+window.addEventListener("pagehide", stopRefresh);
+window.addEventListener("pageshow", () => {
+  if (!document.hidden) startRefresh();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopRefresh();
+  else startRefresh();
+});
+startRefresh();

@@ -10,6 +10,7 @@ function resetStoredData(appDataPath) {
 
   const root = path.resolve(appDataPath);
   fs.rmSync(path.join(root, "ULLeds", "settings.json"), { force: true });
+  fs.rmSync(path.join(root, "ULLeds", "remote-sessions.json"), { force: true });
 
   const legacyProfiles = [
     ["DX Light", path.join(root, "DX Light", "config.json")],

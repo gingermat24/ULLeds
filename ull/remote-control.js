@@ -4,11 +4,13 @@ const http = require("node:http");
 const os = require("node:os");
 const path = require("node:path");
 const fs = require("node:fs");
-const { randomBytes, randomInt, timingSafeEqual } = require("node:crypto");
+const { createHash, randomBytes, randomInt, timingSafeEqual } = require("node:crypto");
 const QRCode = require("qrcode");
 
 const MAX_BODY_BYTES = 16 * 1024;
-const SESSION_MS = 24 * 60 * 60 * 1000;
+const SESSION_MS = 365 * 24 * 60 * 60 * 1000;
+// Keep existing iPhone Home Screen URLs valid after ULLeds restarts.
+const REMOTE_PORT = 49514;
 const PIN_FAILURE_LIMIT = 5;
 const PIN_LOCK_MS = 5 * 60 * 1000;
 const REMOTE_SETTINGS = new Set([
@@ -88,12 +90,18 @@ function createRemoteControlService({
   manageScene,
   setSyncMode,
   networkInterfaces = getPrivateNetworkInterfaces,
-  uiDirectory = path.join(__dirname, "ui")
+  uiDirectory = path.join(__dirname, "ui"),
+  sessionStorePath = "",
+  port = REMOTE_PORT
 }) {
   if (typeof getState !== "function" || typeof updateSettings !== "function" ||
       typeof applyScene !== "function" || typeof manageScene !== "function" ||
       typeof setSyncMode !== "function") {
     throw new TypeError("Remote control requires state and action handlers.");
+  }
+  if (typeof sessionStorePath !== "string" ||
+      !Number.isInteger(port) || port < 0 || port > 65535) {
+    throw new TypeError("Remote control session storage or port is invalid.");
   }
 
   let server = null;
@@ -102,18 +110,83 @@ function createRemoteControlService({
   let pin = "";
   let qrDataUrl = "";
   let sessions = new Map();
+  let sessionsLoaded = false;
   const pinFailures = new Map();
 
   function getStatus() {
+    const address = server?.address();
     return {
       running: Boolean(server?.listening),
       interfaces: networkInterfaces(),
       address: network?.address || "",
       interfaceName: network?.name || "",
+      port: address && typeof address === "object" ? address.port : 0,
       url: baseUrl,
       pin,
       qrDataUrl
     };
+  }
+
+  function sessionKey(token) {
+    return createHash("sha256").update(token).digest("hex");
+  }
+
+  async function saveSessions() {
+    if (!sessionStorePath) return;
+    const file = path.resolve(sessionStorePath);
+    const temporaryFile = `${file}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`;
+    await fs.promises.mkdir(path.dirname(file), { recursive: true });
+    await fs.promises.writeFile(temporaryFile, JSON.stringify([...sessions]), {
+      encoding: "utf8",
+      mode: 0o600
+    });
+    try {
+      await fs.promises.rename(temporaryFile, file);
+    } catch (error) {
+      await fs.promises.rm(temporaryFile, { force: true });
+      throw error;
+    }
+  }
+
+  async function loadSessions() {
+    if (sessionsLoaded) return;
+    if (!sessionStorePath) {
+      sessionsLoaded = true;
+      return;
+    }
+    const file = path.resolve(sessionStorePath);
+    let stored;
+    try {
+      stored = await fs.promises.readFile(file, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        sessionsLoaded = true;
+        return;
+      }
+      throw new Error(`Could not load paired phone sessions: ${error.message}`);
+    }
+    let entries;
+    try {
+      entries = JSON.parse(stored);
+    } catch (error) {
+      throw new Error(`Could not read paired phone sessions: ${error.message}`);
+    }
+    if (!Array.isArray(entries) || entries.some((entry) =>
+      !Array.isArray(entry) || entry.length !== 2 ||
+      typeof entry[0] !== "string" || !/^[a-f0-9]{64}$/.test(entry[0]) ||
+      !Number.isSafeInteger(entry[1]))) {
+      throw new Error("The paired phone session file is invalid.");
+    }
+    const now = Date.now();
+    const previousSessions = sessions;
+    sessions = new Map(entries.filter(([, expiresAt]) => expiresAt > now));
+    try {
+      if (sessions.size !== entries.length) await saveSessions();
+    } catch (error) {
+      sessions = previousSessions;
+      throw new Error(`Could not update paired phone sessions: ${error.message}`);
+    }
+    sessionsLoaded = true;
   }
 
   function sendJson(response, statusCode, data, headers = {}) {
@@ -179,13 +252,13 @@ function createRemoteControlService({
     const cookieHeader = request.headers.cookie || "";
     const match = cookieHeader.match(/(?:^|;\s*)ulleds_remote=([a-f0-9]{64})(?:;|$)/);
     if (!match) return null;
-    const expiresAt = sessions.get(match[1]);
+    const key = sessionKey(match[1]);
+    const expiresAt = sessions.get(key);
     if (!expiresAt || expiresAt <= Date.now()) {
-      sessions.delete(match[1]);
+      sessions.delete(key);
       return null;
     }
-    sessions.set(match[1], Date.now() + SESSION_MS);
-    return match[1];
+    return key;
   }
 
   function pinIsValid(input) {
@@ -268,7 +341,16 @@ function createRemoteControlService({
       }
       pinFailures.delete(remote);
       const token = randomBytes(32).toString("hex");
-      sessions.set(token, Date.now() + SESSION_MS);
+      const key = sessionKey(token);
+      sessions.set(key, Date.now() + SESSION_MS);
+      try {
+        await saveSessions();
+      } catch (error) {
+        sessions.delete(key);
+        console.error("Could not save the paired phone session:", error);
+        sendError(response, 500, "ULLeds could not save this pairing. Try again.");
+        return;
+      }
       sendJson(response, 200, { paired: true }, {
         "Set-Cookie": `ulleds_remote=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${Math.floor(SESSION_MS / 1000)}`
       });
@@ -276,8 +358,19 @@ function createRemoteControlService({
     }
 
     if (request.method === "POST" && pathname === "/api/unpair") {
-      const token = sessionFor(request);
-      if (token) sessions.delete(token);
+      const key = sessionFor(request);
+      const expiresAt = key ? sessions.get(key) : undefined;
+      if (key) {
+        sessions.delete(key);
+        try {
+          await saveSessions();
+        } catch (error) {
+          sessions.set(key, expiresAt);
+          console.error("Could not remove the paired phone session:", error);
+          sendError(response, 500, "ULLeds could not remove this pairing.");
+          return;
+        }
+      }
       sendJson(response, 200, { paired: false }, {
         "Set-Cookie": "ulleds_remote=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0"
       });
@@ -377,6 +470,7 @@ function createRemoteControlService({
 
   async function start(requestedAddress = "", requestedInterfaceName = "") {
     if (server?.listening) return getStatus();
+    await loadSessions();
     const interfaces = networkInterfaces();
     network = interfaces.find((item) => item.address === requestedAddress) ||
       interfaces.find((item) => item.name === requestedInterfaceName) ||
@@ -385,7 +479,6 @@ function createRemoteControlService({
       throw new Error("No private IPv4 network is available. Connect to a private Wi-Fi or Ethernet network and try again.");
     }
     pin = String(randomInt(100000, 1000000));
-    sessions = new Map();
     pinFailures.clear();
     const nextServer = http.createServer((request, response) => {
       void handle(request, response).catch((error) => {
@@ -411,10 +504,10 @@ function createRemoteControlService({
       };
       nextServer.once("error", onError);
       nextServer.once("listening", onListening);
-      nextServer.listen(0, network.address);
+      nextServer.listen(port, network.address);
     });
-    const port = nextServer.address().port;
-    baseUrl = `http://${network.address}:${port}`;
+    const boundPort = nextServer.address().port;
+    baseUrl = `http://${network.address}:${boundPort}`;
     try {
       qrDataUrl = await QRCode.toDataURL(baseUrl, {
         errorCorrectionLevel: "M",
@@ -428,14 +521,23 @@ function createRemoteControlService({
     return getStatus();
   }
 
-  async function stop() {
+  async function stop({ revokeSessions = false } = {}) {
+    if (revokeSessions) {
+      const previousSessions = sessions;
+      sessions = new Map();
+      try {
+        await saveSessions();
+      } catch (error) {
+        sessions = previousSessions;
+        throw new Error(`Could not remove paired phone sessions: ${error.message}`);
+      }
+    }
     const currentServer = server;
     server = null;
     network = null;
     baseUrl = "";
     pin = "";
     qrDataUrl = "";
-    sessions.clear();
     pinFailures.clear();
     if (!currentServer?.listening) return;
     await new Promise((resolve, reject) => {

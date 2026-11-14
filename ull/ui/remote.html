@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ULLeds">
+  <meta name="theme-color" content="#0b0b0c">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-src 'none'">
   <meta name="referrer" content="no-referrer">
   <title>ULLeds Remote</title>
@@ -26,6 +30,12 @@
         <button class="primary" type="submit">Pair this phone</button>
       </form>
       <p class="message" id="pairing-message" role="status"></p>
+    </section>
+
+    <section class="pairing panel" id="connection-panel" hidden>
+      <h1>Reconnecting to ULLeds</h1>
+      <p>Keep ULLeds running on the PC and connect this iPhone to the same Wi-Fi. This page will reconnect automatically; pair again only if the saved session expires or is removed.</p>
+      <button class="primary" id="retry-connection" type="button">Try again</button>
     </section>
 
     <section id="remote-panel" hidden>

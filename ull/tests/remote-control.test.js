@@ -3,6 +3,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
+const net = require("node:net");
+const fs = require("node:fs/promises");
+const os = require("node:os");
+const path = require("node:path");
 const {
   createRemoteControlService,
   getPrivateNetworkInterfaces,
@@ -25,7 +29,19 @@ function createService(overrides = {}) {
     manageScene: async () => {},
     setSyncMode: async () => {},
     networkInterfaces: () => loopback,
+    port: 0,
     ...overrides
+  });
+}
+
+function getAvailablePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const { port } = server.address();
+      server.close((error) => error ? reject(error) : resolve(port));
+    });
   });
 }
 
@@ -115,6 +131,48 @@ test("pairing grants a same-origin session and rejects unpaired state reads", as
     Host: "example.com"
   });
   assert.equal(wrongHost, 403);
+});
+
+test("paired phone sessions and the home-screen URL survive a server restart", async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "ulleds-remote-"));
+  const options = {
+    port: await getAvailablePort(),
+    sessionStorePath: path.join(directory, "sessions.json")
+  };
+  let service = createService(options);
+  t.after(async () => {
+    await service.stop();
+    await fs.rm(directory, { recursive: true, force: true });
+  });
+
+  const first = await service.start("127.0.0.1");
+  const paired = await post(first.url, "/api/pair", { pin: first.pin });
+  const cookie = paired.headers.get("set-cookie").split(";")[0];
+  const token = cookie.match(/ulleds_remote=([^;]+)/)[1];
+  const savedSessions = await fs.readFile(options.sessionStorePath, "utf8");
+  assert.doesNotMatch(savedSessions, new RegExp(token));
+
+  await service.stop();
+  service = createService(options);
+  const restarted = await service.start("127.0.0.1");
+  assert.equal(restarted.url, first.url);
+  const state = await fetch(`${restarted.url}/api/state`, { headers: { Cookie: cookie } });
+  assert.equal(state.status, 200);
+
+  const unpaired = await post(restarted.url, "/api/unpair", {}, { cookie });
+  assert.equal(unpaired.status, 200);
+  const revoked = await fetch(`${restarted.url}/api/state`, { headers: { Cookie: cookie } });
+  assert.equal(revoked.status, 401);
+
+  const pairedAgain = await post(restarted.url, "/api/pair", { pin: restarted.pin });
+  const secondCookie = pairedAgain.headers.get("set-cookie").split(";")[0];
+  await service.stop({ revokeSessions: true });
+  service = createService(options);
+  const disabled = await service.start("127.0.0.1");
+  const revokedAfterDisable = await fetch(`${disabled.url}/api/state`, {
+    headers: { Cookie: secondCookie }
+  });
+  assert.equal(revokedAfterDisable.status, 401);
 });
 
 test("paired phone requests cannot change settings outside the allowlist", async (t) => {

@@ -37,7 +37,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-v
   outline: 2px solid currentColor;
   outline-offset: 3px;
 }
-.shell { width: min(100% - 32px, 560px); margin: 0 auto; padding: 18px 0 max(30px, env(safe-area-inset-bottom)); }
+.shell { width: min(100% - 32px, 560px); margin: 0 auto; padding: max(18px, env(safe-area-inset-top)) 0 max(30px, env(safe-area-inset-bottom)); }
 .masthead { display: flex; align-items: center; justify-content: space-between; min-height: 42px; margin-bottom: 22px; }
 .wordmark { color: var(--text); text-decoration: none; font-size: 18px; font-weight: 650; letter-spacing: -.04em; }
 .connection { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
@@ -91,6 +91,7 @@ select, #pairing-pin { width: 100%; min-height: 46px; padding: 0 12px; border: 0
 .sync-button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
 .stop-sync { grid-column: 1 / -1; }
 .advanced { padding-top: 15px; border-top: 1px solid var(--surface-2); }
+.sync-actions + .advanced { margin-top: var(--space); }
 .advanced summary { color: var(--muted); cursor: pointer; font-size: 14px; }
 .advanced[open] { display: grid; gap: 18px; }
 .check { display: flex; align-items: center; gap: 10px; font-size: 14px; }

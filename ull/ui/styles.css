@@ -497,15 +497,15 @@ main {
   flex: 1;
   min-height: 0;
   container-type: size;
-  padding: var(--sp-2) var(--gutter) var(--gutter);
+  padding: var(--sp-2) var(--gutter) var(--sp-2);
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
-.view { width: 100%; max-width: 100rem; margin-inline: 0; }
+.view { width: 100%; margin-inline: 0; }
 .view-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--sp-3) var(--sp-4);
   margin-bottom: var(--sp-5);
@@ -698,7 +698,7 @@ main {
 
 @container (min-width: 56rem) {
   .lighting { grid-template-columns: minmax(0, 1fr) clamp(19rem, 28cqw, 28rem); align-items: start; gap: var(--sp-5); }
-  .preview { position: sticky; top: 0; height: max(26rem, 100cqh); }
+  .preview { position: sticky; top: 0; height: max(22rem, calc(100cqh - 3.75rem)); }
 }
 
 /* --------------------------------------------------------------------------
@@ -729,7 +729,7 @@ main {
 .group { display: grid; align-content: start; gap: var(--sp-4); }
 .group-head { display: grid; gap: var(--sp-1); }
 .utility-stack { display: grid; min-width: 0; align-content: start; gap: var(--sp-3); }
-.utility-stack > .group { padding: var(--sp-4); gap: var(--sp-3); }
+.utility-stack > .group { padding: var(--pad); gap: var(--sp-3); }
 
 /* --------------------------------------------------------------------------
    Updates

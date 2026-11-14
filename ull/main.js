@@ -868,6 +868,8 @@ function getRemoteControlStatus() {
     running: false,
     interfaces: getPrivateNetworkInterfaces(),
     address: "",
+    interfaceName: "",
+    port: 0,
     url: "",
     pin: "",
     qrDataUrl: ""
@@ -947,7 +949,8 @@ function createRemoteControl() {
       }
       setSettings({ scenes }, false);
     },
-    setSyncMode: requestRemoteSync
+    setSyncMode: requestRemoteSync,
+    sessionStorePath: path.join(app.getPath("appData"), "ULLeds", "remote-sessions.json")
   });
 }
 
@@ -1003,7 +1006,7 @@ async function disableRemoteControl() {
   const previousAddress = remoteControlService?.getStatus().address || settings.remoteInterface;
   const previousInterfaceName = remoteControlService?.getStatus().interfaceName || settings.remoteInterfaceName;
   const previousEnabled = settings.remoteControlEnabled;
-  await remoteControlService?.stop();
+  await remoteControlService?.stop({ revokeSessions: true });
   settings.remoteControlEnabled = false;
   try {
     saveSettings();
@@ -1315,7 +1318,7 @@ handleMainWindow("settings:reset", async () => {
   resetPromise = (async () => {
     if (connectionPromise) await connectionPromise;
     screenSyncActive = false;
-    await remoteControlService?.stop();
+    await remoteControlService?.stop({ revokeSessions: true });
     remoteControlError = "";
 
     const activeProfile = connectedInfo?.profile || settings.deviceProfile;

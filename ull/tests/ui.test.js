@@ -15,15 +15,33 @@ test("the detected LED count has no editable renderer control", () => {
   assert.doesNotMatch(app, /data-setting=["']ledCount["']/);
 });
 
-test("Device and Updates views use available width up to a readable maximum", () => {
+test("all views use the available width with matching page gutters", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
   const views = [...html.matchAll(/<section\b[^>]*class="([^"]*)"[^>]*id="view-(light|scenes|settings|updates)"/g)];
 
   assert.equal(views.length, 4);
   assert.ok(views.every(([, classes]) => classes.split(/\s+/).includes("view")));
-  assert.match(css, /\.view \{ width: 100%; max-width: 100rem; margin-inline: 0; \}/);
-  assert.match(css, /main \{[^}]*padding: var\(--sp-2\) var\(--gutter\) var\(--gutter\);/s);
+  assert.match(css, /\.view \{ width: 100%; margin-inline: 0; \}/);
+  assert.match(css, /main \{[^}]*padding: var\(--sp-2\) var\(--gutter\) var\(--sp-2\);/s);
+});
+
+test("every tab title starts at the same top alignment", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+
+  for (const [view, title] of [
+    ["light", "Lighting"],
+    ["scenes", "Scenes"],
+    ["settings", "Device"],
+    ["updates", "Updates"]
+  ]) {
+    const header = new RegExp(
+      `<section class="view(?: hidden)?" id="view-${view}"[^>]*>\\s*<header class="view-head">\\s*<h2>${title}</h2>`
+    );
+    assert.match(html, header);
+  }
+  assert.match(css, /\.view-head \{[^}]*align-items: flex-start;/s);
 });
 
 test("renderer selectors resolve to unique elements in the page", () => {
@@ -69,6 +87,9 @@ test("renderer scripts load together and expose their APIs", () => {
   assert.equal(typeof context.ullSpotifySync?.createSpotifySyncColors, "function");
   assert.equal(typeof context.ullGithubReleases?.getReleasedInstallers, "function");
   assert.equal(typeof context.ullStartupMode?.isSyncStartupMode, "function");
+  assert.equal(context.plural(1, "LED"), "1 LED");
+  assert.equal(context.plural(2, "LED"), "2 LEDs");
+  assert.equal(context.plural(2, "lighting setup"), "2 lighting setups");
 });
 
 test("release notes offer published version downloads and a compact startup update notice", () => {
@@ -136,6 +157,27 @@ test("phone remote settings expose pairing details and require startup restorati
   assert.match(preload, /remote-control:enable/);
   assert.match(main, /openAtLogin: settings\.startWithWindows \|\| settings\.remoteControlEnabled/);
   assert.match(main, /createWindow\(\{\s+loadUI: [^}]*settings\.remoteControlEnabled/s);
+  assert.match(main, /sessionStorePath: path\.join\(app\.getPath\("appData"\), "ULLeds", "remote-sessions\.json"\)/);
+});
+
+test("phone remote supports iPhone Home Screen relaunch and reconnects without a pairing prompt", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
+  const remote = fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8");
+
+  assert.match(html, /name="apple-mobile-web-app-capable" content="yes"/);
+  assert.match(html, /id="connection-panel"[\s\S]*pair again only if the saved session expires or is removed/);
+  assert.match(html, /id="retry-connection"/);
+  assert.match(remote, /if \(!latestState\) showDisconnected\(\)/);
+  assert.match(remote, /window\.addEventListener\("pageshow"/);
+  assert.match(remote, /document\.addEventListener\("visibilitychange"/);
+});
+
+test("phone remote separates Sync settings from the Stop Sync button", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
+
+  assert.match(html, /id="stop-sync"[\s\S]*?<\/button>\s*<\/div>\s*<details class="advanced">/);
+  assert.match(css, /\.sync-actions \+ \.advanced \{\s+margin-top: var\(--space\);\s+\}/);
 });
 
 test("Spotify Sync combines local cover art with live desktop audio analysis", () => {
@@ -183,7 +225,9 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(app, /Waiting for a Spotify track/);
   assert.match(app, /if \(sync\.session\?\.mode === mode\)/);
   assert.match(app, /await stopScreenSync\(\);\s+if \(!sync\.session && !sync\.lifecycle\.isStopping\) start\(\)/);
-  assert.match(app, /session\.audioFrame = requestAnimationFrame/);
+  assert.match(app, /function scheduleSpotifyAudioSample\(session, sendLatestFrame\)/);
+  assert.match(app, /session\.audioTimer = window\.setTimeout/);
+  assert.match(app, /clearTimeout\(session\.audioTimer\)/);
   assert.match(app, /window\.ull\.getSpotifyArtwork\(\),\s+audioCapture,\s+audioReady/);
   assert.match(app, /artworkIdentity !== session\.artworkIdentity/);
   assert.match(app, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
@@ -370,8 +414,8 @@ test("tab content aligns with the topbar gutter and its spacing is balanced", ()
   assert.match(css, /\.topbar \{[^}]*padding:\s*var\(--sp-2\) 0 var\(--sp-2\) var\(--gutter\);/s);
   assert.match(css, /\.tabs \{[^}]*display:\s*flex;/s);
   assert.match(css, /\.tab \{[^}]*padding:\s*0 var\(--sp-3\);/s);
-  assert.match(css, /\.view \{[^}]*margin-inline:\s*0;/s);
-  assert.match(css, /main \{[^}]*padding:\s*var\(--sp-2\) var\(--gutter\) var\(--gutter\);/s);
+  assert.match(css, /\.view \{[^}]*width:\s*100%;[^}]*margin-inline:\s*0;/s);
+  assert.match(css, /main \{[^}]*padding:\s*var\(--sp-2\) var\(--gutter\) var\(--sp-2\);/s);
 });
 
 test("lighting layout adapts to the window and the monitor preview matches the display ratio", () => {
@@ -385,6 +429,7 @@ test("lighting layout adapts to the window and the monitor preview matches the d
   assert.match(css, /\.monitor \{[^}]*aspect-ratio: var\(--monitor-aspect-ratio, 16 \/ 9\);/s);
   assert.match(css, /\.monitor \{[^}]*width: min\(100cqw, calc\(100cqh \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
   assert.match(css, /@container \(min-width: 56rem\) \{\s+\.lighting \{ grid-template-columns: minmax\(0, 1fr\) clamp\(19rem, 28cqw, 28rem\);/);
+  assert.match(css, /\.preview \{ position: sticky; top: 0; height: max\(22rem, calc\(100cqh - 3\.75rem\)\); \}/);
   assert.match(app, /function updateMonitorAspectRatio\(\) \{\s+const \{ width, height \} = window\.screen;\s+if \(!Number\.isFinite\(width\) \|\| !Number\.isFinite\(height\) \|\| width <= 0 \|\| height <= 0\) return;\s+document\.documentElement\.style\.setProperty\("--monitor-aspect-ratio", String\(width \/ height\)\);/);
   assert.match(app, /updateMonitorAspectRatio\(\);\s+window\.addEventListener\("resize", updateMonitorAspectRatio\);/);
 });
@@ -450,7 +495,7 @@ test("Device settings stack compact startup, support, and reset panels together"
   assert.match(css, /\.groups \{[^}]*display: grid;[^}]*gap: var\(--sp-4\);/s);
   assert.match(html, /<div class="utility-stack">[\s\S]*aria-labelledby="group-startup"[\s\S]*aria-labelledby="group-support"[\s\S]*aria-labelledby="group-reset"[\s\S]*<\/div>/);
   assert.match(css, /\.utility-stack \{[^}]*display: grid;[^}]*gap: var\(--sp-3\);/s);
-  assert.match(css, /\.utility-stack > \.group \{[^}]*padding: var\(--sp-4\);/s);
+  assert.match(css, /\.utility-stack > \.group \{[^}]*padding: var\(--pad\);/s);
 });
 
 test("support request requires user details and explicit opt-in before opening a public GitHub draft", () => {
@@ -697,12 +742,13 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
   assert.match(app, /container\.style\.setProperty\("--pixel-gap", pixelGap\)/);
 });
 
-test("Device and Updates views use available width without enlarging the LED preview", () => {
+test("all views fill available width while preserving the responsive LED preview", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
   const monitorRule = css.match(/\.monitor \{([^}]+)\}/)?.[1] || "";
   const viewRule = css.match(/\.view \{([^}]+)\}/)?.[1] || "";
 
-  assert.match(viewRule, /max-width: 100rem/);
+  assert.match(viewRule, /width: 100%/);
+  assert.doesNotMatch(viewRule, /max-width/);
   assert.match(viewRule, /margin-inline: 0/);
   assert.match(monitorRule, /width: min\(100cqw, calc\(100cqh \* var\(--monitor-aspect-ratio, 1\.7778\)\)\)/);
   assert.doesNotMatch(monitorRule, /780px/);
