@@ -223,6 +223,55 @@ test("phone color changes update the main color and clear individual LED overrid
   assert.deepEqual(updates, [{ color: "#12ab34", ledColors: {} }]);
 });
 
+test("phone selection can update individual LEDs and serves shared layout helpers", async (t) => {
+  const updates = [];
+  const service = createService({
+    getState: async () => ({
+      settings: { color: "#008100", ledColors: { 2: "#ff0000" } },
+      device: {
+        connected: true,
+        ledCount: 12,
+        profile: { activeEdges: ["top", "left"], installationMethod: 1 }
+      },
+      sync: { active: true, mode: "spotify" }
+    }),
+    updateSettings: async (input) => updates.push(input)
+  });
+  t.after(() => service.stop());
+  const status = await service.start("127.0.0.1");
+  const paired = await post(status.url, "/api/pair", { pin: status.pin });
+  const cookie = paired.headers.get("set-cookie").split(";")[0];
+
+  const [layoutScript, selectionScript, previewStyle, stateResponse] = await Promise.all([
+    fetch(`${status.url}/strip-layout.js`),
+    fetch(`${status.url}/led-selection.js`),
+    fetch(`${status.url}/strip-preview.css`),
+    fetch(`${status.url}/api/state`, { headers: { Cookie: cookie } })
+  ]);
+  assert.equal(layoutScript.status, 200);
+  assert.match(await layoutScript.text(), /allocateEdgeIndices/);
+  assert.equal(selectionScript.status, 200);
+  assert.match(await selectionScript.text(), /fixedColorChanges/);
+  assert.equal(previewStyle.status, 200);
+  assert.match(await previewStyle.text(), /\.led-edge \{[\s\S]*position: absolute/);
+  assert.deepEqual(await stateResponse.json(), {
+    settings: { color: "#008100", ledColors: { 2: "#ff0000" } },
+    device: {
+      connected: true,
+      ledCount: 12,
+      profile: { activeEdges: ["top", "left"], installationMethod: 1 }
+    },
+    sync: { active: true, mode: "spotify" }
+  });
+
+  const response = await post(status.url, "/api/settings", {
+    effect: "steady",
+    ledColors: { 2: "#ff0000", 8: "#42aaff" }
+  }, { cookie });
+  assert.equal(response.status, 200);
+  assert.deepEqual(updates, [{ effect: "steady", ledColors: { 2: "#ff0000", 8: "#42aaff" } }]);
+});
+
 test("stopping phone control does not wait for an in-flight state request", async (t) => {
   let releaseState;
   let markStarted;

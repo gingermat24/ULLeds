@@ -7,6 +7,8 @@ const remotePanel = $("#remote-panel");
 const connection = $(".connection");
 let latestState = null;
 let refreshTimer = null;
+let selectedLedIndices = new Set();
+let multiSelectEnabled = false;
 
 async function request(path, body) {
   const response = await fetch(path, {
@@ -158,6 +160,125 @@ function renderScenes(scenes) {
   }));
 }
 
+function getLedLayout(device) {
+  const profile = device.profile || {};
+  const ledCount = Number(profile.ledCount || device.ledCount);
+  if (!Number.isInteger(ledCount) || ledCount < 1 || ledCount > 253) return null;
+  return window.ullStripLayout.allocateEdgeIndices(
+    ledCount,
+    profile.activeEdges || profile.edgeCount || 3,
+    profile.installationMethod ?? 0,
+    {
+      aspectRatio: profile.aspectRatio,
+      edgeCounts: profile.allocationMode === "manual" ? profile.edgeCounts : undefined
+    }
+  );
+}
+
+function renderLedMap(settings, layout) {
+  const aspectRatio = Number(latestState?.device?.profile?.aspectRatio);
+  document.documentElement.style.setProperty(
+    "--monitor-aspect-ratio",
+    Number.isFinite(aspectRatio) && aspectRatio > 0 ? String(aspectRatio) : "1.7778"
+  );
+  document.documentElement.style.setProperty(
+    "--led-opacity",
+    settings.power ? String(settings.brightness / 100) : "0"
+  );
+  $("#led-map").dataset.power = settings.power ? "on" : "off";
+  $("#led-count").textContent = layout
+    ? `${layout.ledCount} LEDs`
+    : "Connect a controller to preview the strip";
+  for (const edge of ["top", "left", "right", "bottom"]) {
+    const container = $(`#led-${edge}`);
+    const indices = layout?.indices[edge] || [];
+    container.hidden = indices.length === 0;
+    container.style.setProperty("--pixel-gap", `${25 / Math.max(indices.length, 1)}%`);
+    const sameLayout = container.children.length === indices.length &&
+      indices.every((index, position) => Number(container.children[position]?.dataset.ledIndex) === index);
+    if (!sameLayout) {
+      container.replaceChildren(...indices.map((index) => {
+        const pixel = document.createElement("button");
+        pixel.type = "button";
+        pixel.className = "led-pixel";
+        pixel.dataset.ledIndex = String(index);
+        pixel.setAttribute("aria-label", `Select LED ${index + 1}, ${edge} side`);
+        return pixel;
+      }));
+    }
+    for (const [position, index] of indices.entries()) {
+      const pixel = container.children[position];
+      const color = settings.ledColors?.[index] || settings.color;
+      const selected = selectedLedIndices === null || selectedLedIndices.has(index);
+      pixel.style.backgroundColor = color;
+      pixel.setAttribute("aria-pressed", String(selected));
+      pixel.classList.toggle("selected", selected);
+      const label = `Select LED ${index + 1}, ${edge} side${selected ? ", selected" : ""}`;
+      if (pixel.getAttribute("aria-label") !== label) pixel.setAttribute("aria-label", label);
+    }
+  }
+  renderSelectionSummary(layout);
+}
+
+function renderSelectionSummary(layout) {
+  const label = $("#selection-label");
+  if (selectedLedIndices === null) {
+    label.textContent = "All LEDs";
+  } else if (selectedLedIndices.size === 0) {
+    label.textContent = "Tap a LED to select";
+  } else if (selectedLedIndices.size === 1) {
+    const index = selectedLedIndices.values().next().value;
+    const edge = Object.entries(layout?.indices || {}).find(([, indices]) => indices.includes(index))?.[0];
+    label.textContent = `LED ${index + 1}${edge ? ` · ${edge[0].toUpperCase()}${edge.slice(1)}` : ""}`;
+  } else {
+    label.textContent = `${selectedLedIndices.size} LEDs selected`;
+  }
+}
+
+function selectEdge(edge) {
+  const layout = getLedLayout(latestState.device);
+  const indices = layout?.indices[edge] || [];
+  if (!indices.length) return;
+  if (multiSelectEnabled) {
+    const selection = selectedLedIndices === null
+      ? new Set(Array.from({ length: layout.ledCount }, (_, index) => index))
+      : new Set(selectedLedIndices);
+    indices.forEach((index) => selection.add(index));
+    selectedLedIndices = selection;
+  } else {
+    selectedLedIndices = new Set(indices);
+  }
+  renderLedMap(latestState.settings, layout);
+  updateColorControl(latestState.settings, layout.ledCount);
+}
+
+function selectLed(index) {
+  const layout = getLedLayout(latestState.device);
+  if (!layout) return;
+  selectedLedIndices = multiSelectEnabled
+    ? window.ullLedSelection.selectLed(
+      selectedLedIndices === null
+        ? new Set(Array.from({ length: layout.ledCount }, (_, led) => led))
+        : selectedLedIndices,
+      index,
+      true
+    )
+    : window.ullLedSelection.selectLed(new Set(), index);
+  renderLedMap(latestState.settings, layout);
+  updateColorControl(latestState.settings, layout.ledCount);
+}
+
+function updateColorControl(settings, ledCount) {
+  const color = window.ullLedSelection.dominantColor(
+    selectedLedIndices,
+    settings.ledColors || {},
+    settings.color,
+    ledCount
+  );
+  if (document.activeElement !== $("#color")) $("#color").value = color;
+  $("#color-value").textContent = color.toUpperCase();
+}
+
 function renderState(data) {
   latestState = data;
   const { settings, device, sync } = data;
@@ -168,8 +289,12 @@ function renderState(data) {
   const power = $("#power-toggle");
   power.textContent = settings.power ? "On" : "Off";
   power.setAttribute("aria-pressed", String(settings.power));
-  $("#color").value = settings.color;
-  $("#color-value").textContent = settings.color.toUpperCase();
+  const layout = getLedLayout(device);
+  if (selectedLedIndices && layout) {
+    selectedLedIndices = new Set([...selectedLedIndices].filter((index) => index < layout.ledCount));
+  }
+  renderLedMap(settings, layout);
+  updateColorControl(settings, layout?.ledCount);
   const brightnessEditing = [$("#brightness"), $("#brightness-number")].includes(document.activeElement);
   if (!brightnessEditing) {
     $("#brightness").value = settings.brightness;
@@ -194,7 +319,19 @@ function renderState(data) {
   $("#spotify-sensitivity-value").textContent = `${settings.spotifySensitivity}%`;
   $("#screen-sync").setAttribute("aria-pressed", String(sync.active && sync.mode === "screen"));
   $("#spotify-sync").setAttribute("aria-pressed", String(sync.active && sync.mode === "spotify"));
+  $("#screen-sync").disabled = !device.connected;
+  $("#spotify-sync").disabled = !device.connected;
   $("#stop-sync").disabled = !sync.active;
+  $("#sync-status").textContent = sync.active
+    ? `${sync.mode === "spotify" ? "Spotify" : "Screen"} Sync active`
+    : "Not active";
+  $("#sync-note").textContent = !device.connected
+    ? "Connect the LED controller to start Sync."
+    : sync.active && sync.mode === "spotify"
+      ? "Spotify audio is analyzed locally on your PC."
+      : sync.active
+        ? "Screen colors are captured on your PC."
+        : "Spotify audio is analyzed locally on your PC.";
   renderScenes(settings.scenes);
   setConnection(true, "Connected");
 }
@@ -267,7 +404,52 @@ $("#retry-connection").addEventListener("click", () => void loadState());
 $("#power-toggle").addEventListener("click", () => {
   if (latestState) void updateSettings({ power: !latestState.settings.power });
 });
-$("#color").addEventListener("change", (event) => void updateSettings({ color: event.target.value }));
+$("#color").addEventListener("change", (event) => {
+  if (!latestState) return;
+  const selected = selectedLedIndices === null ? null : selectedLedIndices;
+  if (!selected || selected.size === 0) {
+    void updateSettings({ color: event.target.value });
+    return;
+  }
+  const changes = window.ullLedSelection.fixedColorChanges(
+    latestState.settings.color,
+    latestState.settings.ledColors || {},
+    selected,
+    event.target.value
+  );
+  void updateSettings(changes);
+});
+$("#led-map").addEventListener("click", (event) => {
+  const pixel = event.target.closest(".led-pixel");
+  if (pixel) {
+    selectLed(Number(pixel.dataset.ledIndex));
+    return;
+  }
+  const edge = event.target.closest(".led-edge");
+  if (edge && latestState) selectEdge(edge.dataset.edge);
+});
+$("#multi-select").addEventListener("change", (event) => {
+  multiSelectEnabled = event.target.checked;
+  $(".selection-help").textContent = multiSelectEnabled
+    ? "Tap lights to add or remove them. With no selection, color applies to all LEDs."
+    : "Tap a light or edge to target it. With no selection, color applies to all LEDs.";
+});
+$("#select-all").addEventListener("click", () => {
+  selectedLedIndices = null;
+  if (latestState) {
+    const layout = getLedLayout(latestState.device);
+    renderLedMap(latestState.settings, layout);
+    updateColorControl(latestState.settings, layout?.ledCount);
+  }
+});
+$("#clear-selection").addEventListener("click", () => {
+  selectedLedIndices = new Set();
+  if (latestState) {
+    const layout = getLedLayout(latestState.device);
+    renderLedMap(latestState.settings, layout);
+    updateColorControl(latestState.settings, layout?.ledCount);
+  }
+});
 $("#brightness").addEventListener("input", (event) => {
   $("#brightness-number").value = event.target.value;
 });

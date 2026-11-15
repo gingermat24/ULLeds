@@ -919,34 +919,47 @@ function getRemoteControlStatus() {
 
 function createRemoteControl() {
   remoteControlService = createRemoteControlService({
-    getState: () => ({
-      settings: {
-        color: settings.color,
-        brightness: settings.brightness,
-        channelGains: [...settings.channelGains],
-        effect: settings.effect,
-        speed: settings.speed,
-        palette: [...settings.palette],
-        power: settings.power,
-        syncFps: settings.syncFps,
-        spotifySensitivity: settings.spotifySensitivity,
-        syncContentMode: settings.syncContentMode,
-        syncAutoDetect: settings.syncAutoDetect,
-        scenes: normalizeScenes(settings.scenes)
-      },
-      device: {
-        connected: Boolean(hidDevice),
-        name: connectedInfo?.name || "USB LED controller",
-        ledCount: connectedInfo?.profile?.ledCount || settings.ledCount
-      },
-      sync: {
-        active: screenSyncActive,
-        mode: screenSyncActive ? settings.startupMode : null
-      }
-    }),
+    getState: () => {
+      const activeDisplay = mainWindow && !mainWindow.isDestroyed()
+        ? screen.getDisplayMatching(mainWindow.getBounds())
+        : screen.getPrimaryDisplay();
+      const { width, height } = activeDisplay.size;
+      return {
+        settings: {
+          color: settings.color,
+          brightness: settings.brightness,
+          channelGains: [...settings.channelGains],
+          effect: settings.effect,
+          speed: settings.speed,
+          palette: [...settings.palette],
+          ledColors: { ...settings.ledColors },
+          power: settings.power,
+          syncFps: settings.syncFps,
+          spotifySensitivity: settings.spotifySensitivity,
+          syncContentMode: settings.syncContentMode,
+          syncAutoDetect: settings.syncAutoDetect,
+          scenes: normalizeScenes(settings.scenes)
+        },
+        device: {
+          connected: Boolean(hidDevice),
+          name: connectedInfo?.name || "USB LED controller",
+          ledCount: connectedInfo?.profile?.ledCount || settings.ledCount,
+          profile: {
+            ...(connectedInfo?.profile || settings.deviceProfile || {}),
+            aspectRatio: width / height
+          }
+        },
+        sync: {
+          active: screenSyncActive,
+          mode: screenSyncActive ? settings.startupMode : null
+        }
+      };
+    },
     updateSettings: async (input) => {
       const powerChanged = Object.hasOwn(input, "power");
-      if (input.power === false && screenSyncActive) {
+      const manualLightingChanged = ["color", "ledColors", "effect"]
+        .some((key) => Object.hasOwn(input, key));
+      if ((input.power === false || manualLightingChanged) && screenSyncActive) {
         await requestRemoteSync("lighting");
       }
       const result = setSettings(input, !powerChanged);

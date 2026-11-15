@@ -11,7 +11,10 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-src 'none'">
   <meta name="referrer" content="no-referrer">
   <title>ULLeds Remote</title>
+  <link rel="stylesheet" href="/strip-preview.css">
   <link rel="stylesheet" href="remote.css">
+  <script src="/strip-layout.js" defer></script>
+  <script src="/led-selection.js" defer></script>
   <script src="remote.js" defer></script>
 </head>
 <body>
@@ -41,14 +44,41 @@
     <section id="remote-panel" hidden>
       <header class="welcome">
         <div>
-          <p class="eyebrow">Local control</p>
           <h1 id="device-name">ULLeds</h1>
           <p id="device-status">Checking controller…</p>
         </div>
         <button class="power" id="power-toggle" type="button" aria-pressed="true">On</button>
       </header>
 
-      <section class="panel controls">
+      <section class="panel strip-panel" aria-labelledby="strip-title">
+        <div class="section-head">
+          <div>
+            <h2 id="strip-title">LED layout</h2>
+            <p class="hint" id="led-count">Waiting for controller</p>
+          </div>
+          <span class="selection-label" id="selection-label">Tap a LED to select</span>
+        </div>
+        <div class="selection-tools">
+          <button class="quiet" id="select-all" type="button">All LEDs</button>
+          <button class="quiet" id="clear-selection" type="button">Clear</button>
+          <label class="check"><input id="multi-select" type="checkbox"><span>Add multiple</span></label>
+        </div>
+        <div class="led-stage">
+          <div class="preview-stage phone-preview-stage">
+            <div class="monitor" id="led-map" role="group" aria-label="Interactive LED strip preview" data-power="on">
+              <div class="monitor-screen" id="monitor-screen" aria-hidden="true"></div>
+              <div class="led-edge led-top" id="led-top" data-edge="top" role="group" aria-label="Top edge LEDs"></div>
+              <div class="led-edge led-left" id="led-left" data-edge="left" role="group" aria-label="Left edge LEDs"></div>
+              <div class="led-edge led-right" id="led-right" data-edge="right" role="group" aria-label="Right edge LEDs"></div>
+              <div class="led-edge led-bottom" id="led-bottom" data-edge="bottom" role="group" aria-label="Bottom edge LEDs"></div>
+            </div>
+          </div>
+        </div>
+        <p class="hint selection-help">Tap a light or edge to target it. With no selection, color applies to all LEDs.</p>
+      </section>
+
+      <section class="panel controls" aria-labelledby="lighting-title">
+        <div class="section-head"><h2 id="lighting-title">Lighting</h2></div>
         <div class="field color-field">
           <label for="color">Color</label>
           <input id="color" type="color" value="#008100" aria-label="Lighting color">
@@ -79,46 +109,59 @@
         </div>
         <details class="advanced" id="palette-section" hidden>
           <summary>Effect palette</summary>
-          <div class="palette" id="palette"></div>
-          <div class="actions">
-            <button class="quiet" id="add-color" type="button">Add color</button>
+          <div class="advanced-content">
+            <div class="palette" id="palette"></div>
+            <div class="actions"><button class="quiet" id="add-color" type="button">Add color</button></div>
           </div>
         </details>
         <details class="advanced">
           <summary>Color balance</summary>
-          <div class="field"><div class="field-head"><label for="gain-red">Red</label><output id="gain-red-value">100%</output></div><input id="gain-red" type="range" min="50" max="150"></div>
-          <div class="field"><div class="field-head"><label for="gain-green">Green</label><output id="gain-green-value">100%</output></div><input id="gain-green" type="range" min="50" max="150"></div>
-          <div class="field"><div class="field-head"><label for="gain-blue">Blue</label><output id="gain-blue-value">100%</output></div><input id="gain-blue" type="range" min="50" max="150"></div>
+          <div class="advanced-content">
+            <div class="field"><div class="field-head"><label for="gain-red">Red</label><output id="gain-red-value">100%</output></div><input id="gain-red" type="range" min="50" max="150"></div>
+            <div class="field"><div class="field-head"><label for="gain-green">Green</label><output id="gain-green-value">100%</output></div><input id="gain-green" type="range" min="50" max="150"></div>
+            <div class="field"><div class="field-head"><label for="gain-blue">Blue</label><output id="gain-blue-value">100%</output></div><input id="gain-blue" type="range" min="50" max="150"></div>
+          </div>
         </details>
         <p class="message" id="control-message" role="status"></p>
       </section>
 
       <section class="panel">
-        <div class="section-head"><div><p class="eyebrow">Saved setups</p><h2>Scenes</h2></div><button class="quiet" id="save-scene" type="button">Save current</button></div>
+        <div class="section-head"><div><h2>Scenes</h2><p class="hint">Saved setups</p></div><button class="quiet" id="save-scene" type="button">Save current</button></div>
         <div class="scenes" id="scenes"></div>
       </section>
 
-      <section class="panel">
-        <div class="section-head"><div><p class="eyebrow">Live modes</p><h2>Sync</h2></div></div>
-        <p class="hint">Screen Sync reads your PC display; Spotify Sync analyzes audio on your PC.</p>
-        <div class="sync-actions">
-          <button class="sync-button" id="screen-sync" type="button">Screen Sync</button>
-          <button class="sync-button" id="spotify-sync" type="button">Spotify Sync</button>
-          <button class="quiet stop-sync" id="stop-sync" type="button">Stop sync</button>
+      <section class="panel sync-panel" aria-labelledby="sync-title">
+        <div class="section-head">
+          <h2 id="sync-title">Sync</h2>
+          <span class="sync-status" id="sync-status">Not active</span>
         </div>
+        <div class="sync-actions">
+          <button class="sync-button" id="screen-sync" type="button" aria-pressed="false">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="11" rx="1.5"></rect><path d="M7 17h6M10 14v3"></path></svg>
+            <span>Screen Sync</span>
+          </button>
+          <button class="sync-button" id="spotify-sync" type="button" aria-pressed="false">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 14V4l8-1v10"></path><ellipse cx="5.5" cy="15.5" rx="2.5" ry="1.75"></ellipse><ellipse cx="13.5" cy="13.5" rx="2.5" ry="1.75"></ellipse></svg>
+            <span>Spotify Sync</span>
+          </button>
+          <button class="quiet stop-sync" id="stop-sync" type="button" disabled>Stop sync</button>
+        </div>
+        <p class="hint sync-note" id="sync-note">Spotify audio is analyzed on your PC.</p>
         <details class="advanced">
           <summary>Sync settings</summary>
-          <div class="field">
-            <div class="field-head"><label for="sync-fps">Screen Sync speed</label><output id="sync-fps-value">30 FPS</output></div>
-            <input id="sync-fps" type="range" min="5" max="60" step="1">
-          </div>
-          <div class="field"><label for="sync-content">Picture area</label>
-            <select id="sync-content"><option value="display">Full display</option><option value="cinema235">Cinema widescreen (2.35:1)</option></select>
-          </div>
-          <label class="check"><input id="sync-auto-detect" type="checkbox"><span>Ask before adapting to a detected widescreen movie</span></label>
-          <div class="field">
-            <div class="field-head"><label for="spotify-sensitivity">Spotify audio response</label><output id="spotify-sensitivity-value">100%</output></div>
-            <input id="spotify-sensitivity" type="range" min="0" max="100" step="1">
+          <div class="advanced-content">
+            <div class="field">
+              <div class="field-head"><label for="sync-fps">Screen Sync speed</label><output id="sync-fps-value">30 FPS</output></div>
+              <input id="sync-fps" type="range" min="5" max="60" step="1">
+            </div>
+            <div class="field"><label for="sync-content">Picture area</label>
+              <select id="sync-content"><option value="display">Full display</option><option value="cinema235">Cinema widescreen (2.35:1)</option></select>
+            </div>
+            <label class="check"><input id="sync-auto-detect" type="checkbox"><span>Ask before adapting to a detected widescreen movie</span></label>
+            <div class="field">
+              <div class="field-head"><label for="spotify-sensitivity">Spotify audio response</label><output id="spotify-sensitivity-value">100%</output></div>
+              <input id="spotify-sensitivity" type="range" min="0" max="100" step="1">
+            </div>
           </div>
         </details>
         <p class="message" id="sync-message" role="status"></p>

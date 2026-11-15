@@ -173,12 +173,50 @@ test("phone remote supports iPhone Home Screen relaunch and reconnects without a
   assert.match(remote, /document\.addEventListener\("visibilitychange"/);
 });
 
+test("phone remote uses the shared LED layout and gives Spotify Sync a visible state", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
+  const previewCss = fs.readFileSync(path.join(uiDirectory, "strip-preview.css"), "utf8");
+  const remote = fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(html, /src="\/strip-layout\.js" defer/);
+  assert.match(html, /src="\/led-selection\.js" defer/);
+  assert.match(html, /href="\/strip-preview\.css"/);
+  assert.match(html, /class="preview-stage phone-preview-stage"[\s\S]*class="monitor" id="led-map"[\s\S]*class="monitor-screen"[\s\S]*class="led-edge led-top"[\s\S]*class="led-edge led-left"[\s\S]*class="led-edge led-right"[\s\S]*class="led-edge led-bottom"/);
+  assert.match(html, /class="monitor-screen" id="monitor-screen" aria-hidden="true"><\/div>/);
+  assert.match(html, /id="multi-select"/);
+  assert.match(html, /id="sync-status"/);
+  const previewPosition = html.indexOf('<section class="panel strip-panel"');
+  const lightingPosition = html.indexOf('aria-labelledby="lighting-title"');
+  const scenesPosition = html.indexOf("<h2>Scenes</h2>");
+  const syncPosition = html.indexOf('aria-labelledby="sync-title"');
+  assert.ok(previewPosition < lightingPosition && lightingPosition < scenesPosition && scenesPosition < syncPosition);
+  assert.match(remote, /window\.ullStripLayout\.allocateEdgeIndices/);
+  assert.match(remote, /window\.ullLedSelection\.fixedColorChanges/);
+  assert.match(remote, /sync\.mode === "spotify" \? "Spotify" : "Screen"\} Sync active/);
+  assert.match(remote, /--monitor-aspect-ratio/);
+  assert.match(main, /ledColors: \{ \.\.\.settings\.ledColors \}/);
+  assert.match(main, /profile: \{\s+\.\.\.\(connectedInfo\?\.profile \|\| settings\.deviceProfile \|\| \{\}\)/);
+  assert.match(main, /screen\.getDisplayMatching\(mainWindow\.getBounds\(\)\)/);
+  assert.match(previewCss, /\.led-edge \{[^}]*position: absolute;[^}]*display: grid;/s);
+  assert.match(previewCss, /\.led-pixel\.selected \{[^}]*box-shadow: 0 0 0 0\.125rem var\(--text\);/s);
+  assert.match(css, /--gutter: 16px;/);
+  assert.match(css, /--pad: 18px;/);
+  assert.match(css, /--r-sm: 0\.375rem;/);
+  assert.match(css, /\.phone-preview-stage \.monitor \{ width: 100%; \}/);
+  assert.doesNotMatch(css, /\.phone-preview-stage \.monitor-screen/);
+  assert.doesNotMatch(css, /\.led-map \{[^}]*grid-template-areas/s);
+  assert.doesNotMatch(css, /\.led-pixel::before/);
+  assert.match(css, /\.advanced summary::after/);
+});
+
 test("phone remote separates Sync settings from the Stop Sync button", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
 
-  assert.match(html, /id="stop-sync"[\s\S]*?<\/button>\s*<\/div>\s*<details class="advanced">/);
-  assert.match(css, /\.sync-actions \+ \.advanced \{\s+margin-top: var\(--space\);\s+\}/);
+  assert.match(html, /id="stop-sync"[\s\S]*?<\/button>\s*<\/div>\s*<p class="hint sync-note"/);
+  assert.match(css, /\.sync-note \+ \.advanced, \.sync-actions \+ \.advanced \{\s+margin-top: var\(--space-4\);\s+padding-top: var\(--space-3\);/);
 });
 
 test("Spotify Sync combines local cover art with live desktop audio analysis", () => {
@@ -468,14 +506,15 @@ test("tab content aligns with the topbar gutter and its spacing is balanced", ()
 
 test("lighting layout adapts to the window and the monitor preview matches the display ratio", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const previewCss = fs.readFileSync(path.join(uiDirectory, "strip-preview.css"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const controls = css.match(/\.controls\s*\{([^}]*)\}/)?.[1] || "";
 
   assert.match(css, /\.lighting \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: var\(--sp-4\); \}/);
   assert.match(controls, /align-content: start;/);
   assert.match(css, /\.preview \{[^}]*height: clamp\(22rem, 62cqh, 36rem\);/s);
-  assert.match(css, /\.monitor \{[^}]*aspect-ratio: var\(--monitor-aspect-ratio, 16 \/ 9\);/s);
-  assert.match(css, /\.monitor \{[^}]*width: min\(100cqw, calc\(100cqh \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
+  assert.match(previewCss, /\.monitor \{[^}]*aspect-ratio: var\(--monitor-aspect-ratio, 16 \/ 9\);/s);
+  assert.match(previewCss, /\.monitor \{[^}]*width: min\(100cqw, calc\(100cqh \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
   assert.match(css, /@container \(min-width: 56rem\) \{\s+\.lighting \{ grid-template-columns: minmax\(0, 1fr\) clamp\(19rem, 28cqw, 28rem\);/);
   assert.match(css, /\.preview \{ position: sticky; top: 0; height: max\(22rem, calc\(100cqh - 3\.75rem\)\); \}/);
   assert.match(app, /function updateMonitorAspectRatio\(\) \{\s+const \{ width, height \} = window\.screen;\s+if \(!Number\.isFinite\(width\) \|\| !Number\.isFinite\(height\) \|\| width <= 0 \|\| height <= 0\) return;\s+document\.documentElement\.style\.setProperty\("--monitor-aspect-ratio", String\(width \/ height\)\);/);
@@ -817,7 +856,8 @@ test("release carousel merges published notes with archived notes without bundli
 
 test("LED preview scales with its card and selected LEDs stay within their grid cells", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
-  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "strip-preview.css"), "utf8");
+  const baseCss = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
   assert.match(css, /\.preview-stage \{[^}]*container-type: size;/s);
   assert.match(css, /--rail: clamp\(0\.4rem, 1\.1vw, 0\.8rem\)/);
@@ -826,7 +866,7 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
   assert.match(css, /\.led-left, \.led-right \{[^}]*grid-auto-rows: minmax\(0, 1fr\);/s);
   assert.match(css, /\.led-pixel \{[^}]*border-radius: calc\(var\(--r-sm\) \/ 2\);/s);
   assert.match(css, /\.led-pixel\.selected \{[^}]*box-shadow: 0 0 0 0\.125rem var\(--text\);/s);
-  assert.match(css, /:focus-visible/);
+  assert.match(baseCss, /:focus-visible/);
   assert.doesNotMatch(css, /\.led-pixel(?:\.selected)?:hover\s*\{[^}]*transform:\s*scale/);
   assert.match(app, /const pixelGap = `\$\{25 \/ Math\.max\(indices\.length, 1\)\}%`/);
   assert.match(app, /container\.style\.setProperty\("--pixel-gap", pixelGap\)/);
@@ -834,7 +874,8 @@ test("LED preview scales with its card and selected LEDs stay within their grid 
 
 test("all views fill available width while preserving the responsive LED preview", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
-  const monitorRule = css.match(/\.monitor \{([^}]+)\}/)?.[1] || "";
+  const previewCss = fs.readFileSync(path.join(uiDirectory, "strip-preview.css"), "utf8");
+  const monitorRule = previewCss.match(/\.monitor \{([^}]+)\}/)?.[1] || "";
   const viewRule = css.match(/\.view \{([^}]+)\}/)?.[1] || "";
 
   assert.match(viewRule, /width: 100%/);

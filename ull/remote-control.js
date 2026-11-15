@@ -30,7 +30,10 @@ const REMOTE_SETTINGS = new Set([
 const STATIC_FILES = new Map([
   ["/", ["remote.html", "text/html; charset=utf-8"]],
   ["/remote.css", ["remote.css", "text/css; charset=utf-8"]],
-  ["/remote.js", ["remote.js", "text/javascript; charset=utf-8"]]
+  ["/strip-preview.css", ["strip-preview.css", "text/css; charset=utf-8"]],
+  ["/remote.js", ["remote.js", "text/javascript; charset=utf-8"]],
+  ["/strip-layout.js", ["../strip-layout.js", "text/javascript; charset=utf-8"]],
+  ["/led-selection.js", ["../led-selection.js", "text/javascript; charset=utf-8"]]
 ]);
 
 function ipv4Number(address) {
