@@ -57,17 +57,30 @@ function detectLetterboxAspectRatio(pixels, width, height) {
       pixels.length !== width * height * 4) {
     throw new TypeError("Screen image dimensions are invalid.");
   }
+  const sampleCount = 24;
+  const rowLuminance = (y) => {
+    let total = 0;
+    for (let sample = 0; sample < sampleCount; sample += 1) {
+      const x = Math.round((sample + 0.5) / sampleCount * (width - 1));
+      const offset = (y * width + x) * 4;
+      if (pixels[offset + 3] < 128) return null;
+      total += pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 +
+        pixels[offset + 2] * 0.0722;
+    }
+    return total / sampleCount;
+  };
+  const centerLuminance = rowLuminance(Math.floor(height / 2));
+  if (centerLuminance === null) return null;
+  const darkThreshold = centerLuminance - Math.max(10, centerLuminance * 0.15);
   const isDarkUniformRow = (y) => {
     let darkSamples = 0;
-    const sampleCount = 24;
     for (let sample = 0; sample < sampleCount; sample += 1) {
       const x = Math.round((sample + 0.5) / sampleCount * (width - 1));
       const offset = (y * width + x) * 4;
       if (pixels[offset + 3] < 128) return false;
-      const luminance = Math.round(
-        pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722
-      );
-      if (luminance <= 24) darkSamples += 1;
+      const luminance =
+        pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722;
+      if (luminance <= darkThreshold) darkSamples += 1;
     }
     return darkSamples >= sampleCount * 0.9;
   };
@@ -85,6 +98,59 @@ function detectLetterboxAspectRatio(pixels, width, height) {
   const aspectRatio = width / (height - topRows - bottomRows);
   if (aspectRatio < 1.78 || aspectRatio > 2.6) return null;
   return Math.round(aspectRatio * 100) / 100;
+}
+
+function createMovieAreaPolicy({ ratioTolerance = 0.1 } = {}) {
+  if (!Number.isFinite(ratioTolerance) || ratioTolerance <= 0) {
+    throw new TypeError("Movie area policy tolerance is invalid.");
+  }
+  let appliedRatio = null;
+  let missingNotified = false;
+  const promptedRatios = [];
+  const isValidRatio = (ratio) =>
+    Number.isFinite(ratio) && ratio >= 1.78 && ratio <= 2.6;
+  const isSameRatio = (left, right) => Math.abs(left - right) <= ratioTolerance;
+
+  return Object.freeze({
+    shouldPrompt(ratio, manualRatio = null) {
+      if (!isValidRatio(ratio) ||
+          (manualRatio !== null && !isValidRatio(manualRatio))) {
+        throw new TypeError("Movie area policy ratio is invalid.");
+      }
+      if ((manualRatio !== null && isSameRatio(manualRatio, ratio)) ||
+          (appliedRatio !== null && isSameRatio(appliedRatio, ratio)) ||
+          promptedRatios.some((promptedRatio) => isSameRatio(promptedRatio, ratio))) {
+        return false;
+      }
+      promptedRatios.push(ratio);
+      return true;
+    },
+    applyDetectedRatio(ratio) {
+      if (!isValidRatio(ratio)) throw new TypeError("Movie area ratio is invalid.");
+      appliedRatio = ratio;
+      missingNotified = false;
+    },
+    getContentAspectRatio(manualRatio = null) {
+      if (manualRatio !== null && !isValidRatio(manualRatio)) {
+        throw new TypeError("Manual movie area ratio is invalid.");
+      }
+      return appliedRatio ?? manualRatio;
+    },
+    onBarsDetected() {
+      missingNotified = false;
+    },
+    onBarsMissing() {
+      promptedRatios.length = 0;
+      if (missingNotified) return false;
+      missingNotified = true;
+      return appliedRatio !== null;
+    },
+    reset() {
+      appliedRatio = null;
+      missingNotified = false;
+      promptedRatios.length = 0;
+    }
+  });
 }
 
 function createLetterboxStability({
@@ -141,28 +207,6 @@ function createLetterboxStability({
       lastReportedRatio = null;
       missingSince = null;
       missingStable = false;
-    }
-  });
-}
-
-function createMovieFormatPromptGate({ ratioTolerance = 0.1 } = {}) {
-  if (!Number.isFinite(ratioTolerance) || ratioTolerance <= 0) {
-    throw new TypeError("Movie format prompt tolerance is invalid.");
-  }
-  const promptedRatios = [];
-  return Object.freeze({
-    shouldPrompt(ratio) {
-      if (!Number.isFinite(ratio) || ratio < 1.78 || ratio > 2.6) {
-        throw new TypeError("Movie format prompt ratio is invalid.");
-      }
-      if (promptedRatios.some((promptedRatio) => Math.abs(promptedRatio - ratio) <= ratioTolerance)) {
-        return false;
-      }
-      promptedRatios.push(ratio);
-      return true;
-    },
-    reset() {
-      promptedRatios.length = 0;
     }
   });
 }
@@ -303,7 +347,7 @@ const screenSync = Object.freeze({
   createDesktopCaptureConstraints,
   createDesktopAudioCaptureConstraints,
   isSampleFrameDue,
-  createMovieFormatPromptGate,
+  createMovieAreaPolicy,
   createLetterboxStability,
   detectLetterboxAspectRatio,
   createLatestFrameSender,

@@ -6,7 +6,7 @@ const {
   createDesktopCaptureConstraints,
   createDesktopAudioCaptureConstraints,
   isSampleFrameDue,
-  createMovieFormatPromptGate,
+  createMovieAreaPolicy,
   createLetterboxStability,
   detectLetterboxAspectRatio,
   createLatestFrameSender,
@@ -243,6 +243,28 @@ test("movie-area detection recognizes stable 2.35:1 bars and ignores full-screen
   pixels.fill(0);
   for (let offset = 3; offset < pixels.length; offset += 4) pixels[offset] = 255;
   assert.equal(detectLetterboxAspectRatio(pixels, width, height), null);
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    pixels.set([34, 34, 34, 255], offset);
+  }
+  assert.equal(detectLetterboxAspectRatio(pixels, width, height), null);
+});
+
+test("movie-area detection finds near-black bars when the picture is also dark", () => {
+  const width = 320;
+  const height = 180;
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  const noisyBarX = Math.round((10.5) / 24 * (width - 1));
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const inPicture = y >= 22 && y < 158;
+      const shade = inPicture ? 72 + (x + y) % 18 : 34;
+      const noisyBarPixel = !inPicture && x === noisyBarX;
+      const value = noisyBarPixel ? 220 : shade;
+      pixels.set([value, value, value, 255], (y * width + x) * 4);
+    }
+  }
+
+  assert.equal(detectLetterboxAspectRatio(pixels, width, height), 2.35);
 });
 
 test("movie-area detection requires stable bars and only reports a format once", () => {
@@ -257,17 +279,27 @@ test("movie-area detection requires stable bars and only reports a format once",
   assert.equal(detector.update(2.35, 5600), 2.35);
 });
 
-test("movie format prompt gate suppresses repeat ratios for the whole sync session", () => {
-  const gate = createMovieFormatPromptGate();
-  assert.equal(gate.shouldPrompt(2.35), true);
-  assert.equal(gate.shouldPrompt(2.35), false);
-  assert.equal(gate.shouldPrompt(2.39), false);
-  assert.equal(gate.shouldPrompt(2.44), false);
-  assert.equal(gate.shouldPrompt(2.20), true);
-  assert.equal(gate.shouldPrompt(2.35), false);
-  gate.reset();
-  assert.equal(gate.shouldPrompt(2.35), true);
-  assert.throws(() => gate.shouldPrompt(null), TypeError);
+test("movie-area policy suppresses repeat prompts and retains an accepted area after bars disappear", () => {
+  const policy = createMovieAreaPolicy();
+  assert.equal(policy.shouldPrompt(2.35), true);
+  assert.equal(policy.shouldPrompt(2.35), false);
+  assert.equal(policy.shouldPrompt(2.39), false);
+  assert.equal(policy.shouldPrompt(2.20), true);
+
+  policy.applyDetectedRatio(2.35);
+  assert.equal(policy.getContentAspectRatio(), 2.35);
+  assert.equal(policy.shouldPrompt(2.35), false);
+  assert.equal(policy.onBarsMissing(), true);
+  assert.equal(policy.getContentAspectRatio(), 2.35);
+  assert.equal(policy.onBarsMissing(), false);
+  policy.onBarsDetected();
+  assert.equal(policy.shouldPrompt(2.35), false);
+
+  policy.reset();
+  assert.equal(policy.getContentAspectRatio(), null);
+  assert.equal(policy.shouldPrompt(2.35), true);
+  assert.equal(policy.shouldPrompt(2.35, 2.35), false);
+  assert.throws(() => policy.shouldPrompt(null), TypeError);
 });
 
 test("movie-area detection reports when bars have stably disappeared", () => {

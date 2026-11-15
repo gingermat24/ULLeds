@@ -125,6 +125,46 @@
         <p class="message" id="control-message" role="status"></p>
       </section>
 
+      <section class="panel controls" aria-labelledby="override-title">
+        <div class="section-head">
+          <div>
+            <h2 id="override-title">Temporary override</h2>
+            <p class="hint">Takes control briefly without changing saved lighting or scenes.</p>
+          </div>
+          <span class="sync-status" id="override-status" role="status">No override active</span>
+        </div>
+        <div class="override-fields">
+          <div class="field color-field">
+            <label for="override-color">Color</label>
+            <input id="override-color" type="color" value="#cc33ff">
+          </div>
+          <div class="field">
+            <label for="override-effect">Effect</label>
+            <select id="override-effect">
+              <option value="steady">Solid</option>
+              <option value="breathe">Breathe</option>
+              <option value="spectrum">Spectrum</option>
+              <option value="palette">Palette drift</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="override-duration">Duration</label>
+            <select id="override-duration">
+              <option value="5000">5 seconds</option>
+              <option value="15000" selected>15 seconds</option>
+              <option value="30000">30 seconds</option>
+              <option value="60000">1 minute</option>
+            </select>
+          </div>
+        </div>
+        <p class="hint">Effects use your current speed and palette.</p>
+        <div class="override-actions">
+          <button class="primary" id="start-override" type="button" disabled>Start override</button>
+          <button class="quiet" id="clear-override" type="button" disabled>Clear override</button>
+        </div>
+        <p class="message" id="override-message" role="status"></p>
+      </section>
+
       <section class="panel">
         <div class="section-head"><div><h2>Scenes</h2><p class="hint">Saved setups</p></div><button class="quiet" id="save-scene" type="button">Save current</button></div>
         <div class="scenes" id="scenes"></div>

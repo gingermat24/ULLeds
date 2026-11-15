@@ -47,3 +47,20 @@ test("a new sync session cannot start until the previous stop has completed", as
   assert.equal(await lifecycle.start(() => { started += 1; }), true);
   assert.equal(started, 1);
 });
+
+test("independent source lifecycles can capture concurrently", async () => {
+  const screen = createScreenSyncLifecycle();
+  const spotify = createScreenSyncLifecycle();
+  let finishScreen;
+  let finishSpotify;
+
+  const screenStart = screen.start(() => new Promise((resolve) => { finishScreen = resolve; }));
+  const spotifyStart = spotify.start(() => new Promise((resolve) => { finishSpotify = resolve; }));
+  await Promise.resolve();
+
+  assert.equal(screen.isStarting, true);
+  assert.equal(spotify.isStarting, true);
+  finishScreen();
+  finishSpotify();
+  assert.deepEqual(await Promise.all([screenStart, spotifyStart]), [true, true]);
+});

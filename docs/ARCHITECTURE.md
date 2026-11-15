@@ -3,15 +3,19 @@
 ## Active application
 
 The clean implementation is under `ull/`. The Electron main process owns USB
-enumeration, HID writes, settings persistence, update checks, and window
-lifecycle. The renderer is a small local HTML/CSS/JavaScript interface and has
-no Node integration.
+enumeration, device connection lifecycle, settings persistence, update checks,
+and window lifecycle. The renderer is a small local HTML/CSS/JavaScript
+interface and has no Node integration.
 
 ```
 ull/main.js
-  ├─ USB HID scan / connection (node-hid)
-  ├─ paced light effects and settings in Electron userData
-  ├─ loopback update feed and differential NSIS updates
+  ├─ USB device scan / app lifecycle
+  ├─ ull/pc-sync-hid-device.js (HID protocol and output adapter)
+  ├─ ull/lighting-animation.js (effect timer and stale-frame reconciliation)
+  ├─ ull/temporary-override.js (expiring priority-60 lighting lease)
+  ├─ settings in Electron userData
+  ├─ ull/priority-mux.js (standalone in-memory source arbitration)
+  ├─ GitHub Releases update feed and differential NSIS updates
   └─ context-isolated BrowserWindow
        ├─ ull/preload.js (allowlisted IPC methods)
        └─ ull/ui/ (interface, preview, controls)
@@ -29,25 +33,63 @@ that value as read-only. RGB order and physical placement are not reported by
 the controller; when no saved profile can be matched, the setup wizard collects
 those details rather than guessing.
 
-The count query uses the controller's read-only device-info action (`130`),
-matches the response message ID, and validates the reported count before
-opening the device for lighting control. A saved count is never used as a
-substitute when that query fails.
+The count query uses the controller's read-only device-info action (`130`) and
+validates the reported count before opening the device for lighting control.
+Valid device-info replies are accepted even if another HID reader changes the
+response message ID. If the controller does not report a valid count, only a
+matching saved profile can provide a fallback, which is recorded in the
+connection profile.
 
 Optional phone control is served by `ull/remote-control.js` over HTTP on a
 user-selected private IPv4 interface. Requests are restricted to that
 interface's subnet, state-changing requests require the remote page's origin,
 and pairing requires a rate-limited PIN before a time-limited in-memory session
-is issued. Only lighting settings, saved scenes, and sync-mode requests are
-exposed; the phone API does not expose device paths, serial numbers, or general
-Electron IPC. The server stops when remote control is disabled or ULLeds quits.
+is issued. The phone can also start or clear an expiring lighting override;
+these requests do not change saved settings or scenes. The phone API does not
+expose device paths, serial numbers, or general Electron IPC. The server stops
+when remote control is disabled or ULLeds quits.
 Because this local HTTP traffic is not encrypted, users should pair only on a
 trusted private network and must not forward the port to the internet.
 Enabling phone control also keeps ULLeds in the tray and restores the server at
 Windows sign-in. Screen and Spotify Sync requests are relayed through the
 trusted renderer; the PC may still need to grant capture permissions.
 
+## Input priority
+
+`ull/priority-mux.js` is a deterministic, in-memory source arbiter. Its
+interface is `setInput({ id, priority, colors, expiresAt, frameType,
+effectBrightness })`, `release(id)`, `expire(now)`, and `getWinner(now)`.
+Larger priority values win; equal
+priorities keep the earliest registered input in front. The default levels
+are manual lighting 10, effects 20, Screen Sync 30, Spotify Sync 40, and
+temporary override 60. Priority-60 inputs require an explicit expiry time.
+The winning frame also carries its output type so Screen and Spotify keep using
+the controller's realtime `SC` path while ordinary lighting uses `RB`.
+Screen Sync and Spotify Sync own independent renderer capture lifecycles and
+can both publish frames; the higher-priority source is written, and stopping
+it reveals the next active source. Stopping all sync sources returns to effects
+or manual lighting. Effects keep publishing priority-20 frames while a higher
+priority source wins, so the latest effect frame is ready when that source is
+released. A temporary override snapshots its color, effect, speed, and palette
+into a priority-60 lease; supported durations are 5, 15, 30, and 60 seconds.
+It can be replaced or cleared from the desktop app or paired phone, expires
+automatically, and is cleared on power-off or controller disconnect. Releasing
+it immediately writes the next winning source without changing saved settings
+or scenes. The Lighting preview shows the winning source.
+
+`ull/lighting-animation.js` owns the lighting-effect interval. When a setting
+change happens during an in-flight animation write, it reconciles the output
+after that write completes so a stale effect frame cannot remain visible.
+
 ## HID output
+
+`ull/pc-sync-hid-device.js` owns the controller's HID session, device LED-count
+query, packet construction, HID report framing, and paced output queue. Its
+interface is `open(path, onError)`, `readLedCount()`,
+`writeFrame(colors, options)`, `close()`, and `isConnected`. Main-process code
+passes normalized colors and lighting calibration; it does not construct
+controller packets. The adapter preserves the existing static-lighting `RB`
+and realtime `SC` output paths.
 
 The PC SYNC Backlight accepts `RB` section commands over HID. Each section is
 five bytes: 1-based start LED, RGB values, and inclusive end LED. ULLeds merges
@@ -76,6 +118,11 @@ to the system tray. The main process selects the primary display and provides
 its capture-source ID through an allowlisted preload method. Spotify Sync uses
 the same desktop-capture path with low-resolution video and loopback audio to
 analyze local audio while applying the current track's cover-art colors.
+Letterbox detection compares sampled edge rows with the picture center, allowing
+near-black bars while rejecting uniformly dark frames. Stable detection, prompt
+deduplication, and picture-area selection are separate decisions. An accepted
+automatic picture area stays in effect after the bars disappear until the sync
+session restarts or the Screen Sync picture-area setting changes.
 
 The app stores user preferences in `%APPDATA%\ULLeds\settings.json` to preserve
 existing settings through the rebrand and installer updates. It also stores a
@@ -96,12 +143,12 @@ seconds while no controller is connected.
 
 `npm run dist:win` creates an NSIS installer, its `.blockmap`, and a
 `latest.yml` manifest. Packaged builds check the public ULLeds GitHub Releases
-feed by default; `electron-updater` verifies the installer digest, supports
-ranged differential downloads, and applies the update after restart. A local
-folder remains available as an alternate source over loopback HTTP. Preserving
-the previous installer and its blockmap in that folder allows the downloader
-to compare old and new installer blocks. User settings remain under
-`%APPDATA%\ULLeds` and are not replaced with the application files.
+feed; `electron-updater` verifies the installer digest, supports ranged
+differential downloads, and applies the update after restart. Local-folder
+update sources are disabled until ULLeds can authenticate both the update
+metadata and the installer. User settings remain under `%APPDATA%\ULLeds` and
+are not replaced with the application files.
 
-The package allowlist includes the ULLeds app and its package metadata only;
-the earlier recovery bundle under `src/` is not loaded or shipped.
+The package allowlist includes the ULLeds app and its package metadata only.
+The recovered DX Light 3.7.21 bundle that the app was originally based on is
+not part of the working tree; it remains available in git history.

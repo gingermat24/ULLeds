@@ -21,20 +21,16 @@ const {
 } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const { HIDAsync, devicesAsync: listHidDevicesAsync } = require("node-hid");
-const {
-  buildColorFrames,
-  buildDeviceInfoRequest,
-  buildHidReports,
-  buildScreenSyncFrame,
-  parseDeviceLedCount
-} = require("./protocol");
 const { loadSavedProfiles, resolveDeviceLedCount } = require("./device-profile");
 const {
   listSupportedControllers,
   selectPreferredController,
   settingsAfterReset
 } = require("./controller-catalog");
-const { createHidOutputQueue } = require("./hid-output");
+const { createPcSyncHidDevice } = require("./pc-sync-hid-device");
+const { createLightingAnimation } = require("./lighting-animation");
+const { SOURCE_PRIORITIES, createPriorityMux } = require("./priority-mux");
+const { createTemporaryOverride } = require("./temporary-override");
 const { resetStoredData } = require("./reset-data");
 const { createResetAttempt } = require("./reset-operation");
 const { normalizeActiveEdges } = require("./strip-layout");
@@ -112,18 +108,19 @@ let showMainWindowWhenReady = false;
 let loadMainWindowPage = null;
 let tray;
 let isQuitting = false;
-let hidDevice = null;
+let outputDevice = null;
+const priorityMux = createPriorityMux();
+const SYNC_SOURCE_IDS = Object.freeze({ screen: "screen-sync", spotify: "spotify-sync" });
+const MANUAL_LIGHTING_SOURCE_ID = "manual-lighting";
+const EFFECT_SOURCE_ID = "lighting-effects";
+const syncSources = new Set();
+let lastNotifiedActiveSource = null;
 let deviceError = "";
 let connectionPromise = null;
 let settings = defaultSettings();
 let connectedInfo = null;
-let animationTimer = null;
-let animationWriting = false;
 let controllerWriteDiagnostics = null;
-const hidOutputQueue = createHidOutputQueue((timing) => controllerWriteDiagnostics?.recordWrite(timing));
 let watcherTimer = null;
-let screenSyncActive = false;
-let commandId = 1;
 let downloadedUpdateVersion = null;
 let updateDownloadVersion = null;
 let updateCheckPromise = null;
@@ -144,6 +141,14 @@ let movieFormatPromptTimer = null;
 let movieFormatPromptSequence = 0;
 const startHidden = process.platform === "win32" && process.argv.includes("--hidden");
 const hasSingleInstanceLock = acquireSingleInstanceLock(app, showMainWindow);
+
+function createOutputDevice() {
+  return createPcSyncHidDevice({
+    openHidDevice: (devicePath) => HIDAsync.open(devicePath),
+    onTiming: (timing) => controllerWriteDiagnostics?.recordWrite(timing),
+    onWriteStatus: ({ command, status }) => screenSyncDiagnostics?.recordHidWrite(command, status)
+  });
+}
 
 autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = false;
@@ -255,46 +260,6 @@ function validColor(value) {
   return typeof value === "string" && /^#[\da-f]{6}$/i.test(value);
 }
 
-function readControllerLedCount(device) {
-  const messageId = commandId >= 255 ? 1 : commandId + 1;
-  commandId = messageId;
-  const request = buildHidReports(buildDeviceInfoRequest(messageId))[0];
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const finish = (error, ledCount) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      device.removeListener("data", onData);
-      device.removeListener("error", onError);
-      if (error) reject(error);
-      else resolve(ledCount);
-    };
-    const onData = (response) => {
-      if (!Buffer.isBuffer(response)) return;
-      const offset = response[0] === 0 && response[1] === 82 && response[2] === 66 ? 1 : 0;
-      if (response[offset] !== 82 || response[offset + 1] !== 66 ||
-          response[offset + 3] !== messageId || response[offset + 4] !== 130) return;
-      try {
-        finish(null, parseDeviceLedCount(response, messageId));
-      } catch (error) {
-        finish(error);
-      }
-    };
-    const onError = (error) => finish(error);
-    const timeout = setTimeout(() => {
-      finish(new Error("The controller did not report its LED count."));
-    }, 1200);
-    device.on("data", onData);
-    device.on("error", onError);
-    try {
-      device.write([...request]).catch((error) => finish(error));
-    } catch (error) {
-      finish(error);
-    }
-  });
-}
-
 function settingsSnapshot() {
   return {
     ...settings,
@@ -304,6 +269,24 @@ function settingsSnapshot() {
     presets: [...settings.presets],
     scenes: normalizeScenes(settings.scenes)
   };
+}
+
+function getActiveInputSource(winner = priorityMux.getWinner(Date.now())) {
+  if (!outputDevice?.isConnected || !winner) return null;
+  if (winner.priority === SOURCE_PRIORITIES.temporaryOverride) return "Override";
+  if (winner.id === SYNC_SOURCE_IDS.screen) return "Screen Sync";
+  if (winner.id === SYNC_SOURCE_IDS.spotify) return "Spotify Sync";
+  if (winner.id === EFFECT_SOURCE_ID) return "Effect";
+  return "Manual";
+}
+
+function notifyActiveInputSource(winner = priorityMux.getWinner(Date.now())) {
+  const source = getActiveInputSource(winner);
+  if (source === lastNotifiedActiveSource) return;
+  lastNotifiedActiveSource = source;
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send("lighting:active-source", source);
+  }
 }
 
 function validateSettings(input) {
@@ -518,17 +501,17 @@ function hueColor(hue) {
   return `#${rgb.map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`;
 }
 
-function animatedColor(now) {
-  const seconds = (now / 1000) * (0.12 + settings.speed / 180);
-  if (settings.effect === "breathe") {
+function animatedColor(now, sourceSettings = settings) {
+  const seconds = (now / 1000) * (0.12 + sourceSettings.speed / 180);
+  if (sourceSettings.effect === "breathe") {
     return {
-      color: settings.color,
+      color: sourceSettings.color,
       brightness: 0.16 + (Math.sin(seconds * Math.PI * 2) + 1) * 0.42
     };
   }
-  if (settings.effect === "spectrum") return { color: hueColor(seconds * 55), brightness: 1 };
-  if (settings.effect === "palette") {
-    const colors = settings.palette;
+  if (sourceSettings.effect === "spectrum") return { color: hueColor(seconds * 55), brightness: 1 };
+  if (sourceSettings.effect === "palette") {
+    const colors = sourceSettings.palette;
     const step = (seconds * 0.55) % colors.length;
     const index = Math.floor(step);
     const blend = step - index;
@@ -542,11 +525,11 @@ function animatedColor(now) {
       return Math.round(a + (b - a) * blend).toString(16).padStart(2, "0");
     }).join("")}`, brightness: 1 };
   }
-  return { color: settings.color, brightness: 1 };
+  return { color: sourceSettings.color, brightness: 1 };
 }
 
 function writeColor(color, effectBrightness = 1, power = settings.power) {
-  if (!hidDevice) return;
+  if (!outputDevice?.isConnected) return;
   const profile = settings.deviceProfile;
   const ledCount = profile?.ledCount;
   if (!Number.isInteger(ledCount)) throw new Error("The controller's LED count has not been detected.");
@@ -555,121 +538,190 @@ function writeColor(color, effectBrightness = 1, power = settings.power) {
       ? settings.ledColors[index]
       : color
   );
+  if (settings.effect === "steady" || !power) priorityMux.release(EFFECT_SOURCE_ID);
+  priorityMux.setInput({
+    id: MANUAL_LIGHTING_SOURCE_ID,
+    priority: SOURCE_PRIORITIES.manualLighting,
+    colors
+  });
+  return writePrioritySource(MANUAL_LIGHTING_SOURCE_ID, colors, effectBrightness, power);
+}
+
+function writeEffectColor(color, effectBrightness = 1) {
+  if (!outputDevice?.isConnected) return;
+  const profile = settings.deviceProfile;
+  const ledCount = profile?.ledCount;
+  if (!Number.isInteger(ledCount)) throw new Error("The controller's LED count has not been detected.");
+  const colors = Array(ledCount).fill(color);
+  priorityMux.setInput({
+    id: EFFECT_SOURCE_ID,
+    priority: SOURCE_PRIORITIES.effects,
+    colors,
+    effectBrightness
+  });
+  return writePrioritySource(EFFECT_SOURCE_ID, colors, effectBrightness);
+}
+
+async function writeColors(colors, effectBrightness = 1, power = settings.power, frameType = "lighting") {
+  if (!outputDevice?.isConnected) return;
+  const profile = settings.deviceProfile;
+  const ledCount = profile?.ledCount;
+  if (!Number.isInteger(ledCount)) throw new Error("The controller's LED count has not been detected.");
+  if (!Array.isArray(colors) || colors.length !== ledCount) {
+    throw new RangeError(`Expected exactly ${ledCount} colors for the connected strip.`);
+  }
+  const now = Date.now();
+  priorityMux.expire(now);
+  const winner = priorityMux.getWinner(now);
+  notifyActiveInputSource(winner);
+  const writeWinner = winner?.colors.length === ledCount ? winner : null;
+  return outputDevice.writeFrame(writeWinner?.colors || colors, {
+    frameType: writeWinner?.frameType || frameType,
+    brightness: settings.brightness,
+    power,
+    effectBrightness: writeWinner?.effectBrightness ?? effectBrightness,
+    colorOrder: profile?.colorOrder || "RGB",
+    channelGains: settings.channelGains
+  });
+}
+
+function writePrioritySource(sourceId, colors, effectBrightness = 1, power = settings.power) {
+  const winner = priorityMux.getWinner(Date.now());
+  if (winner?.id !== sourceId) return { written: false };
   return writeColors(colors, effectBrightness, power);
 }
 
-function enqueueHidReports(device, reports, command = "RB") {
-  return hidOutputQueue.enqueue(device, reports, () => hidDevice === device, command);
+function syncSourcePriority(mode) {
+  return mode === "spotify" ? SOURCE_PRIORITIES.spotifySync : SOURCE_PRIORITIES.screenSync;
 }
 
-async function writeColors(colors, effectBrightness = 1, power = settings.power) {
-  if (!hidDevice) return;
-  const device = hidDevice;
+function activeSyncMode() {
+  if (syncSources.has("spotify")) return "spotify";
+  if (syncSources.has("screen")) return "screen";
+  return null;
+}
+
+function clearSyncSources() {
+  for (const mode of ["screen", "spotify"]) {
+    syncSources.delete(mode);
+    priorityMux.release(SYNC_SOURCE_IDS[mode]);
+  }
+}
+
+async function writeSyncColors(mode, colors) {
+  if (!outputDevice?.isConnected) return;
   const profile = settings.deviceProfile;
   const ledCount = profile?.ledCount;
   if (!Number.isInteger(ledCount)) throw new Error("The controller's LED count has not been detected.");
   if (!Array.isArray(colors) || colors.length !== ledCount) {
     throw new RangeError(`Expected exactly ${ledCount} colors for the connected strip.`);
   }
-  const firstMessageId = commandId >= 255 ? 1 : commandId + 1;
-  const packets = buildColorFrames(
+  const sourceId = SYNC_SOURCE_IDS[mode];
+  if (!sourceId || !syncSources.has(mode)) return { active: false };
+  priorityMux.setInput({
+    id: sourceId,
+    priority: syncSourcePriority(mode),
     colors,
-    settings.brightness,
-    power,
-    effectBrightness,
-    profile?.colorOrder || "RGB",
-    firstMessageId,
-    settings.channelGains
-  );
-  commandId = ((firstMessageId - 1 + packets.length) % 255) + 1;
-  const trace = screenSyncDiagnostics?.isActive;
-  if (trace) screenSyncDiagnostics.recordHidWrite("RB", "queued");
-  try {
-    const result = await enqueueHidReports(device, packets.flatMap(buildHidReports));
-    if (trace) screenSyncDiagnostics.recordHidWrite("RB", result.written ? "written" : "superseded");
-  } catch (error) {
-    if (trace) screenSyncDiagnostics.recordHidWrite("RB", "failed");
-    throw error;
-  }
+    frameType: "realtime"
+  });
+  return writePrioritySource(sourceId, colors, 1, settings.power);
 }
 
-async function writeScreenSyncColors(colors) {
-  if (!hidDevice) return;
-  const device = hidDevice;
-  const profile = settings.deviceProfile;
-  const ledCount = profile?.ledCount;
-  if (!Number.isInteger(ledCount)) throw new Error("The controller's LED count has not been detected.");
-  if (!Array.isArray(colors) || colors.length !== ledCount) {
-    throw new RangeError(`Expected exactly ${ledCount} colors for the connected strip.`);
+const lightingAnimation = createLightingAnimation({
+  getSettings: () => settings,
+  getDevice: () => outputDevice,
+  isConnected: () => Boolean(outputDevice?.isConnected),
+  writeColor,
+  writeEffectColor,
+  animatedColor,
+  onWriteError: (error, device) => {
+    if (outputDevice === device) disconnectDevice(error.message);
   }
-  const messageId = commandId >= 255 ? 1 : commandId + 1;
-  const packet = buildScreenSyncFrame(
-    colors,
-    settings.brightness,
+});
+
+function updateAnimation(options) {
+  if (settings.effect !== "steady" && outputDevice?.isConnected &&
+      Number.isInteger(settings.deviceProfile?.ledCount)) {
+    priorityMux.setInput({
+      id: MANUAL_LIGHTING_SOURCE_ID,
+      priority: SOURCE_PRIORITIES.manualLighting,
+      colors: Array(settings.deviceProfile.ledCount).fill(settings.color)
+    });
+  }
+  return lightingAnimation.update(options);
+}
+
+function writeCurrentPriorityWinner() {
+  if (!outputDevice?.isConnected || !settings.power) return Promise.resolve();
+  const winner = priorityMux.getWinner(Date.now());
+  if (!winner) return updateAnimation({ waitForOutput: true });
+  return writeColors(
+    winner.colors,
+    winner.effectBrightness ?? 1,
     settings.power,
-    profile?.colorOrder || "RGB",
-    messageId,
-    settings.channelGains
+    winner.frameType || "lighting"
   );
-  commandId = messageId;
-  screenSyncDiagnostics?.recordHidWrite("SC", "queued");
-  try {
-    const result = await enqueueHidReports(device, buildHidReports(packet), "SC");
-    screenSyncDiagnostics?.recordHidWrite("SC", result.written ? "written" : "superseded");
-  } catch (error) {
-    screenSyncDiagnostics?.recordHidWrite("SC", "failed");
-    throw error;
+}
+
+function broadcastTemporaryOverrideStatus(status) {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send("lighting:temporary-override", status);
   }
 }
 
-function updateAnimation({ waitForOutput = false } = {}) {
-  if (animationTimer) {
-    clearInterval(animationTimer);
-    animationTimer = null;
-  }
-  // Powering off must always reach the controller, even while Screen Sync is
-  // still winding down or an output restore is in progress. Otherwise the
-  // lights can stay lit while the interface reports Off.
-  const powerOff = !settings.power;
-  if (!powerOff && (screenSyncActive || isSyncStartupMode(settings.startupMode))) return;
-  if (!hidDevice || powerOff || settings.effect === "steady") {
-    if (hidDevice) {
-      const device = hidDevice;
-      const output = writeColor(settings.color);
-      if (waitForOutput) {
-        return output.catch((error) => {
-          console.error("LED color write failed:", error);
-          if (hidDevice === device) disconnectDevice(error.message);
-          throw error;
-        });
-      }
-      output.catch((error) => {
-        console.error("LED color write failed:", error);
-        if (hidDevice === device) disconnectDevice(error.message);
-      });
+const TEMPORARY_OVERRIDE_SOURCE_ID = "temporary-override";
+const temporaryOverride = createTemporaryOverride({
+  applyFrame: (lease, now) => {
+    if (!outputDevice?.isConnected || !settings.power) {
+      throw new Error("Turn on the LED controller before starting a temporary override.");
     }
-    return;
-  }
-  const interval = Math.max(40, Math.round(170 - settings.speed * 1.25));
-  animationTimer = setInterval(async () => {
-    if (animationWriting || !hidDevice) return;
-    animationWriting = true;
-    const device = hidDevice;
-    try {
-      const frame = animatedColor(Date.now());
-      await writeColor(frame.color, frame.brightness);
-    } catch (error) {
-      console.error("LED animation write failed:", error);
-      if (hidDevice === device) disconnectDevice(error.message);
-    } finally {
-      animationWriting = false;
+    const ledCount = settings.deviceProfile?.ledCount;
+    if (!Number.isInteger(ledCount)) throw new Error("The controller's LED count has not been detected.");
+    const frame = animatedColor(now, lease);
+    const colors = Array(ledCount).fill(frame.color);
+    priorityMux.setInput({
+      id: TEMPORARY_OVERRIDE_SOURCE_ID,
+      priority: SOURCE_PRIORITIES.temporaryOverride,
+      colors,
+      expiresAt: lease.expiresAt,
+      effectBrightness: frame.brightness
+    });
+    return writePrioritySource(TEMPORARY_OVERRIDE_SOURCE_ID, colors, frame.brightness, settings.power);
+  },
+  onRelease: (_lease, { restore }) => {
+    priorityMux.release(TEMPORARY_OVERRIDE_SOURCE_ID);
+    if (!restore || !outputDevice?.isConnected || !settings.power) {
+      notifyActiveInputSource();
+      return;
     }
-  }, interval);
-  animationTimer.unref();
+    return writeCurrentPriorityWinner();
+  },
+  onChange: broadcastTemporaryOverrideStatus,
+  onError: (error) => {
+    console.error("Temporary override output failed:", error);
+    if (outputDevice?.isConnected) disconnectDevice(error.message);
+  }
+});
+
+function startTemporaryOverride(input) {
+  if (!outputDevice?.isConnected) {
+    throw new Error("Connect the LED controller before starting a temporary override.");
+  }
+  if (!settings.power) throw new Error("Turn on the LED controller before starting a temporary override.");
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("Temporary override settings are invalid.");
+  }
+  return temporaryOverride.start({
+    color: input.color,
+    effect: input.effect,
+    speed: settings.speed,
+    durationMs: input.durationMs,
+    palette: [...settings.palette]
+  });
 }
 
 function deviceState() {
-  return connectedInfo
+  const state = connectedInfo
     ? {
       connected: true,
       name: connectedInfo.name,
@@ -686,6 +738,7 @@ function deviceState() {
       devicePath: settings.devicePath,
       error: deviceError
     };
+  return { ...state, activeSource: getActiveInputSource() };
 }
 
 function broadcastDeviceState(error = "") {
@@ -700,10 +753,10 @@ function stopDeviceWatcher() {
 }
 
 function scheduleDeviceWatcher() {
-  if (watcherTimer || isQuitting || hidDevice) return;
+  if (watcherTimer || isQuitting || outputDevice?.isConnected) return;
   watcherTimer = setTimeout(async () => {
     watcherTimer = null;
-    if (isQuitting || hidDevice) return;
+    if (isQuitting || outputDevice?.isConnected) return;
     try {
       await scanAndConnect();
     } catch (error) {
@@ -711,22 +764,28 @@ function scheduleDeviceWatcher() {
       deviceError = error.message;
       broadcastDeviceState(error.message);
     }
-    if (!hidDevice) scheduleDeviceWatcher();
+    if (!outputDevice?.isConnected) scheduleDeviceWatcher();
   }, 5000);
   watcherTimer.unref();
 }
 
 function disconnectDevice(error = "", { scheduleScan = true } = {}) {
-  if (animationTimer) clearInterval(animationTimer);
-  animationTimer = null;
+  lightingAnimation.stop();
   let closePromise = Promise.resolve();
-  if (hidDevice) {
-    closePromise = hidDevice.close().catch((closeError) => {
+  if (outputDevice) {
+    const device = outputDevice;
+    outputDevice = null;
+    closePromise = device.close().catch((closeError) => {
       console.error("Could not close the LED controller:", closeError);
     });
   }
-  hidDevice = null;
-  screenSyncActive = false;
+  clearSyncSources();
+  priorityMux.release(MANUAL_LIGHTING_SOURCE_ID);
+  priorityMux.release(EFFECT_SOURCE_ID);
+  void temporaryOverride.clear({ restore: false }).catch((overrideError) => {
+    console.error("Could not clear the temporary override after disconnect:", overrideError);
+  });
+  notifyActiveInputSource();
   void screenSyncDiagnostics?.stop("controller-disconnected").catch((diagnosticError) => {
     console.error("Could not finalize Screen Sync diagnostics:", diagnosticError);
   });
@@ -739,9 +798,8 @@ function disconnectDevice(error = "", { scheduleScan = true } = {}) {
 
 function prepareForUpdate() {
   stopDeviceWatcher();
-  if (animationTimer) clearInterval(animationTimer);
-  animationTimer = null;
-  screenSyncActive = false;
+  lightingAnimation.stop();
+  clearSyncSources();
 
   void disconnectDevice("", { scheduleScan: false });
 
@@ -751,7 +809,7 @@ function prepareForUpdate() {
 
 async function connectDevice(targetPath, knownDevices = null) {
   while (connectionPromise) await connectionPromise;
-  if (hidDevice && connectedInfo?.path === targetPath) return deviceState();
+  if (outputDevice?.isConnected && connectedInfo?.path === targetPath) return deviceState();
   const pending = connectDeviceNow(targetPath, knownDevices).catch((error) => {
     console.error("Could not connect to the LED controller:", error);
     disconnectDevice(error.message);
@@ -771,8 +829,11 @@ async function connectDeviceNow(targetPath, knownDevices) {
   if (!selected) throw new Error("That LED controller is no longer available. Scan again.");
   await disconnectDevice("", { scheduleScan: false });
   try {
-    hidDevice = await HIDAsync.open(selected.path);
-    hidDevice.on("error", (error) => disconnectDevice(error.message));
+    const device = createOutputDevice();
+    outputDevice = device;
+    await device.open(selected.path, (error) => {
+      if (outputDevice === device) disconnectDevice(error.message);
+    });
     const savedProfile = settings.devicePath === selected.path && settings.deviceProfile?.ledCount
       ? settings.deviceProfile
       : selected.profile?.ledCount
@@ -783,7 +844,7 @@ async function connectDeviceNow(targetPath, knownDevices) {
     let reportedLedCount;
     let ledCountError;
     try {
-      reportedLedCount = await readControllerLedCount(hidDevice);
+      reportedLedCount = await device.readLedCount();
     } catch (error) {
       ledCountError = error;
     }
@@ -792,8 +853,11 @@ async function connectDeviceNow(targetPath, knownDevices) {
       throw ledCountError || new Error("The controller returned an invalid LED count.");
     }
     if (ledCountResult.countSource === "saved profile") {
+      const detail = ledCountError?.message === "The controller did not report its LED count."
+        ? ""
+        : ` (${ledCountError?.message || "invalid response"})`;
       console.warn(
-        `The controller did not report its LED count (${ledCountError?.message || "invalid response"}); ` +
+        `The controller did not report its LED count${detail}; ` +
         `using the matching saved count of ${ledCountResult.ledCount}.`
       );
     }
@@ -838,10 +902,10 @@ async function connectDeviceNow(targetPath, knownDevices) {
 async function scanAndConnect() {
   if (connectionPromise) await connectionPromise;
   const devices = await getDeviceList();
-  if (hidDevice && !devices.some((device) => device.path === connectedInfo?.path)) {
+  if (outputDevice?.isConnected && !devices.some((device) => device.path === connectedInfo?.path)) {
     await disconnectDevice("The selected controller is no longer available.");
   }
-  if (!hidDevice && devices.length) {
+  if (!outputDevice?.isConnected && devices.length) {
     const selected = selectPreferredController(
       devices,
       settings.devicePath,
@@ -849,7 +913,7 @@ async function scanAndConnect() {
     );
     if (selected) await connectDevice(selected.path, devices);
   }
-  if (hidDevice) stopDeviceWatcher();
+  if (outputDevice?.isConnected) stopDeviceWatcher();
   else scheduleDeviceWatcher();
   return {
     devices,
@@ -870,9 +934,16 @@ function setSettings(input, updateOutput = true, broadcast = true) {
     throw new TypeError("The controller's detected LED count cannot be changed in the strip profile.");
   }
   const changes = validateSettings(input);
+  if (changes.power === false && temporaryOverride.getStatus().active) {
+    void temporaryOverride.clear({ restore: false }).catch((error) => {
+      console.error("Could not clear the temporary override while powering off:", error);
+    });
+  }
   settings = { ...settings, ...changes };
   if (changes.power === false) settings.startupMode = "lighting";
-  if (changes.syncAutoDetect === false) dismissMovieFormatPrompt();
+  if (changes.syncAutoDetect === false || Object.hasOwn(changes, "syncContentMode")) {
+    dismissMovieFormatPrompt();
+  }
   if (Object.hasOwn(changes, "deviceProfile") && connectedInfo) {
     connectedInfo = {
       ...connectedInfo,
@@ -888,10 +959,16 @@ function setSettings(input, updateOutput = true, broadcast = true) {
   saveSettings();
   controllerWriteDiagnostics?.recordSettingsSave(performance.now() - saveStartedAt);
   if (Object.hasOwn(changes, "startWithWindows")) configureLoginItem();
-  if (updateOutput && hidDevice &&
+  if (updateOutput && outputDevice?.isConnected &&
       ["color", "brightness", "channelGains", "effect", "speed", "palette", "ledColors", "power"]
     .some((key) => Object.hasOwn(changes, key))) {
     updateAnimation();
+    if (temporaryOverride.getStatus().active) {
+      void Promise.resolve().then(writeCurrentPriorityWinner).catch((error) => {
+        console.error("Could not refresh temporary override output:", error);
+        if (outputDevice?.isConnected) disconnectDevice(error.message);
+      });
+    }
   }
   if (broadcast) sendSettingsUpdateToRenderer();
   return { settings: settingsSnapshot(), ...deviceState() };
@@ -941,7 +1018,7 @@ function createRemoteControl() {
           scenes: normalizeScenes(settings.scenes)
         },
         device: {
-          connected: Boolean(hidDevice),
+          connected: Boolean(outputDevice?.isConnected),
           name: connectedInfo?.name || "USB LED controller",
           ledCount: connectedInfo?.profile?.ledCount || settings.ledCount,
           profile: {
@@ -950,16 +1027,16 @@ function createRemoteControl() {
           }
         },
         sync: {
-          active: screenSyncActive,
-          mode: screenSyncActive ? settings.startupMode : null
-        }
+          active: syncSources.size > 0,
+          mode: activeSyncMode(),
+          sources: [...syncSources]
+        },
+        temporaryOverride: temporaryOverride.getStatus()
       };
     },
     updateSettings: async (input) => {
       const powerChanged = Object.hasOwn(input, "power");
-      const manualLightingChanged = ["color", "ledColors", "effect"]
-        .some((key) => Object.hasOwn(input, key));
-      if ((input.power === false || manualLightingChanged) && screenSyncActive) {
+      if (input.power === false && syncSources.size > 0) {
         await requestRemoteSync("lighting");
       }
       const result = setSettings(input, !powerChanged);
@@ -969,7 +1046,6 @@ function createRemoteControl() {
     applyScene: async (id) => {
       const scene = settings.scenes.find((item) => item.id === id);
       if (!scene) throw new Error("That saved scene no longer exists.");
-      if (screenSyncActive) await requestRemoteSync("lighting");
       setSettings(settingsFromScene(scene));
     },
     manageScene: (input) => {
@@ -997,6 +1073,8 @@ function createRemoteControl() {
       setSettings({ scenes }, false);
     },
     setSyncMode: requestRemoteSync,
+    startTemporaryOverride,
+    clearTemporaryOverride: () => temporaryOverride.clear(),
     sessionStorePath: path.join(app.getPath("appData"), "ULLeds", "remote-sessions.json")
   });
 }
@@ -1077,7 +1155,7 @@ async function requestRemoteSync(mode) {
   if (!["lighting", "screen", "spotify"].includes(mode)) {
     throw new TypeError("Choose lighting, Screen Sync, or Spotify Sync.");
   }
-  if (mode !== "lighting" && !hidDevice) {
+  if (mode !== "lighting" && !outputDevice?.isConnected) {
     throw new Error("Connect the LED controller before starting sync.");
   }
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -1301,14 +1379,16 @@ function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
     const shutdown = {
       platform: process.platform,
       powered: settings.power,
-      connected: Boolean(hidDevice)
+      connected: Boolean(outputDevice?.isConnected)
     };
     if (!shouldTurnOffForSessionEnd(event, shutdown)) return;
 
     event.preventDefault();
-    if (animationTimer) clearInterval(animationTimer);
-    animationTimer = null;
-    screenSyncActive = false;
+    lightingAnimation.stop();
+    clearSyncSources();
+    void temporaryOverride.clear({ restore: false }).catch((error) => {
+      console.error("Could not clear the temporary override before Windows session end:", error);
+    });
     void turnOffForSessionEnd(event, {
       ...shutdown,
       writeOff: () => writeColor(settings.color, 1, false)
@@ -1331,7 +1411,7 @@ function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
       showMainWindowWhenReady = false;
       loadMainWindowPage = null;
     }
-    screenSyncActive = false;
+    clearSyncSources();
     updateAnimation();
   });
   window.on("maximize", () => sendWindowState());
@@ -1395,7 +1475,7 @@ handleMainWindow("settings:reset", async (_event, requestId) => {
     if (operation.attempt.cancelled) return { cancelled: true };
 
     operation.committed = true;
-    screenSyncActive = false;
+    clearSyncSources();
     remoteControlError = "";
     await remoteControlService?.stop({ revokeSessions: true });
 
@@ -1407,7 +1487,7 @@ handleMainWindow("settings:reset", async (_event, requestId) => {
     saveSettings();
     configureLoginItem();
 
-    if (hidDevice) updateAnimation();
+    if (outputDevice?.isConnected) updateAnimation();
     return {
       settings: settingsSnapshot(),
       device: deviceState(),
@@ -1436,8 +1516,11 @@ handleMainWindow("app:initial-state", () => ({
   version: app.getVersion(),
   settings: settingsSnapshot(),
   device: deviceState(),
+  temporaryOverride: temporaryOverride.getStatus(),
   remoteControl: getRemoteControlStatus()
 }));
+handleMainWindow("lighting:temporary-override:start", (_event, input) => startTemporaryOverride(input));
+handleMainWindow("lighting:temporary-override:clear", () => temporaryOverride.clear());
 handleMainWindow("remote-control:status", () => getRemoteControlStatus());
 handleMainWindow("remote-control:enable", async (_event, address) => {
   try {
@@ -1450,6 +1533,7 @@ handleMainWindow("remote-control:enable", async (_event, address) => {
 handleMainWindow("remote-control:disable", () => disableRemoteControl());
 handleMainWindow("settings:update", async (_event, input) => {
   const powerChanged = input && Object.hasOwn(input, "power");
+  if (input?.power === false && syncSources.size > 0) await requestRemoteSync("lighting");
   const result = setSettings(input, !powerChanged, false);
   if (powerChanged) await updateAnimation({ waitForOutput: true });
   return result;
@@ -1591,49 +1675,67 @@ handleMainWindow("device:disconnect", () => {
 });
 handleMainWindow("screen-sync:start", (_event, mode = "screen") => {
   if (!["screen", "spotify"].includes(mode)) throw new TypeError("Screen Sync mode is invalid.");
-  if (!hidDevice) throw new Error("Connect the LED controller before starting screen sync.");
+  if (!outputDevice?.isConnected) throw new Error("Connect the LED controller before starting screen sync.");
   if (!settings.power) throw new Error("Turn the LEDs on before starting screen sync.");
-  screenSyncDiagnostics.start({
-    fps: settings.syncFps,
-    ledCount: settings.deviceProfile.ledCount
-  });
-  dismissMovieFormatPrompt();
-  settings.startupMode = mode;
+  if (syncSources.has(mode)) return { active: true, mode };
+  if (mode === "screen") {
+    screenSyncDiagnostics.start({
+      fps: settings.syncFps,
+      ledCount: settings.deviceProfile.ledCount
+    });
+    dismissMovieFormatPrompt();
+  }
+  syncSources.add(mode);
+  settings.startupMode = activeSyncMode();
   saveSettings();
-  screenSyncActive = true;
-  updateAnimation();
-  return { active: true };
+  return { active: true, mode };
 });
 handleMainWindow("spotify-sync:artwork", () => readSpotifyArtwork());
 handleMainWindow("spotify-sync:playback-status", () => readSpotifyPlaybackStatus());
-handleMainWindow("screen-sync:colors", (_event, colors) => {
-  if (!screenSyncActive || !hidDevice || !settings.power) return { active: false };
+handleMainWindow("screen-sync:colors", (_event, colors, mode = "screen") => {
+  if (!["screen", "spotify"].includes(mode)) throw new TypeError("Sync source is invalid.");
+  if (!syncSources.has(mode) || !outputDevice?.isConnected || !settings.power) return { active: false };
   const ledCount = settings.deviceProfile?.ledCount;
   if (!Number.isInteger(ledCount)) throw new Error("The controller's LED count has not been detected.");
   if (!Array.isArray(colors) || colors.length !== ledCount || !colors.every(validColor)) {
-    throw new TypeError(`Screen sync must provide one valid color for each of the ${ledCount} LEDs.`);
+    throw new TypeError(`${mode} sync must provide one valid color for each of the ${ledCount} LEDs.`);
   }
-  return writeScreenSyncColors(colors).then(() => ({ active: true }));
+  return writeSyncColors(mode, colors).then(() => ({ active: true }));
 });
 onMainWindow("screen-sync:performance", (_event, metrics) => {
-  if (!screenSyncActive) return;
+  if (!syncSources.has("screen")) return;
   try {
     screenSyncDiagnostics.recordRendererPerformance(metrics);
   } catch (error) {
     console.error("Could not record Screen Sync performance metrics:", error);
   }
 });
-handleMainWindow("screen-sync:stop", async () => {
-  screenSyncActive = false;
-  settings.startupMode = "lighting";
-  saveSettings();
-  dismissMovieFormatPrompt();
-  try {
-    await updateAnimation({ waitForOutput: true });
-  } finally {
-    await screenSyncDiagnostics.stop("user");
+handleMainWindow("screen-sync:stop", async (_event, mode = "all") => {
+  if (mode !== "all" && !["screen", "spotify"].includes(mode)) {
+    throw new TypeError("Sync source is invalid.");
   }
-  return { active: false, startupMode: settings.startupMode };
+  const stopping = mode === "all" ? ["screen", "spotify"] : [mode];
+  const released = stopping.filter((source) => syncSources.delete(source));
+  for (const source of stopping) priorityMux.release(SYNC_SOURCE_IDS[source]);
+  const stopDiagnostics = released.includes("screen");
+  if (released.includes("screen")) {
+    dismissMovieFormatPrompt();
+  }
+  if (released.length) {
+    settings.startupMode = activeSyncMode() || "lighting";
+    saveSettings();
+    if (outputDevice?.isConnected && settings.power) {
+      const winner = priorityMux.getWinner(Date.now());
+      if (winner) await writeColors(winner.colors, winner.effectBrightness, settings.power, winner.frameType);
+      else await updateAnimation({ waitForOutput: true });
+    }
+  }
+  if (stopDiagnostics) await screenSyncDiagnostics.stop("user");
+  return {
+    active: syncSources.size > 0,
+    mode: activeSyncMode(),
+    startupMode: settings.startupMode
+  };
 });
 handleMainWindow("screen-sync:source", async () => {
   const sources = await desktopCapturer.getSources({
@@ -1646,7 +1748,7 @@ handleMainWindow("screen-sync:source", async () => {
   return { id: source.id };
 });
 onMainWindow("screen-sync:movie-detected", (_event, aspectRatio) => {
-  if (!screenSyncActive || !settings.syncAutoDetect ||
+  if (!syncSources.has("screen") || !settings.syncAutoDetect ||
       !Number.isFinite(aspectRatio) || aspectRatio < 1.78 || aspectRatio > 2.6) {
     return;
   }
@@ -1669,7 +1771,7 @@ ipcMain.on("movie-format:choose", (event, choice) => {
       event.senderFrame.url !== pathToFileURL(path.join(__dirname, "ui", "movie-format-prompt.html")).href ||
       !message || typeof choice?.promptId !== "string" ||
       choice.promptId !== message.promptId || !["use", "keep"].includes(choice.choice) ||
-      !screenSyncActive || !settings.syncAutoDetect) {
+      !syncSources.has("screen") || !settings.syncAutoDetect) {
     return;
   }
   if (choice.choice === "use" && mainWindow && !mainWindow.isDestroyed()) {
@@ -2026,7 +2128,7 @@ app.whenReady().then(async () => {
     broadcastDeviceState(error.message);
     scheduleDeviceWatcher();
   }).finally(() => {
-    if (!hidDevice) scheduleDeviceWatcher();
+    if (!outputDevice?.isConnected) scheduleDeviceWatcher();
   });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow({ showWhenReady: true });
@@ -2051,7 +2153,7 @@ app.on("before-quit", () => {
   void remoteControlService?.stop().catch((error) => {
     console.error("Could not stop the local remote control server:", error);
   });
-  screenSyncActive = false;
+  clearSyncSources();
   disconnectDevice();
   tray?.destroy();
   tray = null;

@@ -262,8 +262,9 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(app, /if \(!artwork\) \{\s+observeSpotifyPlaybackForAutoStart\(null\);\s+if \(session\.hasMedia\)/);
   assert.match(app, /session\.hasMedia = true/);
   assert.match(app, /Waiting for a Spotify track/);
-  assert.match(app, /if \(sync\.session\?\.mode === mode\)/);
-  assert.match(app, /await stopScreenSync\(\);\s+if \(!sync\.session && !sync\.lifecycle\.isStopping\) start\(\)/);
+  assert.match(app, /if \(syncSession\(mode\)\) \{\s+void stopSyncSource\(mode\)/);
+  assert.match(app, /const pending = sync\.lifecycles\.spotify\.start/);
+  assert.doesNotMatch(app, /await stopScreenSync\(\);\s+if \(!sync\.session/);
   assert.match(app, /function scheduleSpotifyAudioSample\(session, sendLatestFrame\)/);
   assert.match(app, /session\.audioTimer = window\.setTimeout/);
   assert.match(app, /clearTimeout\(session\.audioTimer\)/);
@@ -272,7 +273,7 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(app, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
   assert.match(app, /window\.ull\.startScreenSync\("spotify"\)/);
   assert.match(main, /handleMainWindow\("spotify-sync:artwork", \(\) => readSpotifyArtwork\(\)\)/);
-  assert.match(main, /settings\.startupMode = mode;\s+saveSettings\(\)/);
+  assert.match(main, /settings\.startupMode = activeSyncMode\(\);\s+saveSettings\(\)/);
   assert.match(main, /execFile\(helperPath/);
   assert.match(main, /spotify-media\.exe/);
   assert.match(main, /spotifySensitivity: 100/);
@@ -388,23 +389,24 @@ test("power off always reaches the controller and the switch reports the live st
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
-  const screenSync = fs.readFileSync(path.join(__dirname, "..", "screen-sync.js"), "utf8");
+  const animationModule = fs.readFileSync(path.join(__dirname, "..", "lighting-animation.js"), "utf8");
 
   assert.match(html, /id="power-toggle"[^>]*role="switch" aria-checked="true"/);
-  assert.match(app, /void stopActiveSync\(\);\s+queueSettings\(\{ power: !state\.settings\.power \}, true\);/);
+  assert.match(app, /queueSettings\(\{ power: !state\.settings\.power \}, true\);/);
   assert.match(app, /\$\("#power-toggle"\)\.setAttribute\("aria-checked", String\(settings\.power\)\)/);
   assert.match(app, /\$\("#power-state"\)\.textContent = settings\.power \? "On" : "Off"/);
   assert.match(app, /root\.setProperty\("--led-opacity", settings\.power \? String\(settings\.brightness \/ 100\) : "0"\)/);
   assert.match(app, /\$\("#monitor"\)\.dataset\.power = settings\.power \? "on" : "off"/);
-  assert.match(main, /handleMainWindow\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+const result = setSettings\(input, !powerChanged, false\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
-  assert.match(main, /const powerOff = !settings\.power;\s+if \(!powerOff && \(screenSyncActive \|\| isSyncStartupMode\(settings\.startupMode\)\)\) return;/);
-  assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
-  assert.match(main, /if \(!hidDevice \|\| powerOff \|\| settings\.effect === "steady"\) \{[\s\S]*?if \(hidDevice\) \{[\s\S]*?writeColor\(settings\.color\)[\s\S]*?return;\s+\}/);
-  const animation = main.slice(main.indexOf("function updateAnimation"), main.indexOf("function deviceState"));
-  assert.match(animation, /settings\.effect === "steady"[\s\S]*?return;\s+\}\s+const interval/);
-  assert.match(main, /handleMainWindow\("screen-sync:colors", \(_event, colors\) => \{\s+if \(!screenSyncActive \|\| !hidDevice \|\| !settings\.power\) return \{ active: false \};/);
-  assert.match(main, /handleMainWindow\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+settings\.startupMode = "lighting";\s+saveSettings\(\);\s+dismissMovieFormatPrompt\(\);\s+try \{\s+await updateAnimation\(\{ waitForOutput: true \}\);\s+\} finally \{\s+await screenSyncDiagnostics\.stop\("user"\);/);
-  assert.match(main, /function updateAnimation\(\{ waitForOutput = false \}/);
+  assert.match(main, /handleMainWindow\("settings:update", async \(_event, input\) => \{\s+const powerChanged = input && Object\.hasOwn\(input, "power"\);\s+if \(input\?\.power === false && syncSources\.size > 0\) await requestRemoteSync\("lighting"\);\s+const result = setSettings\(input, !powerChanged, false\);\s+if \(powerChanged\) await updateAnimation\(\{ waitForOutput: true \}\);/);
+  assert.match(animationModule, /if \(!isConnected\(\) \|\| powerOff \|\| settings\.effect === "steady"\) \{/);
+  assert.match(animationModule, /if \(!isConnected\(\) \|\| powerOff \|\| settings\.effect === "steady"\) \{[\s\S]*?writeColor\(settings\.color, 1, settings\.power\)/);
+  assert.match(main, /if \(input\?\.power === false && syncSources\.size > 0\) await requestRemoteSync\("lighting"\)/);
+  assert.match(main, /handleMainWindow\("screen-sync:colors", \(_event, colors, mode = "screen"\) => \{\s+if \(!\["screen", "spotify"\]\.includes\(mode\)\) throw new TypeError/);
+  assert.match(main, /priority: syncSourcePriority\(mode\),\s+colors,\s+frameType: "realtime"/);
+  assert.match(main, /handleMainWindow\("screen-sync:stop", async \(_event, mode = "all"\) => \{/);
+  assert.match(main, /priorityMux\.release\(SYNC_SOURCE_IDS\[source\]\)/);
+  assert.match(main, /settings\.startupMode = activeSyncMode\(\) \|\| "lighting"/);
+  assert.match(main, /function updateAnimation\(options\) \{\s+if \(settings\.effect !== "steady"/);
 });
 
 test("Windows session shutdown powers off connected LEDs without changing saved power", () => {
@@ -634,13 +636,13 @@ test("controller reconnect polling sleeps while connected and retries only while
   const watcher = main.slice(main.indexOf("function stopDeviceWatcher"), main.indexOf("async function connectDevice"));
   const startup = main.slice(main.indexOf("void scanAndConnect().catch"), main.indexOf('app.on("activate"'));
 
-  assert.match(watcher, /function scheduleDeviceWatcher\(\) \{\s+if \(watcherTimer \|\| isQuitting \|\| hidDevice\) return/);
+  assert.match(watcher, /function scheduleDeviceWatcher\(\) \{\s+if \(watcherTimer \|\| isQuitting \|\| outputDevice\?\.isConnected\) return/);
   assert.match(watcher, /watcherTimer = setTimeout\(async \(\) =>/);
-  assert.match(watcher, /if \(isQuitting \|\| hidDevice\) return/);
-  assert.match(watcher, /if \(!hidDevice\) scheduleDeviceWatcher\(\)/);
+  assert.match(watcher, /if \(isQuitting \|\| outputDevice\?\.isConnected\) return/);
+  assert.match(watcher, /if \(!outputDevice\?\.isConnected\) scheduleDeviceWatcher\(\)/);
   assert.doesNotMatch(watcher, /setInterval/);
-  assert.match(main, /if \(hidDevice\) stopDeviceWatcher\(\);\s+else scheduleDeviceWatcher\(\)/);
-  assert.match(startup, /if \(!hidDevice\) scheduleDeviceWatcher\(\)/);
+  assert.match(main, /if \(outputDevice\?\.isConnected\) stopDeviceWatcher\(\);\s+else scheduleDeviceWatcher\(\)/);
+  assert.match(startup, /if \(!outputDevice\?\.isConnected\) scheduleDeviceWatcher\(\)/);
 });
 
 test("release carousel has dated entries and compact bounded navigation", () => {
@@ -1049,20 +1051,22 @@ test("saved mode is restored at Windows sign-in and sync modes resume automatica
 
 test("saved sync modes preserve output during reconnect and fall back when resume fails", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const device = fs.readFileSync(path.join(__dirname, "..", "pc-sync-hid-device.js"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const animationModule = fs.readFileSync(path.join(__dirname, "..", "lighting-animation.js"), "utf8");
 
-  assert.match(main, /function updateAnimation\(\{ waitForOutput = false \} = \{\}\)/);
-  assert.match(main, /if \(!powerOff && \(screenSyncActive \|\| isSyncStartupMode\(settings\.startupMode\)\)\) return/);
-  assert.match(main, /settings\.startupMode = "lighting";\s+saveSettings\(\);/);
-  assert.match(main, /parseDeviceLedCount\(response, messageId\)/);
-  assert.match(main, /response\[offset \+ 3\] !== messageId \|\| response\[offset \+ 4\] !== 130/);
-  assert.match(app, /const startingScreen = lifecycle\.isStarting && sync\.requestedMode === "screen"/);
+  assert.match(main, /function updateAnimation\(options\)/);
+  assert.match(animationModule, /await writeEffectColor\(frame\.color, frame\.brightness\)/);
+  assert.match(main, /settings\.startupMode = activeSyncMode\(\) \|\| "lighting";\s+saveSettings\(\);/);
+  assert.match(device, /parseDeviceLedCount\(response\)/);
+  assert.doesNotMatch(device, /response\[offset \+ 3\] !== messageId/);
+  assert.match(app, /const startingScreen = screenLifecycle\.isStarting && sync\.requestedModes\.has\("screen"\)/);
   assert.match(app, /resumingNow \? "Starting…"/);
   assert.match(app, /startingScreen \? "Starting display capture…"/);
-  assert.match(app, /!sessionOwnsStream && \(hardwareSyncStarted \|\| automatic\) && !sync\.lifecycle\.isStopping/);
-  assert.match(app, /const result = await window\.ull\.stopScreenSync\(\);\s+state\.settings\.startupMode = result\.startupMode;/);
+  assert.match(app, /!sessionOwnsStream && \(hardwareSyncStarted \|\| automatic\) &&\s+!sync\.lifecycles\.screen\.isStopping/);
+  assert.match(app, /const result = await window\.ull\.stopScreenSync\("screen"\);\s+state\.settings\.startupMode = result\.startupMode;/);
   assert.match(app, /runSpotifySyncStart\(audioCapture, audioContext, audioReady, automatic, playbackTriggered\)/);
-  assert.match(app, /\(hardwareSyncStarted \|\| automatic\) && !sync\.lifecycle\.isStopping\) \{\s+try \{\s+const result = await window\.ull\.stopScreenSync\(\);\s+state\.settings\.startupMode = result\.startupMode;/);
+  assert.match(app, /\(hardwareSyncStarted \|\| automatic\) && !sync\.lifecycles\.spotify\.isStopping\) \{\s+try \{\s+const result = await window\.ull\.stopScreenSync\("spotify"\);\s+state\.settings\.startupMode = result\.startupMode;/);
   assert.match(app, /sync\.autoAttempted = true;\s+if \(mode === "spotify" && state\.settings\.spotifyAutoStart === false\) return;\s+updatePreview\(\);\s+if \(mode === "screen"\) void startScreenSync\(\{ automatic: true \}\);\s+else void startSpotifySync\(\{ automatic: true \}\)/);
 });
 
@@ -1086,8 +1090,8 @@ test("sync mode is saved only while active and manual stop restores the lighting
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
 
   assert.doesNotMatch(start, /updateSettings\(\{\s*resumeScreenSync:\s*true\s*\}\)/);
-  assert.match(main, /settings\.startupMode = mode;\s+saveSettings\(\)/);
-  assert.match(main, /handleMainWindow\("screen-sync:stop", async \(\) => \{\s+screenSyncActive = false;\s+settings\.startupMode = "lighting";\s+saveSettings\(\)/);
+  assert.match(main, /settings\.startupMode = activeSyncMode\(\);\s+saveSettings\(\)/);
+  assert.match(main, /handleMainWindow\("screen-sync:stop", async \(_event, mode = "all"\) => \{/);
   assert.match(main, /if \(changes\.power === false\) settings\.startupMode = "lighting"/);
 });
 
@@ -1195,8 +1199,8 @@ test("widescreen detection is optional, stable, and asks before changing the cur
   assert.match(app, /syncAutoDetect: true/);
   assert.match(app, /detectLetterboxAspectRatio/);
   assert.match(app, /notifyMovieFormat\(stableRatio\)/);
-  assert.match(app, /movieFormatPromptGate\.shouldPrompt\(stableRatio\)/);
-  assert.match(app, /movieFormatPromptGate\.reset\(\)/);
+  assert.match(app, /movieAreaPolicy\.shouldPrompt\(stableRatio, manual\)/);
+  assert.match(app, /movieAreaPolicy\.reset\(\)/);
   assert.match(app, /function applyDetectedMovieFormat/);
   assert.match(main, /width = 410;\s+const height = 92/);
   assert.match(main, /prompt\.setAlwaysOnTop\(true, "screen-saver"\)/);
@@ -1206,7 +1210,9 @@ test("widescreen detection is optional, stable, and asks before changing the cur
   assert.match(main, /choice\.choice === "use"[\s\S]*screen-sync:movie-format-applied/);
   assert.doesNotMatch(main, /Notification\(/);
   assert.match(main, /!settings\.syncAutoDetect/);
-  assert.match(app, /letterboxTracker\.isMissingStable\(\)[\s\S]*session\.detectedAspectRatio = null/);
+  assert.match(main, /changes\.syncAutoDetect === false \|\| Object\.hasOwn\(changes, "syncContentMode"\)/);
+  assert.match(app, /letterboxTracker\.isMissingStable\(\)[\s\S]*movieAreaPolicy\.onBarsMissing\(\)/);
+  assert.doesNotMatch(app, /detectedAspectRatio = null/);
   assert.match(promptHtml, /href="styles\.css"/);
   assert.match(promptHtml, /class="btn btn-sm" type="button">Keep current/);
   assert.match(promptHtml, /class="btn btn-primary btn-sm" type="button">Use detected/);
@@ -1224,6 +1230,7 @@ test("widescreen detection is optional, stable, and asks before changing the cur
   assert.match(promptApp, /choose\("keep"\)/);
   assert.match(screenSync, /function detectLetterboxAspectRatio/);
   assert.match(screenSync, /function createLetterboxStability/);
+  assert.match(screenSync, /function createMovieAreaPolicy/);
 });
 
 test("Updates use GitHub Releases only and local-folder updates are disabled", () => {
@@ -1339,8 +1346,8 @@ test("full reset is confirmed, clears app and imported profile data, and preserv
   assert.match(app, /window\.ull\.cancelResetData\(current\.id\)/);
   assert.match(app, /current\.attempt\.wait\(queue\.flushing\)/);
   assert.match(app, /queue\.changes = \{\}/);
-  assert.match(app, /sync\.generation \+= 1/);
-  assert.match(app, /generation !== sync\.generation/);
+  assert.match(app, /sync\.generations\[mode\] \+= 1/);
+  assert.match(app, /generation !== sync\.generations\.screen/);
   assert.match(preload, /resetData: \(requestId\) => ipcRenderer\.invoke\("settings:reset", requestId\)/);
   assert.match(preload, /cancelResetData: \(requestId\) => ipcRenderer\.invoke\("settings:reset:cancel", requestId\)/);
   assert.match(main, /handleMainWindow\("settings:reset"/);
@@ -1349,7 +1356,7 @@ test("full reset is confirmed, clears app and imported profile data, and preserv
   const resetHandler = main.slice(main.indexOf('handleMainWindow("settings:reset"'), main.indexOf('handleMainWindow("app:initial-state"'));
   assert.doesNotMatch(resetHandler, /await disconnectDevice\(\)/);
   assert.doesNotMatch(resetHandler, /await scanAndConnect\(\)/);
-  assert.match(resetHandler, /if \(hidDevice\) updateAnimation\(\)/);
+  assert.match(resetHandler, /if \(outputDevice\?\.isConnected\) updateAnimation\(\)/);
   assert.match(main, /configureLoginItem\(\)/);
   assert.match(resetData, /path\.join\(root, "ULLeds", "settings\.json"\)/);
   assert.match(resetData, /path\.join\(root, "DX Light", "config\.json"\)/);
@@ -1369,6 +1376,76 @@ test("the Device page can list and switch between detected compatible controller
   assert.match(main, /listSupportedControllers\(await listHidDevicesAsync\(\), profiles\)/);
   assert.match(html, /Choose a connected controller and review its profile/);
   assert.match(main, /listSupportedControllers\(await listHidDevicesAsync\(\), profiles\)/);
+});
+
+test("the lighting preview shows the winning source without exposing the development override test", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+
+  assert.match(html, /id="active-source"/);
+  assert.doesNotMatch(html, /priority-mux-test|Test override/);
+  assert.match(app, /function renderActiveInputSource\(\)/);
+  assert.match(app, /window\.ull\.onActiveInputSource/);
+  assert.match(preload, /onActiveInputSource: \(callback\) => listen\("lighting:active-source", callback\)/);
+  assert.match(main, /activeSource: getActiveInputSource\(\)/);
+  assert.match(main, /winner\.priority === SOURCE_PRIORITIES\.temporaryOverride\) return "Override"/);
+  assert.match(main, /winner\.id === SYNC_SOURCE_IDS\.screen\) return "Screen Sync"/);
+  assert.match(main, /winner\.id === SYNC_SOURCE_IDS\.spotify\) return "Spotify Sync"/);
+  assert.match(main, /winner\.id === EFFECT_SOURCE_ID\) return "Effect"/);
+  assert.match(main, /mainWindow\.webContents\.send\("lighting:active-source", source\)/);
+  assert.match(main, /notifyActiveInputSource\(winner\)/);
+  assert.doesNotMatch(`${app}\n${main}\n${preload}`, /priority-mux:test|priorityMuxTest|isPaused/);
+});
+
+test("the removed priority-mux test renderer is not called during controller scans", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  assert.doesNotMatch(app, /renderPriorityMuxTestButton\s*\(/);
+});
+
+test("temporary overrides have separate desktop and paired-phone controls", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const remoteHtml = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
+  const remoteApp = fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8");
+  const remoteControl = fs.readFileSync(path.join(__dirname, "..", "remote-control.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+
+  assert.match(html, /id="temporary-override-start"/);
+  assert.match(html, /id="temporary-override-clear"/);
+  assert.match(app, /window\.ull\.startTemporaryOverride\(/);
+  assert.match(remoteHtml, /id="start-override"/);
+  assert.match(remoteHtml, /id="clear-override"/);
+  assert.match(remoteApp, /request\("\/api\/override", input\)/);
+  assert.match(remoteApp, /request\("\/api\/override\/clear", \{\}\)/);
+  assert.match(remoteControl, /pathname === "\/api\/override\/clear"/);
+  assert.match(main, /priority: SOURCE_PRIORITIES\.temporaryOverride,\s+colors,\s+expiresAt: lease\.expiresAt/);
+  assert.match(main, /temporaryOverride: temporaryOverride\.getStatus\(\)/);
+  assert.match(preload, /startTemporaryOverride: \(input\) => ipcRenderer\.invoke\("lighting:temporary-override:start", input\)/);
+});
+
+test("Screen Sync and Spotify Sync publish as independent priority-mux sources", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+
+  assert.match(main, /const SYNC_SOURCE_IDS = Object\.freeze\(\{ screen: "screen-sync", spotify: "spotify-sync" \}\)/);
+  assert.match(main, /syncSources\.add\(mode\)/);
+  assert.match(main, /priority: syncSourcePriority\(mode\),\s+colors,\s+frameType: "realtime"/);
+  assert.match(main, /if \(syncSources\.has\("spotify"\)\) return "spotify";\s+if \(syncSources\.has\("screen"\)\) return "screen"/);
+  assert.match(main, /priorityMux\.release\(SYNC_SOURCE_IDS\[source\]\)/);
+  assert.match(preload, /sendScreenSyncColors: \(colors, mode = "screen"\) => ipcRenderer\.invoke\("screen-sync:colors", colors, mode\)/);
+  assert.match(preload, /stopScreenSync: \(mode = "all"\) => ipcRenderer\.invoke\("screen-sync:stop", mode\)/);
+  assert.match(app, /lifecycles: \{\s+screen: window\.ullScreenSyncLifecycle\.createScreenSyncLifecycle\(\),\s+spotify: window\.ullScreenSyncLifecycle\.createScreenSyncLifecycle\(\)/);
+  assert.match(app, /send: \(colors\) => window\.ull\.sendScreenSyncColors\(colors, session\.mode\)/);
+  assert.match(app, /const primarySyncSession = \(\) => syncSession\("spotify"\) \|\| syncSession\("screen"\)/);
+  assert.match(main, /sources: \[\.\.\.syncSources\]/);
+  assert.match(fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8"), /activeSources\.includes\("screen"\)/);
+  assert.match(fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8"), /activeSources\.includes\("spotify"\)/);
+  assert.match(app, /const sessionWasActive = syncSession\("spotify"\) === session/);
+  assert.doesNotMatch(app, /if \(syncSession\("spotify"\) === session\) \{\s+await stopSpotifySync\(\)/);
 });
 
 test("the interface uses bundled Noto Sans typography without a header wordmark", () => {
@@ -1475,8 +1552,8 @@ test("screen sync uses an updated strip layout immediately after profile edits",
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
   assert.match(app, /const stripLayoutSignature = \(layout\) => JSON\.stringify\(\[layout\.ledCount, layout\.indices\]\)/);
-  assert.match(app, /if \(sync\.session\.layoutSignature !== signature\) \{\s+sync\.session\.layout = layout;\s+sync\.session\.layoutSignature = signature;\s+sync\.session\.colors = null;/);
-  assert.match(app, /sync\.session\.layout = layout/);
+  assert.match(app, /for \(const session of Object\.values\(sync\.sessions\)\) \{\s+if \(!session\) continue;\s+const signature = stripLayoutSignature\(layout\);\s+if \(session\.layoutSignature !== signature\)/);
+  assert.match(app, /session\.layout = layout/);
 });
 
 test("Screen Sync serializes its stop operation and permits canceling startup", () => {
@@ -1484,10 +1561,10 @@ test("Screen Sync serializes its stop operation and permits canceling startup", 
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
 
   assert.match(html, /<script src="\.\.\/screen-sync-lifecycle\.js"><\/script>/);
-  assert.match(app, /sync\.lifecycle\.start\(\(\) => runScreenSyncStart\(options\)\)/);
-  assert.match(app, /sync\.lifecycle\.stop\(\(\) => \{/);
+  assert.match(app, /sync\.lifecycles\.screen\.start\(\(\) => runScreenSyncStart\(options\)\)/);
+  assert.match(app, /const pending = lifecycle\.stop\(\(\) => \{/);
   assert.match(app, /lifecycle\.isStopping\s*\?\s*"Stopping…"/);
-  assert.match(app, /Boolean\(sync\.session\) \|\| sync\.lifecycle\.isStarting/);
+  assert.match(app, /hasAnySyncSession\(\) \|\| isAnySyncBusy\(\)/);
 });
 
 test("Screen Sync sends sampled screen colors without synthetic transition blending", () => {

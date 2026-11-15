@@ -279,6 +279,21 @@ function updateColorControl(settings, ledCount) {
   $("#color-value").textContent = color.toUpperCase();
 }
 
+function renderTemporaryOverride(status) {
+  const active = Boolean(status?.active);
+  const effectNames = {
+    steady: "Solid",
+    breathe: "Breathe",
+    spectrum: "Spectrum",
+    palette: "Palette drift"
+  };
+  $("#override-status").textContent = active
+    ? `${effectNames[status.effect] || "Lighting"} · ${Math.ceil(status.remainingMs / 1000)}s left`
+    : "No override active";
+  $("#start-override").disabled = !latestState?.device.connected || !latestState.settings.power;
+  $("#clear-override").disabled = !active;
+}
+
 function renderState(data) {
   latestState = data;
   const { settings, device, sync } = data;
@@ -317,13 +332,22 @@ function renderState(data) {
   $("#sync-auto-detect").checked = settings.syncAutoDetect;
   $("#spotify-sensitivity").value = settings.spotifySensitivity;
   $("#spotify-sensitivity-value").textContent = `${settings.spotifySensitivity}%`;
-  $("#screen-sync").setAttribute("aria-pressed", String(sync.active && sync.mode === "screen"));
-  $("#spotify-sync").setAttribute("aria-pressed", String(sync.active && sync.mode === "spotify"));
+  const activeSources = Array.isArray(sync.sources) ? sync.sources : [];
+  const screenActive = activeSources.length > 0
+    ? activeSources.includes("screen")
+    : sync.active && sync.mode === "screen";
+  const spotifyActive = activeSources.length > 0
+    ? activeSources.includes("spotify")
+    : sync.active && sync.mode === "spotify";
+  $("#screen-sync").setAttribute("aria-pressed", String(screenActive));
+  $("#spotify-sync").setAttribute("aria-pressed", String(spotifyActive));
   $("#screen-sync").disabled = !device.connected;
   $("#spotify-sync").disabled = !device.connected;
   $("#stop-sync").disabled = !sync.active;
   $("#sync-status").textContent = sync.active
-    ? `${sync.mode === "spotify" ? "Spotify" : "Screen"} Sync active`
+    ? activeSources.length > 1
+      ? "Screen and Spotify Sync active"
+      : `${sync.mode === "spotify" ? "Spotify" : "Screen"} Sync active`
     : "Not active";
   $("#sync-note").textContent = !device.connected
     ? "Connect the LED controller to start Sync."
@@ -332,6 +356,7 @@ function renderState(data) {
       : sync.active
         ? "Screen colors are captured on your PC."
         : "Spotify audio is analyzed locally on your PC.";
+  renderTemporaryOverride(data.temporaryOverride);
   renderScenes(settings.scenes);
   setConnection(true, "Connected");
 }
@@ -489,6 +514,18 @@ $("#sync-fps").addEventListener("change", (event) => void updateSettings({ syncF
 $("#sync-content").addEventListener("change", (event) => void updateSettings({ syncContentMode: event.target.value }));
 $("#sync-auto-detect").addEventListener("change", (event) => void updateSettings({ syncAutoDetect: event.target.checked }));
 $("#spotify-sensitivity").addEventListener("change", (event) => void updateSettings({ spotifySensitivity: Number(event.target.value) }));
+$("#start-override").addEventListener("click", () => {
+  if (!latestState) return;
+  const input = {
+    color: $("#override-color").value,
+    effect: $("#override-effect").value,
+    durationMs: Number($("#override-duration").value)
+  };
+  void runAction("#override-message", () => request("/api/override", input), "Temporary override started.");
+});
+$("#clear-override").addEventListener("click", () => {
+  void runAction("#override-message", () => request("/api/override/clear", {}), "Override cleared.");
+});
 $("#save-scene").addEventListener("click", () => {
   const name = window.prompt("Name this lighting scene");
   if (name?.trim()) {

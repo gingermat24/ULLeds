@@ -92,6 +92,8 @@ function createRemoteControlService({
   applyScene,
   manageScene,
   setSyncMode,
+  startTemporaryOverride,
+  clearTemporaryOverride,
   networkInterfaces = getPrivateNetworkInterfaces,
   uiDirectory = path.join(__dirname, "ui"),
   sessionStorePath = "",
@@ -99,7 +101,8 @@ function createRemoteControlService({
 }) {
   if (typeof getState !== "function" || typeof updateSettings !== "function" ||
       typeof applyScene !== "function" || typeof manageScene !== "function" ||
-      typeof setSyncMode !== "function") {
+      typeof setSyncMode !== "function" || typeof startTemporaryOverride !== "function" ||
+      typeof clearTemporaryOverride !== "function") {
     throw new TypeError("Remote control requires state and action handlers.");
   }
   if (typeof sessionStorePath !== "string" ||
@@ -413,6 +416,24 @@ function createRemoteControlService({
         sendJson(response, 200, { updated: true });
       } catch (error) {
         sendError(response, error.statusCode || 400, error.message || "The setting could not be updated.");
+      }
+      return;
+    }
+
+    if (request.method === "POST" &&
+        (pathname === "/api/override" || pathname === "/api/override/clear")) {
+      if (!sessionFor(request)) {
+        sendError(response, 401, "Pair this phone with ULLeds to continue.");
+        return;
+      }
+      try {
+        const input = await readJson(request);
+        const status = pathname === "/api/override"
+          ? await startTemporaryOverride(input)
+          : await clearTemporaryOverride();
+        sendJson(response, 200, status);
+      } catch (error) {
+        sendError(response, error.statusCode || 400, error.message || "The temporary override could not be changed.");
       }
       return;
     }

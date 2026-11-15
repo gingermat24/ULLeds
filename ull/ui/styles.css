@@ -525,6 +525,8 @@ main {
   height: clamp(22rem, 62cqh, 36rem);
 }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
+.preview-heading { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.source-indicator { color: var(--muted); white-space: nowrap; }
 .power {
   display: flex;
   align-items: center;

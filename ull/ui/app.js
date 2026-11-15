@@ -56,7 +56,8 @@ let state = {
     startWithWindows: true,
     startupMode: "lighting"
   },
-  device: { connected: false, name: "", serialNumber: "" }
+  device: { connected: false, name: "", serialNumber: "", activeSource: null },
+  temporaryOverride: { active: false, expiresAt: null, remainingMs: 0 }
 };
 let remoteControlBusy = false;
 let resetAttemptSequence = 0;
@@ -69,17 +70,28 @@ const queue = { changes: {}, timer: null, flushing: null };
 let selectedLedIndices = new Set();
 let selectedLedAnchorIndex = null;
 
-// Screen Sync / Spotify Sync. Only one session can run at a time.
+// Each sync source owns its capture lifecycle and may run beside the other.
 const sync = {
-  session: null,
-  lifecycle: window.ullScreenSyncLifecycle.createScreenSyncLifecycle(),
-  generation: 0,
-  requestedMode: null,
+  sessions: { screen: null, spotify: null },
+  lifecycles: {
+    screen: window.ullScreenSyncLifecycle.createScreenSyncLifecycle(),
+    spotify: window.ullScreenSyncLifecycle.createScreenSyncLifecycle()
+  },
+  generations: { screen: 0, spotify: 0 },
+  requestedModes: new Set(),
   autoAttempted: false,
   screenError: "",
   spotifyError: "",
   spotifyAutoStartError: ""
 };
+const syncSession = (mode) => sync.sessions[mode] || null;
+const primarySyncSession = () => syncSession("spotify") || syncSession("screen");
+const hasAnySyncSession = () => Boolean(syncSession("screen") || syncSession("spotify"));
+const isSyncBusy = (mode) => {
+  const lifecycle = sync.lifecycles[mode];
+  return lifecycle.isStarting || lifecycle.isStopping;
+};
+const isAnySyncBusy = () => ["screen", "spotify"].some(isSyncBusy);
 const spotifyAutoStartGate = window.ullSpotifyAutoStart.createSpotifyAutoStartGate();
 let spotifyAutoStartTimer = null;
 let spotifyAutoStartInFlight = false;
@@ -292,7 +304,9 @@ async function saveSettingsNow(changes) {
 function applyDeviceState(device) {
   state.device = device;
   const profile = device.connected && device.profile;
-  if (!device.connected && sync.session) stopScreenSync("Controller disconnected.");
+  if (!device.connected && (hasAnySyncSession() || isAnySyncBusy())) {
+    void stopActiveSync("Controller disconnected.");
+  }
   if (profile?.ledCount) {
     const hadProfile = Boolean(state.settings.deviceProfile);
     state.settings.deviceProfile = profile;
@@ -419,6 +433,7 @@ function setPixelColor(pixel, color) {
 
 /** Paint the live preview from a session's sampled colors. */
 function paintSessionPixels(session) {
+  if (primarySyncSession() !== session || !session.colors) return;
   for (const pixel of session.pixelElements) {
     setPixelColor(pixel, session.colors[Number(pixel.dataset.ledIndex)]);
   }
@@ -448,7 +463,7 @@ function renderEdgePixels(container, indices, edge) {
     const pixel = container.children[position];
     const selected = window.ullLedSelection.isLedSelected(selectedLedIndices, index);
     const color = calibratedColor(
-      sync.session?.colors?.[index] || state.settings.ledColors?.[index] || state.settings.color,
+      primarySyncSession()?.colors?.[index] || state.settings.ledColors?.[index] || state.settings.color,
       state.settings.channelGains
     );
     const label = `Select LED ${index + 1}, ${edge} side${selected ? ", selected" : ""}`;
@@ -488,14 +503,15 @@ function updatePreview() {
   renderControls(settings);
   renderSyncControls(settings);
 
-  if (sync.session) {
+  for (const session of Object.values(sync.sessions)) {
+    if (!session) continue;
     const signature = stripLayoutSignature(layout);
-    if (sync.session.layoutSignature !== signature) {
-      sync.session.layout = layout;
-      sync.session.layoutSignature = signature;
-      sync.session.colors = null;
+    if (session.layoutSignature !== signature) {
+      session.layout = layout;
+      session.layoutSignature = signature;
+      session.colors = null;
     }
-    sync.session.pixelElements = $$(".led-pixel");
+    session.pixelElements = $$(".led-pixel");
   }
 
   updateRangeFills();
@@ -512,6 +528,7 @@ function renderMonitor(settings, profile, count, layout) {
 
   $("#monitor").dataset.power = settings.power ? "on" : "off";
   $("#preview-title").textContent = "LED layout";
+  renderActiveInputSource();
 
   const root = document.documentElement.style;
   root.setProperty("--led-color", settings.color);
@@ -526,6 +543,24 @@ function renderMonitor(settings, profile, count, layout) {
   $("#power-toggle").setAttribute("aria-checked", String(settings.power));
   $("#power-toggle").setAttribute("aria-label", `LED power: ${settings.power ? "on" : "off"}`);
   $("#power-state").textContent = settings.power ? "On" : "Off";
+}
+
+function renderActiveInputSource() {
+  const indicator = $("#active-source");
+  const source = state.device.activeSource;
+  indicator.textContent = source || "";
+  indicator.hidden = !source;
+  indicator.setAttribute("aria-label", source ? `Winning input: ${source}` : "No active input");
+}
+
+function renderTemporaryOverride() {
+  const override = state.temporaryOverride || { active: false };
+  const status = $("#temporary-override-status");
+  status.textContent = override.active
+    ? `Active · ${EFFECT_LABELS[override.effect] || "Lighting"}`
+    : "No override active";
+  $("#temporary-override-start").disabled = !state.device.connected || !state.settings.power;
+  $("#temporary-override-clear").disabled = !override.active;
 }
 
 function renderSelectionSummary(count, layout) {
@@ -584,40 +619,43 @@ function renderControls(settings) {
 }
 
 function renderSyncControls(settings) {
-  const { lifecycle } = sync;
-  const startingScreen = lifecycle.isStarting && sync.requestedMode === "screen";
-  const startingSpotify = lifecycle.isStarting && sync.requestedMode === "spotify";
+  const screenSession = syncSession("screen");
+  const spotifySession = syncSession("spotify");
+  const screenLifecycle = sync.lifecycles.screen;
+  const spotifyLifecycle = sync.lifecycles.spotify;
+  const startingScreen = screenLifecycle.isStarting && sync.requestedModes.has("screen");
+  const startingSpotify = spotifyLifecycle.isStarting && sync.requestedModes.has("spotify");
   const restoringScreen = settings.startupMode === "screen" &&
-    sync.autoAttempted && !sync.session && !sync.screenError;
+    sync.autoAttempted && !screenSession && !sync.screenError;
   const restoringSpotify = settings.spotifyAutoStart !== false && settings.startupMode === "spotify" &&
-    sync.autoAttempted && !sync.session && !sync.spotifyError;
+    sync.autoAttempted && !spotifySession && !sync.spotifyError;
 
-  const setToggle = (button, { active, starting, resumingNow = false }) => {
+  const setToggle = (button, lifecycle, { active, starting, resumingNow = false }) => {
     button.textContent = lifecycle.isStopping
       ? "Stopping…"
-      : active ? "Stop" : resumingNow ? "Starting…" : "Start";
-    button.disabled = lifecycle.isStopping || (lifecycle.isStarting && !starting);
-    button.classList.toggle("is-active", active || resumingNow);
+      : starting || resumingNow ? "Starting…" : active ? "Stop" : "Start";
+    button.disabled = lifecycle.isStopping || starting;
+    button.classList.toggle("is-active", active || starting || resumingNow);
   };
 
-  setToggle($("#screen-sync-toggle"), {
-    active: sync.session?.mode === "screen" || startingScreen,
+  setToggle($("#screen-sync-toggle"), screenLifecycle, {
+    active: Boolean(screenSession),
     starting: startingScreen,
     resumingNow: restoringScreen
   });
-  setToggle($("#spotify-sync-toggle"), {
-    active: sync.session?.mode === "spotify" || startingSpotify,
+  setToggle($("#spotify-sync-toggle"), spotifyLifecycle, {
+    active: Boolean(spotifySession),
     starting: startingSpotify,
     resumingNow: restoringSpotify
   });
 
-  $("#screen-sync-description").textContent = sync.session
-    ? sync.session.mode === "spotify" ? "Spotify Sync is active" : "Matching the primary display"
+  $("#screen-sync-description").textContent = screenSession
+    ? "Matching the primary display"
     : startingScreen ? "Starting display capture…"
     : restoringScreen ? "Resuming display capture…"
     : sync.screenError || "Match LEDs to your display";
 
-  const spotifyActive = sync.session?.mode === "spotify";
+  const spotifyActive = Boolean(spotifySession);
   const spotifyStarting = startingSpotify || restoringSpotify;
   const player = $("#spotify-player");
   const details = $("#spotify-details");
@@ -628,9 +666,9 @@ function renderSyncControls(settings) {
   details.setAttribute("aria-hidden", String(!spotifyExpanded));
   details.inert = !spotifyExpanded;
   $("#spotify-sync-description").textContent = spotifyActive
-    ? sync.spotifyError || (!sync.session.hasMedia ? "Waiting for a Spotify track"
-      : sync.session.playbackStatus === "Playing" ? "Syncing to the current track"
-        : sync.session.playbackStatus === "Paused" ? "Spotify is paused"
+    ? sync.spotifyError || (!spotifySession.hasMedia ? "Waiting for a Spotify track"
+      : spotifySession.playbackStatus === "Playing" ? "Syncing to the current track"
+        : spotifySession.playbackStatus === "Paused" ? "Spotify is paused"
           : "Waiting for Spotify playback")
     : spotifyStarting ? "Starting Spotify Sync…"
       : sync.spotifyError || sync.spotifyAutoStartError || "Match LEDs to Spotify";
@@ -645,6 +683,7 @@ function render() {
   renderPalette();
   renderConnection();
   updatePreview();
+  renderTemporaryOverride();
 }
 
 function renderRemoteControl(remote = {}) {
@@ -741,15 +780,11 @@ function renderPalette() {
    6. Color and selection
    ========================================================================== */
 
-const syncIsActive = () => Boolean(sync.session) || sync.lifecycle.isStarting;
-
-/** Manual lighting changes end any running sync first. */
-function stopActiveSync() {
-  return syncIsActive() ? stopScreenSync("", true) : Promise.resolve();
+function stopActiveSync(message = "") {
+  return Promise.all([stopSyncSource("screen", message), stopSyncSource("spotify", message)]);
 }
 
 function applyColor(color, all = false) {
-  void stopActiveSync();
   try {
     queueSettings(window.ullLedSelection.fixedColorChanges(
       state.settings.color,
@@ -777,7 +812,6 @@ async function applyGradient() {
       $("#gradient-start").value,
       $("#gradient-end").value
     );
-    await stopActiveSync();
     queueSettings(changes, true);
     toast(`Applied a gradient across ${selectedCount} LEDs.`);
   } catch (error) {
@@ -945,7 +979,6 @@ function confirmDeleteScene(scene) {
 }
 
 async function applyScene(scene) {
-  await stopActiveSync();
   selectedLedIndices = new Set();
   selectedLedAnchorIndex = null;
 
@@ -992,9 +1025,8 @@ async function importScenes() {
 
 /* ==========================================================================
    8. Screen Sync and Spotify Sync
-   Both modes share one session slot (sync.session), one lifecycle guard and
-   one generation counter. A start that finds the generation changed was
-   cancelled and must release everything it acquired.
+   Each mode has an independent session, lifecycle guard and generation. A
+   start canceled by its own Stop action must release everything it acquired.
    ========================================================================== */
 
 function teardownSession(session) {
@@ -1018,20 +1050,23 @@ function teardownSession(session) {
   }
 }
 
-function stopScreenSync(message = "") {
-  const pending = sync.lifecycle.stop(() => {
-    sync.generation += 1;
-    sync.requestedMode = null;
-    const session = sync.session;
-    sync.session = null;
-    sync.screenError = "";
+function stopSyncSource(mode, message = "") {
+  const lifecycle = sync.lifecycles[mode];
+  if (!lifecycle) return Promise.resolve();
+  const pending = lifecycle.stop(() => {
+    sync.generations[mode] += 1;
+    sync.requestedModes.delete(mode);
+    const session = syncSession(mode);
+    sync.sessions[mode] = null;
+    if (mode === "screen") sync.screenError = "";
+    else sync.spotifyError = "";
     teardownSession(session);
   }, async () => {
     try {
-      const result = await window.ull.stopScreenSync();
+      const result = await window.ull.stopScreenSync(mode);
       state.settings.startupMode = result.startupMode;
     } catch (error) {
-      toast(`Could not stop LED sync: ${error.message}`);
+      toast(`Could not stop ${mode} sync: ${error.message}`);
     }
   });
 
@@ -1042,9 +1077,13 @@ function stopScreenSync(message = "") {
     scheduleSpotifyAutoStartPoll(0);
   }, (error) => {
     updatePreview();
-    toast(`Could not stop screen sync cleanly: ${error.message}`);
+    toast(`Could not stop ${mode} sync cleanly: ${error.message}`);
     scheduleSpotifyAutoStartPoll(0);
   });
+}
+
+function stopScreenSync(message = "") {
+  return stopSyncSource("screen", message);
 }
 
 async function ensurePowerOn() {
@@ -1055,30 +1094,32 @@ async function ensurePowerOn() {
 
 function createFrameSender(session, stoppedMessage) {
   return window.ullScreenSync.createLatestFrameSender({
-    send: (colors) => window.ull.sendScreenSyncColors(colors),
-    isActive: () => sync.session === session,
+    send: (colors) => window.ull.sendScreenSyncColors(colors, session.mode),
+    isActive: () => syncSession(session.mode) === session,
     getColors: () => session.colors,
-    onError: (error) => stopScreenSync(`${stoppedMessage}: ${error.message}`)
+    onError: (error) => stopSyncSource(session.mode, `${stoppedMessage}: ${error.message}`)
   });
 }
 
 /* --- Screen Sync ---------------------------------------------------------- */
 
 function startScreenSync(options = {}) {
-  sync.requestedMode = "screen";
-  const pending = sync.lifecycle.start(() => runScreenSyncStart(options));
+  if (syncSession("screen")) return Promise.resolve(true);
+  if (isSyncBusy("screen")) return Promise.resolve(false);
+  sync.requestedModes.add("screen");
+  const pending = sync.lifecycles.screen.start(() => runScreenSyncStart(options));
   updatePreview();
   return pending.catch((error) => {
     toast(`Could not start screen sync: ${error.message}`);
   }).finally(() => {
-    if (sync.requestedMode === "screen") sync.requestedMode = null;
+    sync.requestedModes.delete("screen");
     updatePreview();
   });
 }
 
 async function runScreenSyncStart({ automatic = false } = {}) {
-  const generation = ++sync.generation;
-  const cancelled = () => generation !== sync.generation;
+  const generation = ++sync.generations.screen;
+  const cancelled = () => generation !== sync.generations.screen;
 
   if (!state.device.connected) return toast("Connect the LED controller before starting screen sync.");
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -1137,8 +1178,7 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       canvas,
       context,
       letterboxTracker: window.ullScreenSync.createLetterboxStability(),
-      movieFormatPromptGate: window.ullScreenSync.createMovieFormatPromptGate(),
-      detectedAspectRatio: null,
+      movieAreaPolicy: window.ullScreenSync.createMovieAreaPolicy(),
       frame: 0,
       videoFrame: 0,
       lastSample: 0,
@@ -1146,22 +1186,23 @@ async function runScreenSyncStart({ automatic = false } = {}) {
       layout,
       layoutSignature: stripLayoutSignature(layout)
     };
-    sync.session = session;
+    sync.sessions.screen = session;
     startPerformanceReporting(session);
     sync.screenError = "";
 
     const sendLatestFrame = createFrameSender(session, "Screen sync stopped");
     stream.getVideoTracks()[0].onended = () => {
-      if (sync.session === session) stopScreenSync("Screen sharing ended.");
+      if (syncSession("screen") === session) stopScreenSync("Screen sharing ended.");
     };
     session.frame = requestAnimationFrame(createScreenSampler(session, sendLatestFrame));
     updatePreview();
   } catch (error) {
-    const sessionOwnsStream = sync.session?.stream === stream;
+    const sessionOwnsStream = syncSession("screen")?.stream === stream;
     if (!sessionOwnsStream) stopTracks(stream);
-    if (!sessionOwnsStream && (hardwareSyncStarted || automatic) && !sync.lifecycle.isStopping) {
+    if (!sessionOwnsStream && (hardwareSyncStarted || automatic) &&
+        !sync.lifecycles.screen.isStopping) {
       try {
-        const result = await window.ull.stopScreenSync();
+        const result = await window.ull.stopScreenSync("screen");
         state.settings.startupMode = result.startupMode;
       } catch (stopError) {
         console.error("Could not stop screen sync after startup failed:", stopError);
@@ -1193,7 +1234,7 @@ function startPerformanceReporting(session) {
   resetWindow(performance.now());
 
   session.performanceTimer = window.setInterval(() => {
-    if (sync.session !== session) return;
+    if (syncSession("screen") !== session) return;
     const now = performance.now();
     window.ull.recordScreenSyncPerformance({
       windowMs: now - session.performanceWindowStartedAt,
@@ -1212,7 +1253,7 @@ function createScreenSampler(session, sendLatestFrame) {
   const { video, canvas, context } = session;
 
   const sampleFrame = (now) => {
-    if (sync.session !== session) return;
+    if (syncSession("screen") !== session) return;
     session.performanceCallbackCount += 1;
     if (typeof video.requestVideoFrameCallback === "function") {
       session.videoFrame = video.requestVideoFrameCallback(sampleFrame);
@@ -1235,7 +1276,7 @@ function createScreenSampler(session, sendLatestFrame) {
         canvas.width,
         canvas.height,
         session.layout,
-        session.detectedAspectRatio || manualPictureRatio()
+        session.movieAreaPolicy.getContentAspectRatio(manualPictureRatio())
       );
       paintSessionPixels(session);
       void sendLatestFrame();
@@ -1260,25 +1301,25 @@ function trackLetterbox(session, pixels, now) {
   const { canvas } = session;
   const ratio = window.ullScreenSync.detectLetterboxAspectRatio(pixels, canvas.width, canvas.height);
   const stableRatio = session.letterboxTracker.update(ratio, now);
+  if (ratio !== null) session.movieAreaPolicy.onBarsDetected();
 
-  if (session.detectedAspectRatio !== null && session.letterboxTracker.isMissingStable()) {
-    session.detectedAspectRatio = null;
-    toast("Widescreen ended; Screen Sync returned to your saved picture area.");
+  if (session.letterboxTracker.isMissingStable() && session.movieAreaPolicy.onBarsMissing()) {
+    toast("Widescreen bars ended; keeping the detected picture area. Restart Screen Sync to return to the saved area.");
   }
 
   const manual = manualPictureRatio();
   if (stableRatio !== null &&
-      (manual === null || Math.abs(manual - stableRatio) > 0.05) &&
-      session.movieFormatPromptGate.shouldPrompt(stableRatio)) {
+      session.movieAreaPolicy.shouldPrompt(stableRatio, manual)) {
     window.ull.notifyMovieFormat(stableRatio);
   }
 }
 
 function applyDetectedMovieFormat({ aspectRatio }) {
-  if (sync.session?.mode !== "screen" || !Number.isFinite(aspectRatio) ||
+  const session = syncSession("screen");
+  if (!session || !Number.isFinite(aspectRatio) ||
       aspectRatio < 1.78 || aspectRatio > 2.6) return;
   const ratio = Math.round(aspectRatio * 100) / 100;
-  sync.session.detectedAspectRatio = ratio;
+  session.movieAreaPolicy.applyDetectedRatio(ratio);
   toast(`Using ${ratio.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}:1 for this Screen Sync session.`);
 }
 
@@ -1303,7 +1344,7 @@ function clearSpotifyAutoStartPoll() {
 function scheduleSpotifyAutoStartPoll(delay = SPOTIFY_AUTO_START_POLL_MS) {
   clearSpotifyAutoStartPoll();
   if (state.settings.spotifyAutoStart === false ||
-      sync.session?.mode === "spotify" || sync.requestedMode === "spotify") return;
+      syncSession("spotify") || sync.requestedModes.has("spotify")) return;
   spotifyAutoStartTimer = window.setTimeout(() => {
     spotifyAutoStartTimer = null;
     void pollSpotifyAutoStart();
@@ -1312,7 +1353,7 @@ function scheduleSpotifyAutoStartPoll(delay = SPOTIFY_AUTO_START_POLL_MS) {
 
 function observeSpotifyPlaybackForAutoStart(status) {
   const shouldStart = spotifyAutoStartGate.observe(status, state.settings.spotifyAutoStart !== false);
-  if (sync.session?.mode === "spotify" && shouldStart) spotifyAutoStartGate.markAttempted();
+  if (syncSession("spotify") && shouldStart) spotifyAutoStartGate.markAttempted();
   return shouldStart;
 }
 
@@ -1331,15 +1372,11 @@ async function pollSpotifyAutoStart() {
 
     if (!observeSpotifyPlaybackForAutoStart(status)) return;
     if (!state.device.connected || !state.settings.power ||
-        sync.lifecycle.isStarting || sync.lifecycle.isStopping) return;
-    if (sync.session?.mode === "spotify" || sync.requestedMode === "spotify") {
+        isSyncBusy("spotify")) return;
+    if (syncSession("spotify") || sync.requestedModes.has("spotify")) {
       spotifyAutoStartGate.markAttempted();
       return;
     }
-    if (sync.session) await stopActiveSync();
-    if (sync.lifecycle.isStopping || sync.session ||
-        !state.device.connected || !state.settings.power) return;
-
     spotifyAutoStartGate.markAttempted();
     await startSpotifySync({ automatic: true, playbackTriggered: true });
   } catch (error) {
@@ -1353,7 +1390,7 @@ async function pollSpotifyAutoStart() {
     spotifyAutoStartInFlight = false;
     if (renderStatus) renderSyncControls(state.settings);
     if (state.settings.spotifyAutoStart !== false &&
-        sync.session?.mode !== "spotify" && sync.requestedMode !== "spotify") {
+        !syncSession("spotify") && !sync.requestedModes.has("spotify")) {
       scheduleSpotifyAutoStartPoll(
         sync.spotifyAutoStartError ? SPOTIFY_AUTO_START_ERROR_POLL_MS : SPOTIFY_AUTO_START_POLL_MS
       );
@@ -1366,7 +1403,8 @@ function startSpotifySync({ automatic = false, playbackTriggered = false } = {})
     toast("Connect the LED controller before starting Spotify Sync.");
     return Promise.resolve(false);
   }
-  if (sync.lifecycle.isStarting || sync.lifecycle.isStopping) return Promise.resolve(false);
+  if (syncSession("spotify")) return Promise.resolve(true);
+  if (isSyncBusy("spotify")) return Promise.resolve(false);
   if (typeof navigator.mediaDevices?.getUserMedia !== "function") {
     toast("Desktop audio capture is not available in this app environment.");
     return Promise.resolve(false);
@@ -1402,8 +1440,8 @@ function startSpotifySync({ automatic = false, playbackTriggered = false } = {})
     return Promise.resolve(false);
   }
 
-  sync.requestedMode = "spotify";
-  const pending = sync.lifecycle.start(() =>
+  sync.requestedModes.add("spotify");
+  const pending = sync.lifecycles.spotify.start(() =>
     runSpotifySyncStart(audioCapture, audioContext, audioReady, automatic, playbackTriggered)
   );
   updatePreview();
@@ -1415,14 +1453,14 @@ function startSpotifySync({ automatic = false, playbackTriggered = false } = {})
       : automatic ? "Could not resume" : "Could not start";
     toast(`${action} Spotify Sync: ${error.message}`);
   }).finally(() => {
-    if (sync.requestedMode === "spotify") sync.requestedMode = null;
+    sync.requestedModes.delete("spotify");
     updatePreview();
   });
 }
 
 async function runSpotifySyncStart(audioCapture, audioContext, audioReady, automatic, playbackTriggered) {
-  const generation = ++sync.generation;
-  const cancelled = () => generation !== sync.generation;
+  const generation = ++sync.generations.spotify;
+  const cancelled = () => generation !== sync.generations.spotify;
 
   if (!state.device.connected) throw new Error("Connect the LED controller before starting Spotify Sync.");
   if (typeof window.ull.getSpotifyArtwork !== "function") {
@@ -1462,7 +1500,9 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
     state.settings.startupMode = "spotify";
     hardwareSyncStarted = true;
     if (cancelled()) {
-      await window.ull.stopScreenSync();
+      await window.ull.stopScreenSync("spotify");
+      stopTracks(stream);
+      if (audioContext.state !== "closed") await audioContext.close();
       return;
     }
 
@@ -1484,7 +1524,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
       layout,
       layoutSignature: stripLayoutSignature(layout)
     };
-    sync.session = session;
+    sync.sessions.spotify = session;
     sync.spotifyError = "";
 
     const sendLatestFrame = createFrameSender(session, "Spotify Sync stopped");
@@ -1499,17 +1539,21 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
       toast("Spotify Sync is active. Music response uses local desktop audio.");
     }
   } catch (error) {
-    if (sync.session === session) {
-      await stopScreenSync();
-    } else if ((hardwareSyncStarted || automatic) && !sync.lifecycle.isStopping) {
+    const sessionWasActive = syncSession("spotify") === session;
+    if (sessionWasActive) {
+      sync.sessions.spotify = null;
+      sync.generations.spotify += 1;
+      teardownSession(session);
+    }
+    if ((hardwareSyncStarted || automatic) && !sync.lifecycles.spotify.isStopping) {
       try {
-        const result = await window.ull.stopScreenSync();
+        const result = await window.ull.stopScreenSync("spotify");
         state.settings.startupMode = result.startupMode;
       } catch (stopError) {
         console.error("Could not stop LED sync after Spotify Sync startup failed:", stopError);
       }
     }
-    if (sync.session !== session) {
+    if (!sessionWasActive) {
       stopTracks(audioStream);
       if (audioContext && audioContext.state !== "closed") await audioContext.close();
     }
@@ -1524,7 +1568,7 @@ async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
   const image = new Image();
   image.src = `data:${artwork.contentType};base64,${artwork.data}`;
   await image.decode();
-  if (sync.session !== session) return;
+  if (syncSession("spotify") !== session) return;
 
   const canvas = h("canvas");
   canvas.width = 48;
@@ -1556,7 +1600,7 @@ async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
 }
 
 function renderSpotifyFrame(session, now, sendLatestFrame) {
-  if (sync.session !== session || !session.palette) return;
+  if (syncSession("spotify") !== session || !session.palette) return;
   session.colors = window.ullSpotifySync.createSpotifyReactiveColors(
     session.palette,
     session.audioLevels,
@@ -1584,7 +1628,7 @@ function renderSpotifyMeter(session) {
 }
 
 function sampleSpotifyAudio(session, now, sendLatestFrame) {
-  if (sync.session !== session) return;
+  if (syncSession("spotify") !== session) return;
   session.analyser.getFloatFrequencyData(session.frequencyData);
   const measuredLevels = window.ullSpotifySync.analyzeSpotifySpectrum(
     session.frequencyData,
@@ -1612,10 +1656,10 @@ function scheduleSpotifyAudioSample(session, sendLatestFrame) {
 }
 
 async function pollSpotifyArtwork(session, sendLatestFrame) {
-  if (sync.session !== session) return;
+  if (syncSession("spotify") !== session) return;
   try {
     const artwork = await window.ull.getSpotifyArtwork();
-    if (sync.session !== session) return;
+    if (syncSession("spotify") !== session) return;
     sync.spotifyError = "";
     if (!artwork) {
       observeSpotifyPlaybackForAutoStart(null);
@@ -1639,13 +1683,13 @@ async function pollSpotifyArtwork(session, sendLatestFrame) {
       await applySpotifyArtwork(session, artwork, sendLatestFrame);
     }
   } catch (error) {
-    if (sync.session === session) {
+    if (syncSession("spotify") === session) {
       sync.spotifyError = error.message || "Could not refresh Spotify media details.";
       console.error("Could not refresh Spotify cover art:", error);
       renderSyncControls(state.settings);
     }
   } finally {
-    if (sync.session === session) {
+    if (syncSession("spotify") === session) {
       session.pollTimer = window.setTimeout(() => void pollSpotifyArtwork(session, sendLatestFrame), 1500);
     }
   }
@@ -2489,7 +2533,7 @@ async function resetAllData() {
       if (flushed.cancelled) return;
     }
     queue.changes = {};
-    stopScreenSync();
+    await stopActiveSync();
     sync.autoAttempted = true;
 
     current.backendStarted = true;
@@ -2584,7 +2628,6 @@ function bindLighting() {
   $("#deselect-all").addEventListener("click", () => setSelection(new Set()));
 
   $("#power-toggle").addEventListener("click", () => {
-    void stopActiveSync();
     queueSettings({ power: !state.settings.power }, true);
   });
 
@@ -2635,17 +2678,35 @@ function bindLighting() {
     queueSettings({ palette: [...state.settings.palette, state.settings.color] }, true);
   });
 
+  $("#temporary-override-start").addEventListener("click", async () => {
+    try {
+      state.temporaryOverride = await window.ull.startTemporaryOverride({
+        color: $("#temporary-override-color").value,
+        effect: $("#temporary-override-effect").value,
+        durationMs: Number($("#temporary-override-duration").value)
+      });
+      renderTemporaryOverride();
+      toast("Temporary override started.");
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+  $("#temporary-override-clear").addEventListener("click", async () => {
+    try {
+      state.temporaryOverride = await window.ull.clearTemporaryOverride();
+      renderTemporaryOverride();
+      toast("Temporary override cleared.");
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+
   const toggleSync = (mode, start) => async () => {
-    if (sync.session?.mode === mode) {
-      void stopScreenSync();
+    if (syncSession(mode)) {
+      void stopSyncSource(mode);
       return;
     }
-    if (sync.session) {
-      await stopScreenSync();
-      if (!sync.session && !sync.lifecycle.isStopping) start();
-      return;
-    }
-    if (sync.lifecycle.isStarting || sync.lifecycle.isStopping) return;
+    if (isSyncBusy(mode)) return;
     start();
   };
   $("#screen-sync-toggle").addEventListener("click", toggleSync("screen", () => startScreenSync()));
@@ -2800,14 +2861,16 @@ function bindDeviceSettings() {
     }
   });
   bindSetting("#sync-content-mode", "syncContentMode", { event: "change", immediate: true, read: (el) => el.value });
+  $("#sync-content-mode").addEventListener("change", () => {
+    syncSession("screen")?.movieAreaPolicy.reset();
+  });
 
   $("#sync-auto-detect").addEventListener("change", (event) => {
     queueSettings({ syncAutoDetect: event.target.checked }, true);
-    const session = sync.session;
-    if (!event.target.checked && session?.mode === "screen") {
+    const session = syncSession("screen");
+    if (!event.target.checked && session) {
       session.letterboxTracker.reset();
-      session.detectedAspectRatio = null;
-      session.movieFormatPromptGate.reset();
+      session.movieAreaPolicy.reset();
     }
   });
 
@@ -2860,9 +2923,26 @@ function bindMainProcessEvents() {
       spotifyAutoStartGate.reset();
     } else maybeRestoreStartupMode();
   });
+  window.ull.onActiveInputSource((source) => {
+    state.device.activeSource = source;
+    renderActiveInputSource();
+  });
+  window.ull.onTemporaryOverrideStatus((status) => {
+    state.temporaryOverride = status;
+    renderTemporaryOverride();
+  });
   window.ull.onMovieFormatApplied(applyDetectedMovieFormat);
   window.ull.onSettingsUpdated((settings) => {
+    const previousSettings = state.settings;
     state.settings = { ...settings, ...queue.changes };
+    if (previousSettings.syncContentMode !== state.settings.syncContentMode ||
+        previousSettings.syncAutoDetect !== state.settings.syncAutoDetect) {
+      const session = syncSession("screen");
+      if (session) {
+        session.letterboxTracker.reset();
+        session.movieAreaPolicy.reset();
+      }
+    }
     renderConnection();
     updatePreview();
     renderScenes();
@@ -2918,22 +2998,20 @@ async function handleRemoteSyncRequest(request) {
       throw new TypeError("The sync request is invalid.");
     }
     if (mode === "lighting") {
-      await stopScreenSync();
-      if (sync.session || sync.lifecycle.isStarting || sync.lifecycle.isStopping) {
+      await stopActiveSync();
+      if (hasAnySyncSession() || isAnySyncBusy()) {
         throw new Error("Sync has not stopped yet. Try again.");
       }
     } else {
-      if (sync.session?.mode === mode) {
+      if (syncSession(mode)) {
         result = { requestId, ok: true };
         window.ull.reportRemoteSyncResult(result);
         return;
       }
-      if (sync.session || sync.lifecycle.isStarting || sync.lifecycle.isStopping) {
-        await stopScreenSync();
-      }
+      if (isSyncBusy(mode)) throw new Error(`${mode} sync is already changing state. Try again.`);
       if (mode === "screen") await startScreenSync();
       else await startSpotifySync();
-      if (sync.session?.mode !== mode) {
+      if (!syncSession(mode)) {
         throw new Error("Open ULLeds and start this sync mode there. It may need permission from the PC.");
       }
     }

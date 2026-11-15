@@ -28,6 +28,8 @@ function createService(overrides = {}) {
     applyScene: async () => {},
     manageScene: async () => {},
     setSyncMode: async () => {},
+    startTemporaryOverride: async () => ({ active: true }),
+    clearTemporaryOverride: async () => ({ active: false }),
     networkInterfaces: () => loopback,
     port: 0,
     ...overrides
@@ -205,6 +207,39 @@ test("paired phone requests cannot change settings outside the allowlist", async
 
   const sync = await post(status.url, "/api/sync", { mode: "screen" }, { cookie });
   assert.equal(sync.status, 409);
+});
+
+test("paired phone can start and clear a temporary override without changing saved settings", async (t) => {
+  const starts = [];
+  let clearCount = 0;
+  const service = createService({
+    startTemporaryOverride: async (input) => {
+      starts.push(input);
+      return { active: true, color: input.color };
+    },
+    clearTemporaryOverride: async () => {
+      clearCount += 1;
+      return { active: false };
+    }
+  });
+  t.after(() => service.stop());
+  const status = await service.start("127.0.0.1");
+
+  const unpaired = await post(status.url, "/api/override", { color: "#cc33ff" });
+  assert.equal(unpaired.status, 401);
+
+  const paired = await post(status.url, "/api/pair", { pin: status.pin });
+  const cookie = paired.headers.get("set-cookie").split(";")[0];
+  const settings = { color: "#cc33ff", effect: "steady", speed: 48, durationMs: 15000 };
+  const started = await post(status.url, "/api/override", settings, { cookie });
+  assert.equal(started.status, 200);
+  assert.deepEqual(await started.json(), { active: true, color: "#cc33ff" });
+  assert.deepEqual(starts, [settings]);
+
+  const cleared = await post(status.url, "/api/override/clear", {}, { cookie });
+  assert.equal(cleared.status, 200);
+  assert.deepEqual(await cleared.json(), { active: false });
+  assert.equal(clearCount, 1);
 });
 
 test("phone color changes update the main color and clear individual LED overrides", async (t) => {

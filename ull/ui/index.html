@@ -70,7 +70,10 @@
 
         <section class="card preview" aria-labelledby="preview-title">
           <header class="card-head">
-            <h2 class="title" id="preview-title">LED layout</h2>
+            <div class="preview-heading">
+              <h2 class="title" id="preview-title">LED layout</h2>
+              <span class="badge source-indicator" id="active-source" hidden aria-live="polite"></span>
+            </div>
             <div class="power">
               <span id="power-state">On</span>
               <button class="switch" id="power-toggle" type="button" role="switch" aria-checked="true" aria-label="LED power: on"></button>
@@ -187,6 +190,41 @@
                 <p>Palette drift cycles these colors. Saved with each scene.</p>
                 <div class="palette-swatches" id="palette-swatches"></div>
                 <button class="btn btn-sm" id="add-palette-color" type="button">Add color</button>
+              </div>
+            </details>
+
+            <details class="disclosure" id="temporary-override-controls">
+              <summary>Temporary override</summary>
+              <div class="disclosure-body">
+                <p>Temporarily takes control without changing saved lighting or scenes.</p>
+                <p>Effects use your current speed and palette.</p>
+                <div class="field">
+                  <label for="temporary-override-color">Color</label>
+                  <input class="swatch" id="temporary-override-color" type="color" value="#cc33ff">
+                </div>
+                <div class="field">
+                  <label for="temporary-override-effect">Effect</label>
+                  <select id="temporary-override-effect">
+                    <option value="steady">Solid</option>
+                    <option value="breathe">Breathe</option>
+                    <option value="spectrum">Spectrum</option>
+                    <option value="palette">Palette drift</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="temporary-override-duration">Duration</label>
+                  <select id="temporary-override-duration">
+                    <option value="5000">5 seconds</option>
+                    <option value="15000" selected>15 seconds</option>
+                    <option value="30000">30 seconds</option>
+                    <option value="60000">1 minute</option>
+                  </select>
+                </div>
+                <p id="temporary-override-status" role="status">No override active</p>
+                <div class="button-row">
+                  <button class="btn" id="temporary-override-start" type="button" disabled>Start override</button>
+                  <button class="btn btn-ghost" id="temporary-override-clear" type="button" disabled>Clear override</button>
+                </div>
               </div>
             </details>
           </section>
