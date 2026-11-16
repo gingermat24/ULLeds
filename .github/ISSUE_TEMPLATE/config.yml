@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Download the latest release
+    url: https://github.com/gingermat24/ULLeds/releases
+    about: Installers, release notes, and the in-app update feed.
+  - name: Report a security problem
+    url: https://github.com/gingermat24/ULLeds/security
+    about: Please report vulnerabilities privately, not in a public issue.
+  - name: Known limitations and roadmap
+    url: https://github.com/gingermat24/ULLeds/blob/dev/FUTURE-IMPROVEMENTS.md
+    about: Check here before requesting a feature that is already planned or deferred.

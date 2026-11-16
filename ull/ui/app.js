@@ -352,6 +352,14 @@ function renderDeviceSelector() {
     return { value: device.path, label: `${deviceLabel(device.name)} · ${detail}` };
   });
 
+  if (options.length === 0 && state.device.connected && currentPath) {
+    // The window starts without a device list until something asks for a scan,
+    // so show the controller we are already connected to instead of claiming
+    // that nothing compatible was found.
+    const serial = state.device.serialNumber ? ` · ${state.device.serialNumber}` : "";
+    options.push({ value: currentPath, label: `${deviceLabel(state.device.name)}${serial}` });
+  }
+
   if (options.length === 0) {
     select.replaceChildren(new Option("No compatible controller found", ""));
     select.disabled = true;
@@ -1514,6 +1522,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
       audioLevels: { bass: 0, mid: 0, treble: 0, energy: 0, spectrum: Array(12).fill(0) },
       lastAudioSampleAt: null,
       playbackStatus: artwork.playbackStatus,
+      hasMedia: false,
       audioStream,
       audioContext,
       analyser,
@@ -1536,7 +1545,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
       spotifyAutoStartNoticeShown = true;
       toast("Spotify detected. Sync started. Turn off automatic start in Device > Sync.");
     } else {
-      toast("Spotify Sync is active. Music response uses local desktop audio.");
+      toast("Spotify Sync is active. Audio response follows Spotify playback.");
     }
   } catch (error) {
     const sessionWasActive = syncSession("spotify") === session;
@@ -1629,12 +1638,25 @@ function renderSpotifyMeter(session) {
 
 function sampleSpotifyAudio(session, now, sendLatestFrame) {
   if (syncSession("spotify") !== session) return;
-  session.analyser.getFloatFrequencyData(session.frequencyData);
-  const measuredLevels = window.ullSpotifySync.analyzeSpotifySpectrum(
-    session.frequencyData,
-    session.audioContext.sampleRate,
-    session.analyser.fftSize
+  const playing = window.ullSpotifySync.isSpotifyPlaybackActive(
+    session.hasMedia,
+    session.playbackStatus
   );
+  let measuredLevels;
+  if (playing) {
+    session.analyser.getFloatFrequencyData(session.frequencyData);
+    measuredLevels = window.ullSpotifySync.analyzeSpotifySpectrum(
+      session.frequencyData,
+      session.audioContext.sampleRate,
+      session.analyser.fftSize
+    );
+  } else {
+    // Desktop capture includes every app's output, so leave the analyzer out
+    // while Spotify is idle and let the strip rest on the cover-art colors.
+    measuredLevels = window.ullSpotifySync.silentSpotifyLevels(
+      session.audioLevels.spectrum.length
+    );
+  }
   const elapsedMs = session.lastAudioSampleAt === null
     ? 1000 / 60
     : Math.max(0, now - session.lastAudioSampleAt);

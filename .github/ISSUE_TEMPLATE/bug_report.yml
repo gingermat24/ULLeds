@@ -1,0 +1,83 @@
+name: Bug report
+description: Report something that does not work as expected
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. The in-app support form can fill in the
+        version and platform details for you (Device → Support).
+
+        Do not include serial numbers, personal file paths, or screen contents.
+        For a security problem, use the Security tab instead of this form.
+  - type: input
+    id: version
+    attributes:
+      label: ULLeds version
+      description: Shown in the app and on the Releases page.
+      placeholder: 1.0.99
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and build
+      description: Run `winver` if you are unsure.
+      placeholder: Windows 11 24H2, build 26100
+    validations:
+      required: true
+  - type: input
+    id: controller
+    attributes:
+      label: Controller
+      description: Name and VID:PID from the Device page, plus the LED count.
+      placeholder: PC SYNC Backlight, 1a86:fe07, 60 LEDs
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what the strip did instead.
+      placeholder: Started Screen Sync, the strip stayed dark, and the Device page still showed the controller as connected.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the app is involved?
+      multiple: true
+      options:
+        - Screen Sync
+        - Spotify Sync
+        - Phone remote
+        - Colors, effects, or scenes
+        - Setup, device detection, or connection
+        - Updates or installation
+        - Support, diagnostics, or privacy
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: when
+    attributes:
+      label: When it started
+      description: The version or change after which the problem first appeared, if you know.
+      placeholder: Started after updating to 1.0.97
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Additional context
+      description: Optional. Attach the diagnostics JSON saved by the support form if you reviewed it and are willing to share it publicly. Issues are public.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the Releases page and this is not already fixed in a newer version.
+          required: true
+        - label: I reviewed anything I attached and removed personal information.
+          required: true

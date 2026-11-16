@@ -1,0 +1,51 @@
+name: Feature request
+description: Suggest a behavior or capability ULLeds does not have yet
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ULLeds is maintained by one person. Requests are discussed here, and
+        fixes or additions are welcome as pull requests that the maintainer
+        reviews and merges into the official app. Describing the problem is more
+        useful than describing only the feature.
+
+        Check [FUTURE-IMPROVEMENTS.md](https://github.com/gingermat24/ULLeds/blob/dev/FUTURE-IMPROVEMENTS.md)
+        first: it lists known limitations and deferred work.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation, not only the feature you imagine.
+      placeholder: My second monitor shows the movie, but the strip follows the primary display, so the colors do not match what I am watching.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like ULLeds to do?
+      placeholder: Let me pick which display Screen Sync follows.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Other apps, workarounds, or settings you tried.
+    validations:
+      required: false
+  - type: input
+    id: controller
+    attributes:
+      label: Your setup
+      description: Optional. Controller, LED count, and how many displays you use.
+      placeholder: PC SYNC Backlight, 1a86:fe07, 60 LEDs, two displays
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked FUTURE-IMPROVEMENTS.md and this is not already listed.
+          required: true

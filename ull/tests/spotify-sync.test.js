@@ -6,6 +6,8 @@ const {
   analyzeSpotifySpectrum,
   createSpotifyReactiveColors,
   createSpotifySyncColors,
+  isSpotifyPlaybackActive,
+  silentSpotifyLevels,
   smoothSpotifyLevels
 } = require("../spotify-sync");
 
@@ -149,4 +151,30 @@ test("Spotify reactive colors reject invalid audio levels and palettes", () => {
     8,
     0
   ), TypeError);
+});
+
+test("Spotify audio analysis only follows playback while Spotify is playing", () => {
+  assert.equal(isSpotifyPlaybackActive(true, "Playing"), true);
+  assert.equal(isSpotifyPlaybackActive(true, "Changing"), true);
+  assert.equal(isSpotifyPlaybackActive(true, "Paused"), false);
+  assert.equal(isSpotifyPlaybackActive(true, "Stopped"), false);
+  assert.equal(isSpotifyPlaybackActive(true, "Closed"), false);
+  assert.equal(isSpotifyPlaybackActive(true, "Opened"), false);
+  assert.equal(isSpotifyPlaybackActive(true, "  paused "), false);
+  assert.equal(isSpotifyPlaybackActive(false, "Playing"), false);
+  assert.equal(isSpotifyPlaybackActive(true, null), true);
+});
+
+test("silent Spotify levels rest the strip on the cover-art palette", () => {
+  assert.deepEqual(silentSpotifyLevels(4), {
+    bass: 0,
+    mid: 0,
+    treble: 0,
+    energy: 0,
+    spectrum: [0, 0, 0, 0]
+  });
+  assert.equal(silentSpotifyLevels().spectrum.length, 12);
+  assert.throws(() => silentSpotifyLevels(0), TypeError);
+  assert.throws(() => silentSpotifyLevels(65), TypeError);
+  assert.throws(() => silentSpotifyLevels(4.5), TypeError);
 });

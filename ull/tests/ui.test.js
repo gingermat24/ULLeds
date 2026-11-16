@@ -261,6 +261,9 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(app, /artwork\.title, artwork\.artist, artwork\.album, artwork\.contentType, artwork\.playbackStatus, artwork\.data/);
   assert.match(app, /if \(!artwork\) \{\s+observeSpotifyPlaybackForAutoStart\(null\);\s+if \(session\.hasMedia\)/);
   assert.match(app, /session\.hasMedia = true/);
+  assert.match(app, /isSpotifyPlaybackActive\(\s+session\.hasMedia,\s+session\.playbackStatus\s+\)/);
+  assert.match(app, /silentSpotifyLevels\(\s+session\.audioLevels\.spectrum\.length\s+\)/);
+  assert.match(html, /only while Spotify reports that it is playing/);
   assert.match(app, /Waiting for a Spotify track/);
   assert.match(app, /if \(syncSession\(mode\)\) \{\s+void stopSyncSource\(mode\)/);
   assert.match(app, /const pending = sync\.lifecycles\.spotify\.start/);
@@ -1376,6 +1379,18 @@ test("the Device page can list and switch between detected compatible controller
   assert.match(main, /listSupportedControllers\(await listHidDevicesAsync\(\), profiles\)/);
   assert.match(html, /Choose a connected controller and review its profile/);
   assert.match(main, /listSupportedControllers\(await listHidDevicesAsync\(\), profiles\)/);
+});
+
+test("the controller selector lists the connected controller before the first scan", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const selector = app.slice(
+    app.indexOf("function renderDeviceSelector()"),
+    app.indexOf("function renderProfile(")
+  );
+
+  assert.match(selector, /if \(options\.length === 0 && state\.device\.connected && currentPath\)/);
+  assert.match(selector, /options\.push\(\{ value: currentPath, label: `\$\{deviceLabel\(state\.device\.name\)\}\$\{serial\}` \}\)/);
+  assert.match(selector, /new Option\("No compatible controller found", ""\)/);
 });
 
 test("the lighting preview shows the winning source without exposing the development override test", () => {

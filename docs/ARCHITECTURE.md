@@ -117,7 +117,10 @@ renderer throttling is disabled so sync continues when the main window is hidden
 to the system tray. The main process selects the primary display and provides
 its capture-source ID through an allowlisted preload method. Spotify Sync uses
 the same desktop-capture path with low-resolution video and loopback audio to
-analyze local audio while applying the current track's cover-art colors.
+analyze local audio while applying the current track's cover-art colors. That
+loopback stream is the whole system mix, so the analyzer is only read while
+Windows reports Spotify as playing; paused or stopped playback holds the
+cover-art palette instead of reacting to other apps.
 Letterbox detection compares sampled edge rows with the picture center, allowing
 near-black bars while rejecting uniformly dark frames. Stable detection, prompt
 deduplication, and picture-area selection are separate decisions. An accepted

@@ -5,8 +5,15 @@ All rights reserved.
 The ULLeds project source code and other original project materials in this
 repository are proprietary. No license or permission is granted to copy,
 reproduce, modify, publish, distribute, sublicense, or create derivative works
-from those materials, except where applicable law does not allow those rights
-to be restricted or where the copyright holder grants permission in writing.
+from those materials, except:
+
+- where applicable law does not allow those rights to be restricted;
+- where the copyright holder grants permission in writing; or
+- for forking and modifying this repository solely to prepare a contribution
+  that is submitted back to this project as a pull request, under the terms in
+  CONTRIBUTING.md. That exception allows running a locally built copy for
+  development and testing. It does not permit publishing or distributing a
+  modified build, installer, or derivative app.
 
 This notice applies only to original ULLeds project materials. Third-party
 software, fonts, and other assets remain subject to their own licenses and

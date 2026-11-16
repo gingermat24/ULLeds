@@ -149,6 +149,34 @@ function smoothSpotifyLevels(previous, current, elapsedMs) {
   };
 }
 
+const INACTIVE_PLAYBACK_STATES = new Set(["paused", "stopped", "closed", "opened"]);
+
+/**
+ * Desktop audio capture on Windows returns the whole output mix, so the LEDs
+ * must only follow it while Spotify is actually playing. Unknown or transitional
+ * states count as playing; only a known idle state silences the analyzer.
+ */
+function isSpotifyPlaybackActive(hasMedia, playbackStatus) {
+  if (hasMedia !== true) return false;
+  if (typeof playbackStatus !== "string") return true;
+  const status = playbackStatus.trim().toLowerCase();
+  if (status === "") return true;
+  return !INACTIVE_PLAYBACK_STATES.has(status);
+}
+
+function silentSpotifyLevels(spectrumLength = 12) {
+  if (!Number.isInteger(spectrumLength) || spectrumLength < 1 || spectrumLength > 64) {
+    throw new TypeError("Spotify audio spectrum length is invalid.");
+  }
+  return {
+    bass: 0,
+    mid: 0,
+    treble: 0,
+    energy: 0,
+    spectrum: Array(spectrumLength).fill(0)
+  };
+}
+
 function createSpotifyReactiveColors(palette, levels, ledCount, elapsedSeconds, sensitivity = 65) {
   if (!Array.isArray(palette) || palette.length === 0 ||
       !palette.every((color) => typeof color === "string" && /^#[\da-f]{6}$/i.test(color)) ||
@@ -204,6 +232,8 @@ const spotifySync = Object.freeze({
   analyzeSpotifySpectrum,
   createSpotifyReactiveColors,
   createSpotifySyncColors,
+  isSpotifyPlaybackActive,
+  silentSpotifyLevels,
   smoothSpotifyLevels
 });
 if (typeof module !== "undefined" && module.exports) module.exports = spotifySync;
