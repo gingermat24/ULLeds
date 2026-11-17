@@ -1,5 +1,7 @@
 "use strict";
 
+const { scaleColorChannels } = require("./lighting-frame");
+
 const VENDOR_ID = 0x1a86;
 const PRODUCT_ID = 0xfe07;
 const MAX_LEDS = 253;
@@ -75,12 +77,9 @@ function buildColorSections(
     throw new RangeError("RGB channel gains must be integers from 50% to 150%.");
   }
 
-  const factor = power ? brightness / 100 * effectBrightness : 0;
   const orderedColors = colors.map((color) => {
-    const rgb = parseColor(color);
-    return colorOrder.split("").map((channel) =>
-      Math.round(rgb[channel] * factor * channelGains["RGB".indexOf(channel)] / 100)
-    );
+    const rgb = scaleColorChannels(color, brightness, power, effectBrightness, channelGains);
+    return colorOrder.split("").map((channel) => rgb["RGB".indexOf(channel)]);
   });
   const sections = [];
   let start = 1;

@@ -18,6 +18,20 @@ test("Spotify media output exposes bounded artwork and local track details", () 
   assert.equal(parseSpotifyArtworkOutput("NONE"), null);
 });
 
+test("Spotify media output accepts optional Windows genre hints", () => {
+  const media = {
+    contentType: "image/png",
+    title: "Track",
+    artist: "Artist",
+    album: "Album",
+    playbackStatus: "Playing",
+    genres: ["Alternative rock", "Indie"],
+    data: "aGVsbG8="
+  };
+
+  assert.deepEqual(parseSpotifyArtworkOutput(JSON.stringify(media)), media);
+});
+
 test("Spotify media output rejects malformed metadata and oversized artwork", () => {
   const media = {
     contentType: "image/png",
@@ -32,6 +46,9 @@ test("Spotify media output rejects malformed metadata and oversized artwork", ()
   assert.throws(() => parseSpotifyArtworkOutput(JSON.stringify({ ...media, contentType: "text/html" })), /invalid Spotify media details/);
   assert.throws(() => parseSpotifyArtworkOutput(JSON.stringify({ ...media, playbackStatus: "Unknown" })), /invalid Spotify media details/);
   assert.throws(() => parseSpotifyArtworkOutput(JSON.stringify({ ...media, title: "x".repeat(513) })), /invalid Spotify media details/);
+  assert.throws(() => parseSpotifyArtworkOutput(JSON.stringify({ ...media, genres: "Rock" })), /invalid Spotify media details/);
+  assert.throws(() => parseSpotifyArtworkOutput(JSON.stringify({ ...media, genres: Array(33).fill("Rock") })), /invalid Spotify media details/);
+  assert.throws(() => parseSpotifyArtworkOutput(JSON.stringify({ ...media, genres: ["x".repeat(129)] })), /invalid Spotify media details/);
   assert.throws(() => parseSpotifyArtworkOutput(JSON.stringify({
     ...media,
     data: "A".repeat(2_800_000)

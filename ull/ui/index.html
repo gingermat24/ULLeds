@@ -103,187 +103,213 @@
         </section>
 
         <aside class="card controls" aria-label="Lighting controls">
+          <div class="controls-scroll">
 
-          <section class="block">
-            <h3>Light</h3>
+            <section class="block">
+              <h3>Light</h3>
 
-            <div class="field">
-              <label for="color-picker">Color</label>
-              <div class="field-row">
-                <input class="swatch" id="color-picker" type="color" value="#008100" aria-label="Pick a color">
-                <input class="input" id="hex-color" type="text" value="#008100" maxlength="7" spellcheck="false" aria-label="Hex color">
-              </div>
-            </div>
-
-            <div class="field">
-              <div class="field-head">
-                <label for="brightness">Brightness</label>
-                <span class="number-with-unit">
-                  <input class="input input-number" id="brightness-number" type="number" min="0" max="100" step="1" value="50" aria-label="Brightness percentage">
-                  <span aria-hidden="true">%</span>
-                </span>
-              </div>
-              <input id="brightness" type="range" min="0" max="100" value="50">
-            </div>
-
-            <details class="disclosure">
-              <summary>Color gradient</summary>
-              <div class="disclosure-body">
-                <p>Blend two colors across the selected LEDs.</p>
-                <div class="gradient-colors">
-                  <label for="gradient-start">Start
-                    <input class="swatch" id="gradient-start" type="color" value="#008100">
-                  </label>
-                  <label for="gradient-end">End
-                    <input class="swatch" id="gradient-end" type="color" value="#ffffff">
-                  </label>
-                </div>
-                <button class="btn" id="apply-gradient" type="button" disabled>Apply gradient</button>
-              </div>
-            </details>
-
-            <details class="disclosure">
-              <summary>Channel balance</summary>
-              <div class="disclosure-body">
-                <p>Adjust if LEDs look different from the selected color.</p>
-                <div class="field">
-                  <div class="field-head"><label for="rgb-red">Red</label><output id="rgb-red-value" for="rgb-red">100%</output></div>
-                  <input id="rgb-red" type="range" min="50" max="150" value="100">
-                </div>
-                <div class="field">
-                  <div class="field-head"><label for="rgb-green">Green</label><output id="rgb-green-value" for="rgb-green">100%</output></div>
-                  <input id="rgb-green" type="range" min="50" max="150" value="100">
-                </div>
-                <div class="field">
-                  <div class="field-head"><label for="rgb-blue">Blue</label><output id="rgb-blue-value" for="rgb-blue">100%</output></div>
-                  <input id="rgb-blue" type="range" min="50" max="150" value="100">
-                </div>
-                <button class="btn btn-ghost btn-sm" id="reset-color-tuning" type="button">Reset balance</button>
-              </div>
-            </details>
-          </section>
-
-          <section class="block">
-            <h3>Effect</h3>
-
-            <div class="field">
-              <label for="effect">Style</label>
-              <select id="effect">
-                <option value="steady">Solid</option>
-                <option value="breathe">Breathe</option>
-                <option value="spectrum">Spectrum</option>
-                <option value="palette">Palette drift</option>
-              </select>
-            </div>
-
-            <div class="field hidden" id="speed-control">
-              <div class="field-head">
-                <label for="speed">Speed</label>
-                <output id="speed-value" for="speed">48%</output>
-              </div>
-              <input id="speed" type="range" min="1" max="100" value="48">
-            </div>
-
-            <details class="disclosure hidden" id="palette-tuning">
-              <summary>Effect palette</summary>
-              <div class="disclosure-body">
-                <p>Palette drift cycles these colors. Saved with each scene.</p>
-                <div class="palette-swatches" id="palette-swatches"></div>
-                <button class="btn btn-sm" id="add-palette-color" type="button">Add color</button>
-              </div>
-            </details>
-
-            <details class="disclosure" id="temporary-override-controls">
-              <summary>Temporary override</summary>
-              <div class="disclosure-body">
-                <p>Temporarily takes control without changing saved lighting or scenes.</p>
-                <p>Effects use your current speed and palette.</p>
-                <div class="field">
-                  <label for="temporary-override-color">Color</label>
-                  <input class="swatch" id="temporary-override-color" type="color" value="#cc33ff">
-                </div>
-                <div class="field">
-                  <label for="temporary-override-effect">Effect</label>
-                  <select id="temporary-override-effect">
-                    <option value="steady">Solid</option>
-                    <option value="breathe">Breathe</option>
-                    <option value="spectrum">Spectrum</option>
-                    <option value="palette">Palette drift</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="temporary-override-duration">Duration</label>
-                  <select id="temporary-override-duration">
-                    <option value="5000">5 seconds</option>
-                    <option value="15000" selected>15 seconds</option>
-                    <option value="30000">30 seconds</option>
-                    <option value="60000">1 minute</option>
-                  </select>
-                </div>
-                <p id="temporary-override-status" role="status">No override active</p>
-                <div class="button-row">
-                  <button class="btn" id="temporary-override-start" type="button" disabled>Start override</button>
-                  <button class="btn btn-ghost" id="temporary-override-clear" type="button" disabled>Clear override</button>
+              <div class="field">
+                <label for="color-picker">Color</label>
+                <div class="field-row">
+                  <input class="swatch" id="color-picker" type="color" value="#008100" aria-label="Pick a color">
+                  <input class="input" id="hex-color" type="text" value="#008100" maxlength="7" spellcheck="false" aria-label="Hex color">
                 </div>
               </div>
-            </details>
-          </section>
 
-          <section class="block">
-            <h3>Sync</h3>
-            <div class="list">
-              <div class="row row-inline">
-                <div class="row-text">
-                  <span class="row-title">Screen Sync</span>
-                  <span class="row-desc" id="screen-sync-description">Match LEDs to your display</span>
+              <div class="field">
+                <div class="field-head">
+                  <label for="brightness">Brightness</label>
+                  <span class="number-with-unit">
+                    <input class="input input-number" id="brightness-number" type="number" min="0" max="100" step="1" value="50" aria-label="Brightness percentage">
+                    <span aria-hidden="true">%</span>
+                  </span>
                 </div>
-                <button class="btn sync-toggle" id="screen-sync-toggle" type="button">Start</button>
+                <input id="brightness" type="range" min="0" max="100" value="50">
               </div>
-              <section class="spotify-group" id="spotify-player" data-active="false" data-starting="false">
-                <div class="row row-inline spotify-sync-row">
+
+              <details class="disclosure">
+                <summary>Color gradient</summary>
+                <div class="disclosure-body">
+                  <p>Blend two colors across the selected LEDs.</p>
+                  <div class="gradient-colors">
+                    <label for="gradient-start">Start
+                      <input class="swatch" id="gradient-start" type="color" value="#008100">
+                    </label>
+                    <label for="gradient-end">End
+                      <input class="swatch" id="gradient-end" type="color" value="#ffffff">
+                    </label>
+                  </div>
+                  <button class="btn" id="apply-gradient" type="button" disabled>Apply gradient</button>
+                </div>
+              </details>
+
+              <details class="disclosure">
+                <summary>Channel balance</summary>
+                <div class="disclosure-body">
+                  <p>Adjust if LEDs look different from the selected color.</p>
+                  <div class="field">
+                    <div class="field-head"><label for="rgb-red">Red</label><output id="rgb-red-value" for="rgb-red">100%</output></div>
+                    <input id="rgb-red" type="range" min="50" max="150" value="100">
+                  </div>
+                  <div class="field">
+                    <div class="field-head"><label for="rgb-green">Green</label><output id="rgb-green-value" for="rgb-green">100%</output></div>
+                    <input id="rgb-green" type="range" min="50" max="150" value="100">
+                  </div>
+                  <div class="field">
+                    <div class="field-head"><label for="rgb-blue">Blue</label><output id="rgb-blue-value" for="rgb-blue">100%</output></div>
+                    <input id="rgb-blue" type="range" min="50" max="150" value="100">
+                  </div>
+                  <button class="btn btn-ghost btn-sm" id="reset-color-tuning" type="button">Reset balance</button>
+                </div>
+              </details>
+            </section>
+
+            <section class="block">
+              <h3>Effect</h3>
+
+              <div class="field">
+                <label for="effect">Style</label>
+                <select id="effect">
+                  <option value="steady">Solid</option>
+                  <option value="breathe">Breathe</option>
+                  <option value="spectrum">Spectrum</option>
+                  <option value="palette">Palette drift</option>
+                </select>
+              </div>
+
+              <div class="field hidden" id="speed-control">
+                <div class="field-head">
+                  <label for="speed">Speed</label>
+                  <output id="speed-value" for="speed">48%</output>
+                </div>
+                <input id="speed" type="range" min="1" max="100" value="48">
+              </div>
+
+              <details class="disclosure hidden" id="palette-tuning">
+                <summary>Effect palette</summary>
+                <div class="disclosure-body">
+                  <p>Drag colors to reorder. Saved with each scene.</p>
+                  <div class="palette-swatches" id="palette-swatches" role="list"></div>
+                  <button class="btn btn-sm" id="add-palette-color" type="button">Add color</button>
+                </div>
+              </details>
+
+              <details class="disclosure" id="temporary-override-controls">
+                <summary>Temporary override</summary>
+                <div class="disclosure-body">
+                  <p>Temporarily takes control without changing saved lighting or scenes.</p>
+                  <p>Effects use your current speed and palette.</p>
+                  <div class="field">
+                    <label for="temporary-override-color">Color</label>
+                    <input class="swatch" id="temporary-override-color" type="color" value="#cc33ff">
+                  </div>
+                  <div class="field">
+                    <label for="temporary-override-effect">Effect</label>
+                    <select id="temporary-override-effect">
+                      <option value="steady">Solid</option>
+                      <option value="breathe">Breathe</option>
+                      <option value="spectrum">Spectrum</option>
+                      <option value="palette">Palette drift</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="temporary-override-duration">Duration</label>
+                    <select id="temporary-override-duration">
+                      <option value="5000">5 seconds</option>
+                      <option value="15000" selected>15 seconds</option>
+                      <option value="30000">30 seconds</option>
+                      <option value="60000">1 minute</option>
+                    </select>
+                  </div>
+                  <p id="temporary-override-status" role="status">No override active</p>
+                  <div class="button-row">
+                    <button class="btn" id="temporary-override-start" type="button" disabled>Start override</button>
+                    <button class="btn btn-ghost" id="temporary-override-clear" type="button" disabled>Clear override</button>
+                  </div>
+                </div>
+              </details>
+            </section>
+
+            <section class="block">
+              <h3>Sync</h3>
+              <div class="list">
+                <div class="row row-inline">
                   <div class="row-text">
-                    <span class="row-title">Spotify Sync</span>
-                    <span class="row-desc" id="spotify-sync-description">Match LEDs to Spotify</span>
+                    <span class="row-title">Screen Sync</span>
+                    <span class="row-desc" id="screen-sync-description">Match LEDs to your display</span>
                   </div>
-                  <button class="btn sync-toggle" id="spotify-sync-toggle" type="button">Start</button>
+                  <button class="btn sync-toggle" id="screen-sync-toggle" type="button">Start</button>
                 </div>
-                <div class="spotify-details" id="spotify-details" data-expanded="false" aria-hidden="true" inert>
-                  <div class="spotify-details-inner">
-                    <div class="spotify-now-playing">
-                      <div class="spotify-cover" aria-hidden="true">
-                        <svg class="spotify-cover-placeholder" id="spotify-cover-placeholder" viewBox="0 0 32 32" focusable="false">
-                          <path d="M7 21V8l18-3v17M7 21c0 2-1.6 3.5-3.5 3.5S0 23.6 0 21.5 1.6 18 3.5 18 7 19 7 21Zm18-2c0 2-1.6 3.5-3.5 3.5S18 21.6 18 19.5s1.6-3.5 3.5-3.5S25 16.9 25 19Z" />
-                        </svg>
-                        <img class="spotify-cover-image hidden" id="spotify-cover-image" alt="">
-                      </div>
-                      <div class="spotify-track-copy">
-                        <strong id="spotify-track-title">Ready when you are</strong>
-                        <span id="spotify-track-artist">Play a track in Spotify</span>
-                      </div>
+                <section class="spotify-group" id="spotify-player" data-active="false" data-starting="false">
+                  <div class="row row-inline spotify-sync-row">
+                    <div class="row-text">
+                      <span class="row-title">Spotify Sync</span>
+                      <span class="row-desc" id="spotify-sync-description">Match LEDs to Spotify</span>
                     </div>
-                    <div class="spotify-audio">
-                      <div class="spotify-meter" id="spotify-meter" aria-hidden="true">
-                        <span></span><span></span><span></span><span></span><span></span><span></span>
-                        <span></span><span></span><span></span><span></span><span></span><span></span>
-                      </div>
-                      <div class="spotify-meter-caption" aria-hidden="true">
-                        <span>Low</span><span>Mid</span><span>High</span>
-                      </div>
-                      <div class="field spotify-response">
-                        <div class="field-head">
-                          <label for="spotify-sensitivity">Audio response</label>
-                          <output id="spotify-sensitivity-value" for="spotify-sensitivity">100%</output>
+                    <button class="btn sync-toggle" id="spotify-sync-toggle" type="button">Start</button>
+                  </div>
+                  <div class="spotify-details" id="spotify-details" data-expanded="false" aria-hidden="true" inert>
+                    <div class="spotify-details-inner">
+                      <div class="spotify-now-playing">
+                        <div class="spotify-cover" aria-hidden="true">
+                          <svg class="spotify-cover-placeholder" id="spotify-cover-placeholder" viewBox="0 0 32 32" focusable="false">
+                            <path d="M7 21V8l18-3v17M7 21c0 2-1.6 3.5-3.5 3.5S0 23.6 0 21.5 1.6 18 3.5 18 7 19 7 21Zm18-2c0 2-1.6 3.5-3.5 3.5S18 21.6 18 19.5s1.6-3.5 3.5-3.5S25 16.9 25 19Z" />
+                          </svg>
+                          <img class="spotify-cover-image hidden" id="spotify-cover-image" alt="">
                         </div>
-                        <input id="spotify-sensitivity" type="range" min="0" max="100" value="100">
+                        <div class="spotify-track-copy">
+                          <strong id="spotify-track-title">Ready when you are</strong>
+                          <span id="spotify-track-artist">Play a track in Spotify</span>
+                        </div>
+                      </div>
+                      <details class="disclosure spotify-insights" id="spotify-insights">
+                        <summary>Track insights</summary>
+                        <dl class="disclosure-body spotify-insight-list">
+                          <div class="spotify-insight-row">
+                            <dt>Genres</dt>
+                            <dd id="spotify-insight-genres">Looking up genre…</dd>
+                          </div>
+                          <div class="spotify-insight-row">
+                            <dt>Playback</dt>
+                            <dd id="spotify-insight-playback">Waiting</dd>
+                          </div>
+                          <div class="spotify-insight-row">
+                            <dt>Audio bands</dt>
+                            <dd id="spotify-insight-bands">Bass 0% | Mid 0% | Treble 0%</dd>
+                          </div>
+                          <div class="spotify-insight-row">
+                            <dt>Beat activity</dt>
+                            <dd id="spotify-insight-beats">Bass 0% | Mid 0% | Treble 0%</dd>
+                          </div>
+                          <div class="spotify-insight-row">
+                            <dt>Drop impact</dt>
+                            <dd id="spotify-insight-impact">0%</dd>
+                          </div>
+                        </dl>
+                      </details>
+                      <div class="spotify-audio">
+                        <div class="spotify-meter" id="spotify-meter" aria-hidden="true">
+                          <span></span><span></span><span></span><span></span><span></span><span></span>
+                          <span></span><span></span><span></span><span></span><span></span><span></span>
+                        </div>
+                        <div class="spotify-meter-caption" aria-hidden="true">
+                          <span>Low</span><span>Mid</span><span>High</span>
+                        </div>
+                        <div class="field spotify-response">
+                          <div class="field-head">
+                            <label for="spotify-sensitivity">Audio response</label>
+                            <output id="spotify-sensitivity-value" for="spotify-sensitivity">100%</output>
+                          </div>
+                          <input id="spotify-sensitivity" type="range" min="0" max="100" value="100">
+                        </div>
                       </div>
                     </div>
-                    <p class="sync-note">Desktop audio is analyzed on this PC and never recorded or uploaded. The analyzer listens to the system mix, and only while Spotify reports that it is playing.</p>
                   </div>
-                </div>
-              </section>
-            </div>
-          </section>
+                </section>
+              </div>
+            </section>
 
+          </div>
         </aside>
       </div>
     </section>
@@ -598,6 +624,8 @@
 <script src="../screen-sync-lifecycle.js"></script>
 <script src="../startup-mode.js"></script>
 <script src="../spotify-auto-start.js"></script>
+<script src="../effects.js"></script>
+<script src="../lighting-frame.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

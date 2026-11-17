@@ -8,20 +8,25 @@ or choose a color and effect yourself.
 
 ## Screenshots
 
-The Lighting tab arranges the strip around a preview of your monitor, and the
-Device tab holds the controller profile, sync behavior, and startup options.
+### Lighting
 
-| Lighting | Device |
-| --- | --- |
-| ![ULLeds Lighting tab: the LED layout drawn around a monitor preview, the Spectrum effect at 100% brightness, and both sync sources stopped](docs/media/app-lighting.png) | ![ULLeds Device tab: the connected USB LED controller with 75 LEDs and RGB color order, plus picture area, sync speed, startup, support, and reset settings](docs/media/app-device.png) |
+![Lighting tab with the Solid effect selected and both Screen Sync and Spotify Sync stopped](docs/media/app-lighting.png)
 
-The same controls are available on a phone through the local phone remote:
+### Spotify Sync
 
-<img src="docs/media/phone-remote.png" alt="The ULLeds phone remote on a narrow screen: connected controller with 75 LEDs, the LED layout, color, and brightness controls" width="320">
+![Lighting tab with Spotify Sync active and Track insights expanded for the current track](docs/media/spotify-sync.png)
 
-The phone and PC screenshots show a real controller. The Wi-Fi address and
-pairing details are blurred or hidden because they are local to the machine
-that took them.
+### Device
+
+![Device tab showing the connected USB LED controller and its layout, sync, startup, and support settings](docs/media/app-device.png)
+
+### Phone remote
+
+![Phone remote Lighting tab showing the 75-LED layout, Solid lighting, and Spotify Sync active in the mobile interface](docs/media/phone-remote.png)
+
+To open the remote on a phone, go to **Device → Phone remote** in ULLeds, turn
+on **Allow phone control**, then scan the pairing QR code on the same private
+Wi-Fi network and enter the displayed PIN.
 
 ## What you can do
 
@@ -45,8 +50,9 @@ that took them.
   Screen Sync preferences stay as they are.
 - **Use your phone as a remote:** Turn the phone remote on, pair it with the
   six-digit PIN shown on the PC, and control color, effects, brightness, saved
-  scenes, temporary overrides, and Screen Sync from a phone on the same
-  network. No account, cloud service, or internet access is involved.
+  scenes, temporary overrides, Screen Sync, and Spotify Sync from a phone on
+  the same network. The remote uses your local network and needs no account or
+  cloud service; it does not provide every desktop setting.
 - **Contact support:** Describe the problem, preview the GitHub issue draft,
   and optionally save recent diagnostics as a local attachment. You choose
   whether to attach them in GitHub; the app never submits the issue for you.
@@ -83,8 +89,9 @@ Compatibility depends on the controller, not on the strip alone:
   follow to the primary display.
 
 The Device page lists every supported controller it detects, with its name and
-`VID:PID`. If nothing is listed, the connected controller is not supported. The
-setup wizard then helps you arrange the strip to match your monitor.
+`VID:PID`. If no controller is listed, check that it is connected; if it is,
+the controller may be unsupported or use different firmware. The setup wizard
+then helps you arrange the strip to match your monitor.
 
 ## Download and updates
 
@@ -120,10 +127,10 @@ details to GitHub; the issue is public only if you submit it there.
 
 Spotify Sync reads cover art locally from Windows media controls. While Windows
 reports Spotify as playing, it analyzes the desktop audio mix to animate the
-LEDs; while playback is paused or stopped it listens to nothing and holds the
-cover-art colors. Audio capture is not limited to Spotify, so other system
-output still contributes while a track plays. ULLeds does not record or upload
-audio or artwork.
+LEDs; while playback is paused or stopped, it does not analyze the captured
+audio and holds the cover-art colors. Audio capture is not limited to Spotify,
+so other system output contributes while a track plays. ULLeds does not record
+or upload audio or artwork.
 
 For widescreen content with black bars, optional detection looks for stable
 letterbox bars — including near-black bars in an otherwise dark scene — and

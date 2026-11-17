@@ -15,6 +15,47 @@ test("the detected LED count has no editable renderer control", () => {
   assert.doesNotMatch(app, /data-setting=["']ledCount["']/);
 });
 
+test("Palette drift uses a horizontal drag-reorder strip with accessible removal", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const start = app.indexOf("function movePaletteColor(palette, fromIndex, toIndex)");
+  const end = app.indexOf("\nfunction renderPalette()", start);
+
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const context = {};
+  vm.runInNewContext(
+    `${app.slice(start, end)}; globalThis.paletteControls = { movePaletteColor, removePaletteColor };`,
+    context
+  );
+  const move = (palette, index, direction) =>
+    JSON.parse(JSON.stringify(context.paletteControls.movePaletteColor(palette, index, direction)));
+  const remove = (palette, index) =>
+    JSON.parse(JSON.stringify(context.paletteControls.removePaletteColor(palette, index)));
+  const colors = ["#112233", "#445566", "#778899"];
+
+  assert.deepEqual(move(colors, 2, 0), ["#778899", "#112233", "#445566"]);
+  assert.deepEqual(move(colors, 0, 2), ["#445566", "#778899", "#112233"]);
+  assert.deepEqual(move(colors, 0, 0), colors);
+  assert.deepEqual(remove(colors, 1), ["#112233", "#778899"]);
+  assert.throws(() => remove(["#112233", "#445566"], 0), /at least two colors/i);
+  assert.match(app, /draggable: "true"/);
+  assert.match(app, /ondragstart: \(event\) =>/);
+  assert.match(app, /ondragover: \(event\) =>/);
+  assert.match(app, /ondrop: \(event\) =>/);
+  assert.match(app, /class: "icon-btn palette-drag-handle"/);
+  assert.match(app, /draggable: "true"/);
+  assert.match(app, /paletteGripIcon\(\)/);
+  assert.doesNotMatch(app, /Alt\+Left|Alt\+Right/);
+  assert.doesNotMatch(app.slice(app.indexOf("function renderPalette()"), app.indexOf("\n\n/*", app.indexOf("function renderPalette()"))), /onkeydown/);
+  assert.match(app, /"aria-label": `Remove palette color \$\{index \+ 1\}`/);
+  assert.match(app, /M6 6l12 12M18 6L6 18/);
+  assert.match(app, /disabled: palette\.length <= 2/);
+  assert.match(html, /id="palette-swatches" role="list"/);
+  assert.match(css, /\.palette-swatches \{[^}]*display: flex;[^}]*overflow-x: auto;/s);
+});
+
 test("all views use the available width with matching page gutters", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
@@ -22,8 +63,9 @@ test("all views use the available width with matching page gutters", () => {
 
   assert.equal(views.length, 4);
   assert.ok(views.every(([, classes]) => classes.split(/\s+/).includes("view")));
-  assert.match(css, /\.view \{ width: 100%; margin-inline: 0; \}/);
-  assert.match(css, /main \{[^}]*padding: var\(--sp-2\) var\(--gutter\) var\(--sp-2\);/s);
+  assert.match(css, /\.view \{ width: 100%; min-height: 100%; \}/);
+  assert.match(css, /main \{[^}]*padding: 0 var\(--main-pad\) var\(--edge\);[^}]*scrollbar-gutter: stable both-edges;/s);
+  assert.match(css, /--main-pad: calc\(var\(--gutter\) - var\(--sb\)\)/);
 });
 
 test("every tab title starts at the same top alignment", () => {
@@ -41,7 +83,8 @@ test("every tab title starts at the same top alignment", () => {
     );
     assert.match(html, header);
   }
-  assert.match(css, /\.view-head \{[^}]*align-items: flex-start;/s);
+  assert.match(css, /\.view-head \{[^}]*align-items: center;[^}]*min-height: calc\(var\(--ctl\) \+ 2 \* var\(--edge\)\);/s);
+  assert.match(css, /\.view-head h2 \{ line-height: var\(--ctl\); \}/);
 });
 
 test("renderer selectors resolve to unique elements in the page", () => {
@@ -85,6 +128,7 @@ test("renderer scripts load together and expose their APIs", () => {
   assert.equal(typeof context.ullLedSelection?.selectLed, "function");
   assert.equal(typeof context.ullSceneData?.sceneFromLighting, "function");
   assert.equal(typeof context.ullSpotifySync?.createSpotifySyncColors, "function");
+  assert.equal(typeof context.ullSpotifySync?.lookupSpotifyGenres, "function");
   assert.equal(typeof context.ullGithubReleases?.getReleasedInstallers, "function");
   assert.equal(typeof context.ullStartupMode?.isSyncStartupMode, "function");
   assert.equal(typeof context.ullSpotifyAutoStart?.createSpotifyAutoStartGate, "function");
@@ -134,7 +178,7 @@ test("release notes offer published version downloads and a compact startup upda
   assert.match(main, /autoUpdater\.allowDowngrade = versionComparison < 0/);
   assert.match(main, /result\.updateInfo\.version !== version/);
   assert.doesNotMatch(main, /updates:download-release|shell\.openExternal\(installer\.url\)/);
-  assert.match(css, /\.update-banner \{[^}]*margin: 0 var\(--gutter\) var\(--sp-3\);/s);
+  assert.match(css, /\.update-banner \{[^}]*margin: 0 var\(--gutter\) var\(--edge\);/s);
   assert.match(app, /versionNoticeTimer = setTimeout\(dismissVersionNotice, VERSION_NOTICE_MS\)/);
   assert.match(css, /animation: drain 8s linear forwards/);
 });
@@ -166,14 +210,15 @@ test("phone remote supports iPhone Home Screen relaunch and reconnects without a
   const remote = fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8");
 
   assert.match(html, /name="apple-mobile-web-app-capable" content="yes"/);
-  assert.match(html, /id="connection-panel"[\s\S]*pair again only if the saved session expires or is removed/);
+  assert.match(html, /http-equiv="Content-Security-Policy"[^>]*font-src 'self'/);
+  assert.match(html, /id="connection-panel"[\s\S]*page reconnects automatically/);
   assert.match(html, /id="retry-connection"/);
   assert.match(remote, /if \(!latestState\) showDisconnected\(\)/);
   assert.match(remote, /window\.addEventListener\("pageshow"/);
   assert.match(remote, /document\.addEventListener\("visibilitychange"/);
 });
 
-test("phone remote uses the shared LED layout and gives Spotify Sync a visible state", () => {
+test("phone remote has Lighting, Scenes, and Settings views using the shared LED layout", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
   const previewCss = fs.readFileSync(path.join(uiDirectory, "strip-preview.css"), "utf8");
@@ -182,47 +227,158 @@ test("phone remote uses the shared LED layout and gives Spotify Sync a visible s
 
   assert.match(html, /src="\/strip-layout\.js" defer/);
   assert.match(html, /src="\/led-selection\.js" defer/);
+  assert.match(html, /href="remote\.css"/);
+  assert.match(html, /src="remote\.js" defer/);
   assert.match(html, /href="\/strip-preview\.css"/);
+  assert.match(html, /id="remote-tabs"[^>]*role="tablist"/);
+  for (const [view, label] of [["light", "Lighting"], ["scenes", "Scenes"], ["settings", "Settings"]]) {
+    assert.match(html, new RegExp(`data-view="${view}"[^>]*role="tab"[^>]*>${label}<`));
+    assert.match(html, new RegExp(`id="view-${view}"[^>]*role="tabpanel"`));
+  }
   assert.match(html, /class="preview-stage phone-preview-stage"[\s\S]*class="monitor" id="led-map"[\s\S]*class="monitor-screen"[\s\S]*class="led-edge led-top"[\s\S]*class="led-edge led-left"[\s\S]*class="led-edge led-right"[\s\S]*class="led-edge led-bottom"/);
   assert.match(html, /class="monitor-screen" id="monitor-screen" aria-hidden="true"><\/div>/);
   assert.match(html, /id="multi-select"/);
-  assert.match(html, /id="sync-status"/);
-  const previewPosition = html.indexOf('<section class="panel strip-panel"');
-  const lightingPosition = html.indexOf('aria-labelledby="lighting-title"');
-  const scenesPosition = html.indexOf("<h2>Scenes</h2>");
-  const syncPosition = html.indexOf('aria-labelledby="sync-title"');
-  assert.ok(previewPosition < lightingPosition && lightingPosition < scenesPosition && scenesPosition < syncPosition);
+  assert.match(html, /id="screen-sync"/);
+  assert.match(html, /id="spotify-sync"/);
+  assert.match(html, /id="connection-status"[^>]*role="status"/);
+  assert.match(html, /id="sync-content"/);
+  assert.match(html, /id="sync-fps"/);
+  assert.match(html, /id="spotify-sensitivity"/);
   assert.match(remote, /window\.ullStripLayout\.allocateEdgeIndices/);
   assert.match(remote, /window\.ullLedSelection\.fixedColorChanges/);
-  assert.match(remote, /sync\.mode === "spotify" \? "Spotify" : "Screen"\} Sync active/);
+  assert.match(remote, /activeSources\.includes\("screen"\)/);
+  assert.match(remote, /activeSources\.includes\("spotify"\)/);
+  assert.match(remote, /function switchView\(name\)/);
   assert.match(remote, /--monitor-aspect-ratio/);
   assert.match(main, /ledColors: \{ \.\.\.settings\.ledColors \}/);
   assert.match(main, /profile: \{\s+\.\.\.\(connectedInfo\?\.profile \|\| settings\.deviceProfile \|\| \{\}\)/);
   assert.match(main, /screen\.getDisplayMatching\(mainWindow\.getBounds\(\)\)/);
   assert.match(previewCss, /\.led-edge \{[^}]*position: absolute;[^}]*display: grid;/s);
   assert.match(previewCss, /\.led-pixel\.selected \{[^}]*box-shadow: 0 0 0 0\.125rem var\(--text\);/s);
-  assert.match(css, /--gutter: 16px;/);
-  assert.match(css, /--pad: 18px;/);
+  assert.match(css, /--gutter: clamp\(1rem, 4vw, 1\.5rem\)/);
+  assert.match(css, /--pad: var\(--sp-5\)/);
   assert.match(css, /--r-sm: 0\.375rem;/);
   assert.match(css, /\.phone-preview-stage \.monitor \{ width: 100%; \}/);
   assert.doesNotMatch(css, /\.phone-preview-stage \.monitor-screen/);
-  assert.doesNotMatch(css, /\.led-map \{[^}]*grid-template-areas/s);
-  assert.doesNotMatch(css, /\.led-pixel::before/);
-  assert.match(css, /\.advanced summary::after/);
+  assert.match(css, /\.disclosure > summary::after/);
+  assert.match(css, /@media \(prefers-color-scheme: light\)/);
 });
 
-test("phone remote separates Sync settings from the Stop Sync button", () => {
+test("phone remote can reorder its horizontal palette and collapse temporary overrides", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
+  const remote = fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8");
+  const start = remote.indexOf("function movePaletteColor(palette, fromIndex, toIndex)");
+  const end = remote.indexOf("\nfunction reorderPalette", start);
+  const paletteStart = remote.indexOf("function renderPalette(colors)");
+  const paletteEnd = remote.indexOf("\nfunction renderScenes", paletteStart);
+  const paletteRenderer = remote.slice(paletteStart, paletteEnd);
+
+  assert.match(html, /id="palette"[^>]*role="list"/);
+  assert.match(html, /<details class="disclosure" id="override-panel">/);
+  assert.match(html, /<summary>Temporary override<\/summary>/);
+  assert.match(html, /id="override-status" role="status"/);
+  assert.doesNotMatch(html, /<details[^>]*id="override-panel"[^>]*open/);
+  assert.match(html, /Drag colors by the handle to reorder/);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+  const context = {};
+  vm.runInNewContext(`${remote.slice(start, end)}; globalThis.movePaletteColor = movePaletteColor;`, context);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(context.movePaletteColor(["#112233", "#445566", "#778899"], 2, 0))),
+    ["#778899", "#112233", "#445566"]
+  );
+  assert.match(remote, /function movePaletteColor\(palette, fromIndex, toIndex\)/);
+  assert.match(remote, /addEventListener\("pointerdown"/);
+  assert.match(remote, /addEventListener\("pointermove"/);
+  assert.match(remote, /addEventListener\("pointerup"/);
+  assert.match(remote, /remove\.append\(paletteRemoveIcon\(\)\)/);
+  assert.match(remote, /M6 6l12 12M18 6L6 18/);
+  assert.doesNotMatch(paletteRenderer, /remove\.textContent = "Remove"/);
+  assert.match(html, /id="screen-sync"[^>]*aria-pressed="false">Start<\/button>/);
+  assert.match(html, /id="spotify-sync"[^>]*aria-pressed="false">Start<\/button>/);
+  assert.match(remote, /remove\.disabled = colors\.length <= 2/);
+  assert.match(remote, /\$\("#add-color"\)\.disabled = colors\.length >= 8/);
+  assert.match(css, /\.palette-swatches \{[^}]*display: flex;[^}]*overflow-x: auto;/s);
+  assert.match(css, /\.disclosure\[open\] > \.disclosure-body[^}]*animation:/);
+  assert.match(css, /\.disclosure > summary::after \{[^}]*mask: var\(--chevron\) center \/ 100% 100% no-repeat;[^}]*transition: transform var\(--move\);/s);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
+test("phone palette scrolls horizontally without an extra scrollbar control", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
+  const remote = fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8");
+
+  assert.match(html, /class="palette-swatches" id="palette" role="list"/);
+  assert.doesNotMatch(html, /palette-scrollbar/);
+  assert.match(css, /\.palette-swatches \{[^}]*overflow-x: auto;/s);
+  assert.match(css, /\.palette-swatches \{[^}]*overscroll-behavior-x: contain;/s);
+  assert.match(remote, /const scrollLeft = root\.scrollLeft/);
+  assert.match(remote, /root\.scrollLeft = scrollLeft/);
+});
+
+test("phone remote sliders update their value labels and filled tracks while dragging", () => {
+  const remote = fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8");
+  const start = remote.indexOf("function updateRangeFill(input)");
+  const end = remote.indexOf("\nfunction renderPalette", start);
+  assert.notEqual(start, -1);
+  assert.notEqual(end, -1);
+
+  const context = {};
+  vm.runInNewContext(`${remote.slice(start, end)}; globalThis.updateRangeFill = updateRangeFill;`, context);
+  const fill = (value, min, max) => {
+    let fillValue = "";
+    context.updateRangeFill({
+      value: String(value),
+      min: String(min),
+      max: String(max),
+      style: { setProperty: (_name, nextValue) => { fillValue = nextValue; } }
+    });
+    return fillValue;
+  };
+  assert.equal(fill(25, 0, 100), "25%");
+  assert.equal(fill(100, 50, 150), "50%");
+  assert.equal(fill(200, 0, 100), "100%");
+  assert.equal(fill(-10, 0, 100), "0%");
+
+  assert.match(remote, /#speed"\)\.addEventListener\("input", \(event\) => \{\s+\$\("#speed-value"\)\.textContent = `\$\{event\.target\.value\}%`;\s+updateRangeFill\(event\.target\);/);
+  assert.match(remote, /\$\(`#gain-\$\{channel\}`\)\.addEventListener\("input", \(event\) => \{\s+\$\(`#gain-\$\{channel\}-value`\)\.textContent = `\$\{event\.target\.value\}%`;\s+updateRangeFill\(event\.target\);/);
+  assert.match(remote, /#sync-fps"\)\.addEventListener\("input", \(event\) => \{\s+\$\("#sync-fps-value"\)\.textContent = `\$\{event\.target\.value\} FPS`;\s+updateRangeFill\(event\.target\);/);
+  assert.match(remote, /#spotify-sensitivity"\)\.addEventListener\("input", \(event\) => \{\s+\$\("#spotify-sensitivity-value"\)\.textContent = `\$\{event\.target\.value\}%`;\s+updateRangeFill\(event\.target\);/);
+});
+
+test("mobile widescreen prompt setting aligns with the other Sync controls", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
 
-  assert.match(html, /id="stop-sync"[\s\S]*?<\/button>\s*<\/div>\s*<p class="hint sync-note"/);
-  assert.match(css, /\.sync-note \+ \.advanced, \.sync-actions \+ \.advanced \{\s+margin-top: var\(--space-4\);\s+padding-top: var\(--space-3\);/);
+  const settings = html.slice(html.indexOf('id="view-settings"'));
+  assert.match(settings, /<label class="row row-inline" for="sync-auto-detect">[\s\S]*id="sync-auto-detect"/);
+  assert.match(settings, /Ask before using a stable detected ratio/);
+  assert.match(css, /\.row-inline > \.row-text \{ flex: 1 1 auto; \}/);
+  assert.match(css, /\.row \{[^}]*display: flex;[^}]*align-items: center;/s);
+});
+
+test("phone remote puts Sync controls in Lighting and Sync preferences in Settings", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "remote.html"), "utf8");
+  const css = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
+  const lighting = html.slice(html.indexOf('id="view-light"'), html.indexOf("<!-- Scenes -->"));
+  const settings = html.slice(html.indexOf('id="view-settings"'));
+
+  assert.match(lighting, /id="screen-sync"/);
+  assert.match(lighting, /id="spotify-sync"/);
+  assert.doesNotMatch(html, /id="stop-sync"/);
+  assert.match(settings, /id="sync-content"/);
+  assert.match(settings, /id="sync-fps"/);
+  assert.match(settings, /id="spotify-sensitivity"/);
+  assert.match(css, /\.sync-toggle \{ min-width: 5rem; \}/);
 });
 
 test("Spotify Sync combines local cover art with live desktop audio analysis", () => {
   const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const readme = fs.readFileSync(path.join(__dirname, "..", "..", "README.md"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
   const helper = fs.readFileSync(path.join(__dirname, "..", "spotify-media.cs"), "utf8");
@@ -233,17 +389,25 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(html, /id="spotify-track-title"/);
   assert.match(html, /id="spotify-track-artist"/);
   assert.match(html, /id="spotify-details" data-expanded="false" aria-hidden="true" inert/);
+  assert.match(html, /<details class="disclosure spotify-insights"[^>]*>[\s\S]*?<summary>Track insights<\/summary>/);
+  assert.match(html, /<dt>Genres<\/dt>\s*<dd id="spotify-insight-genres">Looking up genre…<\/dd>/);
+  assert.doesNotMatch(html, /Detected genres|On-device estimate/);
+  assert.match(html, /id="spotify-insight-beats"/);
+  assert.doesNotMatch(html, /Desktop audio is analyzed on this PC and never recorded or uploaded/);
+  assert.match(readme, /analyzes the desktop audio mix[\s\S]*does not record\s+or upload audio or artwork/);
   assert.match(html, /id="spotify-meter"/);
   assert.match(html, /id="spotify-sensitivity" type="range" min="0" max="100" value="100"/);
   assert.match(html, /id="spotify-sensitivity-value" for="spotify-sensitivity">100%/);
-  assert.match(html, /Desktop audio is analyzed on this PC and never recorded or uploaded/);
   assert.match(app, /details\.dataset\.expanded = String\(spotifyExpanded\)/);
   assert.match(app, /details\.inert = !spotifyExpanded/);
   assert.match(app, /spotifyActive \|\| spotifyStarting/);
   assert.match(app, /Syncing to the current track/);
-  assert.match(css, /\.spotify-details \{[^}]*grid-template-rows: 0fr;[^}]*transition:[\s\S]*var\(--ease\)/);
+  assert.match(css, /\.spotify-details \{[^}]*grid-template-rows: 0fr;[^}]*transition:[\s\S]*var\(--move\)/);
   assert.match(css, /\.spotify-details\[data-expanded="true"\] \{[^}]*grid-template-rows: 1fr;/);
   assert.match(css, /\.spotify-group \{ min-width: 0; \}/);
+  assert.match(css, /\.spotify-insight-row \{[\s\S]*grid-template-columns: minmax\(5rem, auto\) minmax\(0, 1fr\)/);
+  assert.match(app, /if \(insights\.open\) \{\s+const levels = session\.audioLevels/);
+  assert.match(app, /Looking up genre…/);
   assert.match(css, /\.spotify-meter span \{[^}]*border-radius: calc\(var\(--r-sm\) \/ 2\);/);
   assert.match(app, /0\.06 \+ level \* 0\.94/);
   assert.match(app, /window\.ull\.getSpotifyArtwork\(\)/);
@@ -251,19 +415,33 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(app, /window\.ull\.screenSyncSource\(\)\.then\(\(\{ id \}\) =>\s+navigator\.mediaDevices\.getUserMedia\(/);
   assert.match(app, /createDesktopAudioCaptureConstraints\(id\)/);
   assert.match(app, /new AudioContext\(\)/);
+  assert.match(app, /analyser\.smoothingTimeConstant = 0/);
+  assert.match(app, /analyzer: window\.ullSpotifySync\.createSpotifyAnalyzer\(\)/);
   assert.match(app, /analyser\.getFloatFrequencyData/);
   assert.match(app, /analyzeSpotifySpectrum/);
+  assert.match(app, /session\.analyzer\s*=\s*window\.ullSpotifySync\.createSpotifyAnalyzer\(\)/);
+  assert.match(app, /session\.previousMeasuredLevels,\s+session\.analyzer/);
+  assert.match(app, /if \(session\.previousMeasuredLevels !== null\) \{\s+session\.analyzer = window\.ullSpotifySync\.createSpotifyAnalyzer\(\)/);
+  assert.match(app, /session\.previousMeasuredLevels/);
+  assert.match(app, /session\.genres/);
+  assert.match(app, /requestSpotifyGenreLookup\(artwork\.title,\s*artwork\.artist\)/);
+  assert.match(app, /window\.ull\.lookupSpotifyGenres\(title,\s*artist\)/);
+  assert.match(app, /session\.genreSource = "iTunes"/);
+  assert.doesNotMatch(app, /updateSpotifyGenreDetector|detectedGenres/);
   assert.match(app, /createSpotifyReactiveColors/);
   assert.match(app, /renderSpotifyMeter\(session\)/);
   assert.match(app, /smoothSpotifyLevels\(\s+session\.audioLevels,\s+measuredLevels,\s+elapsedMs\s+\)/);
   assert.match(app, /Number\(state\.settings\.spotifySensitivity \?\? 100\)/);
   assert.match(app, /queueSettings\(\{ spotifySensitivity: Number\(event\.target\.value\) \}, true\)/);
-  assert.match(app, /artwork\.title, artwork\.artist, artwork\.album, artwork\.contentType, artwork\.playbackStatus, artwork\.data/);
+  assert.match(app, /function spotifyArtworkIdentity\(artwork\)/);
+  assert.match(app, /const artworkIdentity = artwork \? spotifyArtworkIdentity\(artwork\) : ""/);
+  assert.match(app, /JSON\.stringify\(artwork\.genres \|\| \[\]\)/);
+  assert.match(app, /artwork\.title, artwork\.artist, artwork\.album, artwork\.contentType, artwork\.playbackStatus/);
   assert.match(app, /if \(!artwork\) \{\s+observeSpotifyPlaybackForAutoStart\(null\);\s+if \(session\.hasMedia\)/);
   assert.match(app, /session\.hasMedia = true/);
   assert.match(app, /isSpotifyPlaybackActive\(\s+session\.hasMedia,\s+session\.playbackStatus\s+\)/);
   assert.match(app, /silentSpotifyLevels\(\s+session\.audioLevels\.spectrum\.length\s+\)/);
-  assert.match(html, /only while Spotify reports that it is playing/);
+  assert.match(readme, /while playback is paused or stopped, it does not analyze the captured\s+audio/);
   assert.match(app, /Waiting for a Spotify track/);
   assert.match(app, /if \(syncSession\(mode\)\) \{\s+void stopSyncSource\(mode\)/);
   assert.match(app, /const pending = sync\.lifecycles\.spotify\.start/);
@@ -276,6 +454,7 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(app, /matchMedia\("\(prefers-reduced-motion: reduce\)"\)/);
   assert.match(app, /window\.ull\.startScreenSync\("spotify"\)/);
   assert.match(main, /handleMainWindow\("spotify-sync:artwork", \(\) => readSpotifyArtwork\(\)\)/);
+  assert.match(main, /handleMainWindow\("spotify-sync:genres", \(_event, title, artist\) => lookupSpotifyGenres\(title, artist\)\)/);
   assert.match(main, /settings\.startupMode = activeSyncMode\(\);\s+saveSettings\(\)/);
   assert.match(main, /execFile\(helperPath/);
   assert.match(main, /spotify-media\.exe/);
@@ -286,10 +465,12 @@ test("Spotify Sync combines local cover art with live desktop audio analysis", (
   assert.match(helper, /properties\.Title/);
   assert.match(helper, /properties\.Artist/);
   assert.match(helper, /properties\.AlbumTitle/);
+  assert.match(helper, /properties\.Genres/);
   assert.match(helper, /EscapeJson/);
   assert.match(helper, /Console\.OutputEncoding = new UTF8Encoding\(false\)/);
   assert.match(helper, /buffer\.Length > 2 \* 1024 \* 1024/);
   assert.match(preload, /getSpotifyArtwork: \(\) => ipcRenderer\.invoke\("spotify-sync:artwork"\)/);
+  assert.match(preload, /lookupSpotifyGenres: \(title, artist\) => ipcRenderer\.invoke\("spotify-sync:genres", title, artist\)/);
   assert.match(preload, /screenSyncSource: \(\) => ipcRenderer\.invoke\("screen-sync:source"\)/);
   assert.match(preload, /startScreenSync: \(mode = "screen"\) => ipcRenderer\.invoke\("screen-sync:start", mode\)/);
   assert.match(app, /stopTracks\(audioStream\)/);
@@ -306,10 +487,13 @@ test("saved scene cards have room for setup details and actions on desktop and p
   assert.match(app, /class: "scene-meta"/);
   assert.match(css, /\.scene-list \{[^}]*minmax\(min\(100%, 24rem\), 1fr\)/);
   assert.match(css, /\.scene-meta \{[^}]*flex-wrap: wrap;/);
-  assert.match(remote, /card\.className = "scene-card"/);
-  assert.match(remote, /preview\.className = "scene-preview"/);
-  assert.match(remoteCss, /\.scene-card \{/);
-  assert.match(remoteCss, /\.scene-actions \{[^}]*grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(remote, /card\.className = "scene card"/);
+  assert.match(remote, /ribbon\.className = "scene-ribbon"/);
+  assert.match(remote, /name\.textContent = scene\.name/);
+  assert.match(remote, /function confirmDeleteScene\(scene\)/);
+  assert.match(remoteCss, /\.scene \{[^}]*grid-template-columns: 3\.75rem minmax\(0, 1fr\);/);
+  assert.match(remoteCss, /\.scene-meta \{[^}]*flex-wrap: wrap;/);
+  assert.match(remoteCss, /\.scene-actions \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
 });
 
 test("Spotify auto-start is default-on, user-controllable, and uses status-only polling", () => {
@@ -374,6 +558,28 @@ test("the interface uses consistent neutral dark and light color systems", () =>
   assert.deepEqual(nonMonochrome, [], "UI colors should be monochrome apart from semantic errors");
   assert.doesNotMatch(css, /backdrop-filter/);
   assert.doesNotMatch(css, /#(?:D71921|E51B24|FF0000)\b/i);
+});
+
+test("every interface icon and arrow uses the same stroke weight", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const desktopCss = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
+  const remoteCss = fs.readFileSync(path.join(uiDirectory, "remote.css"), "utf8");
+
+  assert.match(desktopCss, /--icon-stroke: 1\.5px/);
+  assert.match(remoteCss, /--icon-stroke: 1\.5px/);
+  assert.match(desktopCss, /\.icon-btn svg, \.window-btn svg \{[^}]*stroke-width: var\(--icon-stroke\)/s);
+  assert.match(desktopCss, /\.disclosure > summary::after \{[^}]*mask: var\(--chevron\) center \/ 100% 100% no-repeat;[^}]*transition: transform var\(--move\);/s);
+  assert.match(remoteCss, /\.disclosure > summary::after \{[^}]*mask: var\(--chevron\) center \/ 100% 100% no-repeat;[^}]*transition: transform var\(--move\);/s);
+  assert.match(remoteCss, /\.icon-btn svg \{[^}]*stroke-width: var\(--icon-stroke\)/s);
+  assert.match(desktopCss, /\.spotify-cover-placeholder \{[^}]*stroke-width: var\(--icon-stroke\)/);
+  assert.match(desktopCss, /\.profile-diagram-edge \{[^}]*stroke-width: var\(--icon-stroke\)/);
+  assert.match(desktopCss, /stroke-width='1\.5'/);
+  assert.doesNotMatch(desktopCss, /#scan-device svg|\.release-nav \.icon-btn svg/);
+  assert.doesNotMatch(desktopCss, /stroke-width: (?:1\.25px|1\.4;|1\.75px|2px)|border-(?:right|bottom): 1\.75px/);
+  assert.doesNotMatch(remoteCss, /stroke-width: 1\.75px|border-(?:right|bottom): 1\.75px/);
+  assert.match(html, /<button class="icon-btn" id="scan-device"/);
+  assert.match(html, /<button class="icon-btn" id="release-newer"/);
+  assert.match(html, /<button class="icon-btn" id="release-older"/);
 });
 
 test("legacy vendor names are replaced with a neutral device label", () => {
@@ -467,7 +673,7 @@ test("topbar omits the wordmark and adapts navigation to the window", () => {
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
 
-  assert.match(css, /\.topbar \{[^}]*display: flex;[^}]*align-items: center;[^}]*min-height: var\(--bar\);/s);
+  assert.match(css, /\.topbar \{[^}]*display: flex;[^}]*align-items: center;[^}]*padding: var\(--edge\) var\(--gutter\);/s);
   assert.doesNotMatch(html.slice(html.indexOf('<header class="topbar">'), html.indexOf("</header>")), /ULLeds/);
   assert.match(css, /\.tabs \{[^}]*display: flex;/s);
   assert.match(css, /\.tab\.active \{ background: var\(--surface-3\); color: var\(--text\); \}/);
@@ -476,13 +682,13 @@ test("topbar omits the wordmark and adapts navigation to the window", () => {
   assert.doesNotMatch(css.match(/\.status \{([^}]*)\}/s)?.[1] || "", /background|border:/);
   assert.match(css, /\.status-dot \{ flex: none; width: 0\.5rem; height: 0\.5rem;/);
   assert.match(css, /\.status\.connected \.status-dot \{\s+background: var\(--text\);\s+\}/);
-  assert.match(css, /\.window-controls \{ display: flex; align-self: stretch; flex: none; \}/);
+  assert.match(css, /\.window-controls \{ display: flex; align-items: center; flex: none; gap: var\(--sp-1\); \}/);
   assert.match(css, /\.window-btn \{[^}]*background: transparent;/s);
   assert.match(css, /\.status-label \{\s+overflow: hidden;\s+text-overflow: ellipsis;\s+white-space: nowrap;/);
   assert.match(css, /main \{\s+flex: 1;\s+min-height: 0;[\s\S]*overflow-y: auto;/);
   assert.match(css, /\.app \{\s+display: flex;\s+flex-direction: column;[\s\S]*height: 100dvh;/);
   assert.match(css, /--gutter: clamp\(1rem, 2\.5vw, 2\.5rem\)/);
-  assert.match(css, /\.topbar \{[^}]*padding: var\(--sp-2\) 0 var\(--sp-2\) var\(--gutter\);/s);
+  assert.match(css, /\.topbar \{[^}]*padding: var\(--edge\) var\(--gutter\);/s);
   assert.match(css, /@media \(max-width: 40rem\) \{\s+\.tab \{ padding: 0 var\(--sp-3\); \}\s+\.status-label \{ display: none; \}/);
   assert.match(main, /backgroundColor: "#0B0B0B",\s+frame: false,/);
   assert.doesNotMatch(main, /titleBarStyle|titleBarOverlay/);
@@ -502,26 +708,37 @@ test("topbar omits the wordmark and adapts navigation to the window", () => {
 test("tab content aligns with the topbar gutter and its spacing is balanced", () => {
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
-  assert.match(css, /\.topbar \{[^}]*padding:\s*var\(--sp-2\) 0 var\(--sp-2\) var\(--gutter\);/s);
+  assert.match(css, /\.topbar \{[^}]*padding:\s*var\(--edge\) var\(--gutter\);/s);
   assert.match(css, /\.tabs \{[^}]*display:\s*flex;/s);
   assert.match(css, /\.tab \{[^}]*padding:\s*0 var\(--sp-3\);/s);
-  assert.match(css, /\.view \{[^}]*width:\s*100%;[^}]*margin-inline:\s*0;/s);
-  assert.match(css, /main \{[^}]*padding:\s*var\(--sp-2\) var\(--gutter\) var\(--sp-2\);/s);
+  assert.match(css, /\.view \{[^}]*width:\s*100%;[^}]*min-height:\s*100%;/s);
+  assert.match(css, /main \{[^}]*padding:\s*0 var\(--main-pad\) var\(--edge\);[^}]*scrollbar-gutter:\s*stable both-edges;/s);
+  assert.match(css, /\.view-head \{[^}]*top:\s*0;[^}]*margin:\s*0 calc\(-1 \* var\(--main-pad\)\) calc\(var\(--gap\) - var\(--edge\)\);[^}]*padding:\s*var\(--edge\) var\(--main-pad\);[^}]*background:\s*var\(--bg\);/s);
+  assert.match(css, /--main-pad:\s*calc\(var\(--gutter\) - var\(--sb\)\)/);
+  assert.match(css, /::-webkit-scrollbar-track:vertical \{\s+margin-block: var\(--r\);/);
+  assert.match(css, /::-webkit-scrollbar-track:horizontal \{\s+margin-inline: var\(--r\);/);
 });
 
 test("lighting layout adapts to the window and the monitor preview matches the display ratio", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
   const previewCss = fs.readFileSync(path.join(uiDirectory, "strip-preview.css"), "utf8");
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const controls = css.match(/\.controls\s*\{([^}]*)\}/)?.[1] || "";
 
-  assert.match(css, /\.lighting \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: var\(--sp-4\); \}/);
+  assert.match(css, /\.lighting \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: var\(--gap\); \}/);
   assert.match(controls, /align-content: start;/);
   assert.match(css, /\.preview \{[^}]*height: clamp\(22rem, 62cqh, 36rem\);/s);
   assert.match(previewCss, /\.monitor \{[^}]*aspect-ratio: var\(--monitor-aspect-ratio, 16 \/ 9\);/s);
   assert.match(previewCss, /\.monitor \{[^}]*width: min\(100cqw, calc\(100cqh \* var\(--monitor-aspect-ratio, 1\.7778\)\)\);/s);
-  assert.match(css, /@container \(min-width: 56rem\) \{\s+\.lighting \{ grid-template-columns: minmax\(0, 1fr\) clamp\(19rem, 28cqw, 28rem\);/);
-  assert.match(css, /\.preview \{ position: sticky; top: 0; height: max\(22rem, calc\(100cqh - 3\.75rem\)\); \}/);
+  assert.match(css, /@container \(min-width: 56rem\) \{\s+#view-light \{ display: grid; grid-template-rows: auto minmax\(0, 1fr\); height: 100%; \}\s+#view-light \.lighting \{\s+grid-template-columns: minmax\(0, 1fr\) clamp\(19rem, 28cqw, 28rem\);/);
+  assert.match(css, /\.view-head \{[^}]*position: sticky;[^}]*background: var\(--bg\);/s);
+  assert.match(css, /#view-light \{ display: grid; grid-template-rows: auto minmax\(0, 1fr\); height: 100%; \}/);
+  assert.match(css, /#view-light \.lighting \{[^}]*grid-template-rows: minmax\(0, 1fr\);[^}]*align-items: stretch;[^}]*min-height: 0;/s);
+  assert.match(css, /\.controls \{[^}]*grid-template-rows: minmax\(0, 1fr\);[^}]*min-height: 0;[^}]*padding: 0;[^}]*overflow: hidden;/s);
+  assert.match(css, /\.controls-scroll \{[^}]*min-height: 0;[^}]*padding: var\(--pad\) var\(--pad-scroll\);[^}]*overflow-y: auto;[^}]*overscroll-behavior-y: contain;/s);
+  assert.match(css, /\.controls-scroll \{[^}]*scrollbar-gutter: stable both-edges;/s);
+  assert.match(html, /<aside class="card controls"[^>]*>\s*<div class="controls-scroll">/);
   assert.match(app, /function updateMonitorAspectRatio\(\) \{\s+const \{ width, height \} = window\.screen;\s+if \(!Number\.isFinite\(width\) \|\| !Number\.isFinite\(height\) \|\| width <= 0 \|\| height <= 0\) return;\s+document\.documentElement\.style\.setProperty\("--monitor-aspect-ratio", String\(width \/ height\)\);/);
   assert.match(app, /updateMonitorAspectRatio\(\);\s+window\.addEventListener\("resize", updateMonitorAspectRatio\);/);
 });
@@ -542,7 +759,7 @@ test("lighting spacing and control sizes stay consistent while resizing the wind
   assert.match(css, /--sp-6:\s*2rem;/);
   assert.match(css, /\.card, \.panel \{[^}]*background: var\(--surface\);/s);
   assert.match(css, /h2\s*\{[^}]*font-size:\s*var\(--fs-xl\);/s);
-  assert.match(css, /\.lighting\s*\{[^}]*gap:\s*var\(--sp-4\);/s);
+  assert.match(css, /\.lighting\s*\{[^}]*gap:\s*var\(--gap\);/s);
   assert.match(css, /@container \(min-width: 56rem\)/);
   assert.match(css, /font-family:\s*"Noto Sans"/);
   assert.doesNotMatch(css, /Cormorant/);
@@ -584,10 +801,10 @@ test("Device settings stack compact startup, support, and reset panels together"
   assert.match(html, /aria-labelledby="group-startup"[\s\S]*id="start-with-windows"/);
   assert.match(html, /aria-labelledby="group-support"[\s\S]*id="open-support"/);
   assert.match(html, /aria-labelledby="group-reset"[\s\S]*id="reset-all-data"/);
-  assert.match(css, /\.groups \{[^}]*display: grid;[^}]*gap: var\(--sp-4\);/s);
+  assert.match(css, /\.groups \{[^}]*display: grid;[^}]*gap: var\(--gap\);/s);
   assert.match(html, /<div class="utility-stack">[\s\S]*aria-labelledby="group-startup"[\s\S]*aria-labelledby="group-support"[\s\S]*aria-labelledby="group-reset"[\s\S]*<\/div>/);
-  assert.match(css, /\.utility-stack \{[^}]*display: grid;[^}]*gap: var\(--sp-3\);/s);
-  assert.match(css, /\.utility-stack > \.group \{[^}]*padding: var\(--pad\);/s);
+  assert.match(css, /\.utility-stack \{[^}]*display: grid;[^}]*gap: var\(--gap\);/s);
+  assert.match(css, /\.card, \.panel \{[^}]*padding: var\(--pad\);/s);
 });
 
 test("support request requires user details and explicit opt-in before opening a public GitHub draft", () => {
@@ -607,7 +824,7 @@ test("support request requires user details and explicit opt-in before opening a
   assert.match(html, /diagnostic logs are not put in the draft URL/);
   assert.match(html, /saved as a local JSON file\. You can review and attach that file yourself in GitHub/);
   assert.match(html, /id="support-attachment" hidden/);
-  assert.match(css, /\.dialog-support\s*\{\s*width: min\(42rem, calc\(100vw - 2rem\)\);/);
+  assert.match(css, /\.dialog-support\s*\{\s*width: min\(42rem, calc\(100vw - 2 \* var\(--gutter\)\)\);/);
   assert.match(css, /\.support-form \{ display: grid; gap: var\(--sp-4\); \}/);
   assert.match(css, /\.support-problem \{[\s\S]*?min-height: 10rem;/);
   assert.match(css, /\.dialog h2 \{ font-size: var\(--fs-xl\); \}/);
@@ -885,7 +1102,6 @@ test("all views fill available width while preserving the responsive LED preview
 
   assert.match(viewRule, /width: 100%/);
   assert.doesNotMatch(viewRule, /max-width/);
-  assert.match(viewRule, /margin-inline: 0/);
   assert.match(monitorRule, /width: min\(100cqw, calc\(100cqh \* var\(--monitor-aspect-ratio, 1\.7778\)\)\)/);
   assert.doesNotMatch(monitorRule, /780px/);
 });
@@ -1414,6 +1630,25 @@ test("the lighting preview shows the winning source without exposing the develop
   assert.doesNotMatch(`${app}\n${main}\n${preload}`, /priority-mux:test|priorityMuxTest|isPaused/);
 });
 
+test("the connected lighting preview uses output frames from the priority winner", () => {
+  const html = fs.readFileSync(path.join(uiDirectory, "index.html"), "utf8");
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const preload = fs.readFileSync(path.join(__dirname, "..", "preload.js"), "utf8");
+
+  assert.match(html, /<script src="\.\.\/effects\.js"><\/script>\s*<script src="\.\.\/lighting-frame\.js"><\/script>\s*<script src="app\.js"><\/script>/);
+  assert.match(app, /function paintLightingFrame\(frame = state\.lightingFrame\)/);
+  assert.match(app, /window\.ullLightingFrame\.scaleColorChannels/);
+  assert.match(app, /window\.ull\.onLightingFrame\(\(frame\) =>/);
+  assert.match(preload, /onLightingFrame: \(callback\) => listen\("lighting:frame", callback\)/);
+  assert.match(main, /function notifyLightingFrame\(frame\)/);
+  assert.match(main, /lastWrittenLightingFrame = outputFrame/);
+  assert.match(main, /const lightingFrame = currentLightingFrame\(\);\s+const device = deviceState\(\);\s+if \(lightingFrame\) device\.activeSource = lightingFrame\.source/);
+  assert.match(main, /if \(result\?\.written\) \{\s+lastWrittenLightingFrame = outputFrame;\s+notifyActiveInputSource\(winner\);\s+notifyLightingFrame\(outputFrame\)/);
+  assert.doesNotMatch(app, /paintSessionPixels|primarySyncSession/);
+  assert.match(main, /return effectFrame\(sourceSettings, now\)/);
+});
+
 test("the removed priority-mux test renderer is not called during controller scans", () => {
   const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   assert.doesNotMatch(app, /renderPriorityMuxTestButton\s*\(/);
@@ -1455,7 +1690,7 @@ test("Screen Sync and Spotify Sync publish as independent priority-mux sources",
   assert.match(preload, /stopScreenSync: \(mode = "all"\) => ipcRenderer\.invoke\("screen-sync:stop", mode\)/);
   assert.match(app, /lifecycles: \{\s+screen: window\.ullScreenSyncLifecycle\.createScreenSyncLifecycle\(\),\s+spotify: window\.ullScreenSyncLifecycle\.createScreenSyncLifecycle\(\)/);
   assert.match(app, /send: \(colors\) => window\.ull\.sendScreenSyncColors\(colors, session\.mode\)/);
-  assert.match(app, /const primarySyncSession = \(\) => syncSession\("spotify"\) \|\| syncSession\("screen"\)/);
+  assert.match(app, /function paintLightingFrame\(frame = state\.lightingFrame\)/);
   assert.match(main, /sources: \[\.\.\.syncSources\]/);
   assert.match(fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8"), /activeSources\.includes\("screen"\)/);
   assert.match(fs.readFileSync(path.join(uiDirectory, "remote.js"), "utf8"), /activeSources\.includes\("spotify"\)/);
@@ -1477,6 +1712,7 @@ test("the interface uses bundled Noto Sans typography without a header wordmark"
 });
 
 test("the frameless window draws its own controls and removes the native menu bar", () => {
+  const app = fs.readFileSync(path.join(uiDirectory, "app.js"), "utf8");
   const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
   const css = fs.readFileSync(path.join(uiDirectory, "styles.css"), "utf8");
 
@@ -1487,8 +1723,15 @@ test("the frameless window draws its own controls and removes the native menu ba
   assert.match(main, /handleMainWindow\("window:minimize"/);
   assert.match(main, /handleMainWindow\("window:toggle-maximize"/);
   assert.match(main, /handleMainWindow\("window:close"/);
+  assert.match(main, /fullscreenable: true/);
+  assert.match(main, /window\.webContents\.on\("before-input-event", \(event, input\) => \{\s+if \(input\.type !== "keyDown" \|\| input\.key !== "F11" \|\| input\.isAutoRepeat\) return;\s+event\.preventDefault\(\);\s+window\.setFullScreen\(!window\.isFullScreen\(\)\);\s+\}\)/);
+  assert.match(main, /window\.on\("enter-full-screen", \(\) => sendWindowState\(\)\)/);
+  assert.match(main, /window\.on\("leave-full-screen", \(\) => sendWindowState\(\)\)/);
   assert.match(main, /window\.on\("maximize", \(\) => sendWindowState\(\)\)/);
   assert.match(main, /window\.on\("unmaximize", \(\) => sendWindowState\(\)\)/);
+  assert.match(main, /mainWindow\.isMaximized\(\) \|\| mainWindow\.isFullScreen\(\)/);
+  assert.match(main, /if \(mainWindow\.isFullScreen\(\)\) mainWindow\.setFullScreen\(false\)/);
+  assert.match(app, /maximizeButton\.title = isMaximized \? "Restore" : "Maximize"/);
   assert.match(css, /\.topbar \{[^}]*[-]webkit-app-region: drag;/s);
   assert.match(css, /[-]webkit-app-region: no-drag/);
   assert.match(css, /body\.is-maximized \.window-btn \.glyph-max \{\s+display: none;/);

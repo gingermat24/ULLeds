@@ -3,14 +3,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createLightingAnimation } = require("../lighting-animation");
+const { effectFrameInterval } = require("../effects");
 const { SOURCE_PRIORITIES, createPriorityMux } = require("../priority-mux");
 
 function createTimerHarness() {
   const timers = [];
   return {
     timers,
-    setInterval(callback) {
-      const timer = { callback, cleared: false };
+    setInterval(callback, delay) {
+      const timer = { callback, delay, cleared: false };
       timers.push(timer);
       return timer;
     },
@@ -19,6 +20,25 @@ function createTimerHarness() {
     }
   };
 }
+
+test("device effect output uses the shared effect frame interval", () => {
+  const timerHarness = createTimerHarness();
+  const animation = createLightingAnimation({
+    getSettings: () => ({ color: "#123456", effect: "spectrum", power: true, speed: 50 }),
+    getDevice: () => "device",
+    isConnected: () => true,
+    writeColor: () => {},
+    animatedColor: () => ({ color: "#123456", brightness: 1 }),
+    onWriteError: (error) => { throw error; },
+    setIntervalImpl: timerHarness.setInterval,
+    clearIntervalImpl: timerHarness.clearInterval
+  });
+
+  animation.update();
+
+  assert.equal(timerHarness.timers.at(-1).delay, effectFrameInterval(50));
+  animation.stop();
+});
 
 test("an in-flight effect frame cannot be the final output after switching to solid", async () => {
   const timerHarness = createTimerHarness();

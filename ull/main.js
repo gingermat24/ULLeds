@@ -29,6 +29,8 @@ const {
 } = require("./controller-catalog");
 const { createPcSyncHidDevice } = require("./pc-sync-hid-device");
 const { createLightingAnimation } = require("./lighting-animation");
+const { createLightingFrame } = require("./lighting-frame");
+const { effectFrame } = require("./effects");
 const { SOURCE_PRIORITIES, createPriorityMux } = require("./priority-mux");
 const { createTemporaryOverride } = require("./temporary-override");
 const { resetStoredData } = require("./reset-data");
@@ -37,6 +39,7 @@ const { normalizeActiveEdges } = require("./strip-layout");
 const { createScreenSyncDiagnostics } = require("./screen-sync-diagnostics");
 const { createControllerWriteDiagnostics } = require("./controller-write-diagnostics");
 const { parseSpotifyArtworkOutput, parseSpotifyPlaybackStatus } = require("./spotify-artwork");
+const { lookupSpotifyGenres } = require("./spotify-sync");
 const {
   createGithubIssueReport,
   createGithubIssueUrl,
@@ -109,6 +112,7 @@ let loadMainWindowPage = null;
 let tray;
 let isQuitting = false;
 let outputDevice = null;
+let lastWrittenLightingFrame = null;
 const priorityMux = createPriorityMux();
 const SYNC_SOURCE_IDS = Object.freeze({ screen: "screen-sync", spotify: "spotify-sync" });
 const MANUAL_LIGHTING_SOURCE_ID = "manual-lighting";
@@ -286,6 +290,28 @@ function notifyActiveInputSource(winner = priorityMux.getWinner(Date.now())) {
   lastNotifiedActiveSource = source;
   if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
     mainWindow.webContents.send("lighting:active-source", source);
+  }
+}
+
+function currentLightingFrame() {
+  if (!outputDevice?.isConnected) return null;
+  if (lastWrittenLightingFrame) return createLightingFrame(lastWrittenLightingFrame);
+  const winner = priorityMux.getWinner(Date.now());
+  if (!winner) return null;
+  return createLightingFrame({
+    source: getActiveInputSource(winner),
+    colors: winner.colors,
+    brightness: settings.brightness,
+    effectBrightness: winner.effectBrightness,
+    power: settings.power,
+    channelGains: settings.channelGains,
+    frameType: winner.frameType
+  });
+}
+
+function notifyLightingFrame(frame) {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send("lighting:frame", frame);
   }
 }
 
@@ -492,40 +518,8 @@ async function getDeviceList() {
   return listSupportedControllers(await listHidDevicesAsync(), profiles);
 }
 
-function hueColor(hue) {
-  const h = ((hue % 360) + 360) % 360 / 60;
-  const chroma = 1;
-  const x = chroma * (1 - Math.abs((h % 2) - 1));
-  const bands = [[1, x, 0], [x, 1, 0], [0, 1, x], [0, x, 1], [x, 0, 1], [1, 0, x]];
-  const rgb = bands[Math.floor(h)];
-  return `#${rgb.map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`;
-}
-
 function animatedColor(now, sourceSettings = settings) {
-  const seconds = (now / 1000) * (0.12 + sourceSettings.speed / 180);
-  if (sourceSettings.effect === "breathe") {
-    return {
-      color: sourceSettings.color,
-      brightness: 0.16 + (Math.sin(seconds * Math.PI * 2) + 1) * 0.42
-    };
-  }
-  if (sourceSettings.effect === "spectrum") return { color: hueColor(seconds * 55), brightness: 1 };
-  if (sourceSettings.effect === "palette") {
-    const colors = sourceSettings.palette;
-    const step = (seconds * 0.55) % colors.length;
-    const index = Math.floor(step);
-    const blend = step - index;
-    const from = colors[index];
-    const to = colors[(index + 1) % colors.length];
-    const fromRgb = from.slice(1).match(/../g);
-    const toRgb = to.slice(1).match(/../g);
-    return { color: `#${fromRgb.map((part, channel) => {
-      const a = parseInt(part, 16);
-      const b = parseInt(toRgb[channel], 16);
-      return Math.round(a + (b - a) * blend).toString(16).padStart(2, "0");
-    }).join("")}`, brightness: 1 };
-  }
-  return { color: sourceSettings.color, brightness: 1 };
+  return effectFrame(sourceSettings, now);
 }
 
 function writeColor(color, effectBrightness = 1, power = settings.power) {
@@ -573,15 +567,29 @@ async function writeColors(colors, effectBrightness = 1, power = settings.power,
   const now = Date.now();
   priorityMux.expire(now);
   const winner = priorityMux.getWinner(now);
-  notifyActiveInputSource(winner);
-  const writeWinner = winner?.colors.length === ledCount ? winner : null;
-  return outputDevice.writeFrame(writeWinner?.colors || colors, {
-    frameType: writeWinner?.frameType || frameType,
+  const outputFrame = createLightingFrame({
+    source: getActiveInputSource(winner) || "Manual",
+    colors: winner?.colors.length === ledCount ? winner.colors : colors,
     brightness: settings.brightness,
     power,
-    effectBrightness: writeWinner?.effectBrightness ?? effectBrightness,
+    effectBrightness: winner?.effectBrightness ?? effectBrightness,
+    channelGains: settings.channelGains,
+    frameType: winner?.frameType || frameType
+  });
+  return outputDevice.writeFrame(outputFrame.colors, {
+    frameType: outputFrame.frameType,
+    brightness: outputFrame.brightness,
+    power: outputFrame.power,
+    effectBrightness: outputFrame.effectBrightness,
     colorOrder: profile?.colorOrder || "RGB",
-    channelGains: settings.channelGains
+    channelGains: outputFrame.channelGains
+  }).then((result) => {
+    if (result?.written) {
+      lastWrittenLightingFrame = outputFrame;
+      notifyActiveInputSource(winner);
+      notifyLightingFrame(outputFrame);
+    }
+    return result;
   });
 }
 
@@ -775,6 +783,7 @@ function disconnectDevice(error = "", { scheduleScan = true } = {}) {
   if (outputDevice) {
     const device = outputDevice;
     outputDevice = null;
+    lastWrittenLightingFrame = null;
     closePromise = device.close().catch((closeError) => {
       console.error("Could not close the LED controller:", closeError);
     });
@@ -1347,6 +1356,7 @@ function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
     icon: path.join(__dirname, "assets", "app.ico"),
     backgroundColor: "#0B0B0B",
     frame: false,
+    fullscreenable: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -1356,6 +1366,11 @@ function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
     }
   });
   mainWindow = window;
+  window.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || input.key !== "F11" || input.isAutoRepeat) return;
+    event.preventDefault();
+    window.setFullScreen(!window.isFullScreen());
+  });
   mainWindowPageLoaded = false;
   mainWindowRendererReady = false;
   showMainWindowWhenReady = showWhenReady;
@@ -1416,12 +1431,17 @@ function createWindow({ showWhenReady = !startHidden, loadUI = true } = {}) {
   });
   window.on("maximize", () => sendWindowState());
   window.on("unmaximize", () => sendWindowState());
+  window.on("enter-full-screen", () => sendWindowState());
+  window.on("leave-full-screen", () => sendWindowState());
   if (loadUI) loadMainWindowPage();
 }
 
 function sendWindowState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  mainWindow.webContents.send("window:maximized", mainWindow.isMaximized());
+  mainWindow.webContents.send(
+    "window:maximized",
+    mainWindow.isMaximized() || mainWindow.isFullScreen()
+  );
 }
 
 handleMainWindow("window:minimize", () => {
@@ -1431,7 +1451,8 @@ handleMainWindow("window:minimize", () => {
 
 handleMainWindow("window:toggle-maximize", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  if (mainWindow.isMaximized()) mainWindow.unmaximize();
+  if (mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
+  else if (mainWindow.isMaximized()) mainWindow.unmaximize();
   else mainWindow.maximize();
 });
 
@@ -1512,13 +1533,19 @@ handleMainWindow("settings:reset:cancel", (_event, requestId) => {
     remoteControl: getRemoteControlStatus()
   }));
 });
-handleMainWindow("app:initial-state", () => ({
-  version: app.getVersion(),
-  settings: settingsSnapshot(),
-  device: deviceState(),
-  temporaryOverride: temporaryOverride.getStatus(),
-  remoteControl: getRemoteControlStatus()
-}));
+handleMainWindow("app:initial-state", () => {
+  const lightingFrame = currentLightingFrame();
+  const device = deviceState();
+  if (lightingFrame) device.activeSource = lightingFrame.source;
+  return {
+    version: app.getVersion(),
+    settings: settingsSnapshot(),
+    device,
+    lightingFrame,
+    temporaryOverride: temporaryOverride.getStatus(),
+    remoteControl: getRemoteControlStatus()
+  };
+});
 handleMainWindow("lighting:temporary-override:start", (_event, input) => startTemporaryOverride(input));
 handleMainWindow("lighting:temporary-override:clear", () => temporaryOverride.clear());
 handleMainWindow("remote-control:status", () => getRemoteControlStatus());
@@ -1691,6 +1718,7 @@ handleMainWindow("screen-sync:start", (_event, mode = "screen") => {
   return { active: true, mode };
 });
 handleMainWindow("spotify-sync:artwork", () => readSpotifyArtwork());
+handleMainWindow("spotify-sync:genres", (_event, title, artist) => lookupSpotifyGenres(title, artist));
 handleMainWindow("spotify-sync:playback-status", () => readSpotifyPlaybackStatus());
 handleMainWindow("screen-sync:colors", (_event, colors, mode = "screen") => {
   if (!["screen", "spotify"].includes(mode)) throw new TypeError("Sync source is invalid.");

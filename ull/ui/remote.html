@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ULLeds">
   <meta name="theme-color" content="#0b0b0c">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-src 'none'">
   <meta name="referrer" content="no-referrer">
   <title>ULLeds Remote</title>
   <link rel="stylesheet" href="/strip-preview.css">
@@ -18,200 +18,325 @@
   <script src="remote.js" defer></script>
 </head>
 <body>
-  <main class="shell">
-    <header class="masthead">
+  <div class="app">
+    <header class="topbar">
       <a class="wordmark" href="/" aria-label="ULLeds Remote home">ULLeds</a>
-      <span class="connection"><i id="connection-dot"></i><span id="connection-label">Connecting</span></span>
+
+      <nav class="tabs" id="remote-tabs" role="tablist" aria-label="Sections" hidden>
+        <button class="tab active" id="tab-light" data-view="light" role="tab" aria-selected="true" aria-controls="view-light">Lighting</button>
+        <button class="tab" id="tab-scenes" data-view="scenes" role="tab" aria-selected="false" aria-controls="view-scenes" tabindex="-1">Scenes</button>
+        <button class="tab" id="tab-settings" data-view="settings" role="tab" aria-selected="false" aria-controls="view-settings" tabindex="-1">Settings</button>
+      </nav>
+
+      <div class="status" id="connection-status" role="status" aria-live="polite">
+        <span class="status-dot" id="connection-dot" aria-hidden="true"></span>
+        <span class="status-label" id="connection-label">Connecting</span>
+      </div>
     </header>
 
-    <section class="pairing panel" id="pairing-panel" hidden>
-      <h1>Connect to your lights</h1>
-      <p>Enter the six-digit PIN shown in ULLeds on your PC.</p>
-      <form id="pairing-form">
-        <label for="pairing-pin">Pairing PIN</label>
-        <input id="pairing-pin" name="pin" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
-        <button class="primary" type="submit">Pair this phone</button>
-      </form>
-      <p class="message" id="pairing-message" role="status"></p>
-    </section>
-
-    <section class="pairing panel" id="connection-panel" hidden>
-      <h1>Reconnecting to ULLeds</h1>
-      <p>Keep ULLeds running on the PC and connect this iPhone to the same Wi-Fi. This page will reconnect automatically; pair again only if the saved session expires or is removed.</p>
-      <button class="primary" id="retry-connection" type="button">Try again</button>
-    </section>
-
-    <section id="remote-panel" hidden>
-      <header class="welcome">
-        <div>
-          <h1 id="device-name">ULLeds</h1>
-          <p id="device-status">Checking controller…</p>
-        </div>
-        <button class="power" id="power-toggle" type="button" aria-pressed="true">On</button>
-      </header>
-
-      <section class="panel strip-panel" aria-labelledby="strip-title">
-        <div class="section-head">
-          <div>
-            <h2 id="strip-title">LED layout</h2>
-            <p class="hint" id="led-count">Waiting for controller</p>
-          </div>
-          <span class="selection-label" id="selection-label">Tap a LED to select</span>
-        </div>
-        <div class="selection-tools">
-          <button class="quiet" id="select-all" type="button">All LEDs</button>
-          <button class="quiet" id="clear-selection" type="button">Clear</button>
-          <label class="check"><input id="multi-select" type="checkbox"><span>Add multiple</span></label>
-        </div>
-        <div class="led-stage">
-          <div class="preview-stage phone-preview-stage">
-            <div class="monitor" id="led-map" role="group" aria-label="Interactive LED strip preview" data-power="on">
-              <div class="monitor-screen" id="monitor-screen" aria-hidden="true"></div>
-              <div class="led-edge led-top" id="led-top" data-edge="top" role="group" aria-label="Top edge LEDs"></div>
-              <div class="led-edge led-left" id="led-left" data-edge="left" role="group" aria-label="Left edge LEDs"></div>
-              <div class="led-edge led-right" id="led-right" data-edge="right" role="group" aria-label="Right edge LEDs"></div>
-              <div class="led-edge led-bottom" id="led-bottom" data-edge="bottom" role="group" aria-label="Bottom edge LEDs"></div>
-            </div>
-          </div>
-        </div>
-        <p class="hint selection-help">Tap a light or edge to target it. With no selection, color applies to all LEDs.</p>
-      </section>
-
-      <section class="panel controls" aria-labelledby="lighting-title">
-        <div class="section-head"><h2 id="lighting-title">Lighting</h2></div>
-        <div class="field color-field">
-          <label for="color">Color</label>
-          <input id="color" type="color" value="#008100" aria-label="Lighting color">
-          <output id="color-value">#008100</output>
-        </div>
-        <div class="field">
-          <div class="field-head">
-            <label for="brightness">Brightness</label>
-            <span class="number-with-unit">
-              <input id="brightness-number" type="number" min="0" max="100" step="1" value="50" aria-label="Brightness percentage">
-              <span aria-hidden="true">%</span>
-            </span>
-          </div>
-          <input id="brightness" type="range" min="0" max="100" value="50">
-        </div>
-        <div class="field">
-          <label for="effect">Effect</label>
-          <select id="effect">
-            <option value="steady">Solid</option>
-            <option value="breathe">Breathe</option>
-            <option value="spectrum">Spectrum</option>
-            <option value="palette">Palette drift</option>
-          </select>
-        </div>
-        <div class="field" id="speed-field" hidden>
-          <div class="field-head"><label for="speed">Speed</label><output id="speed-value">48%</output></div>
-          <input id="speed" type="range" min="1" max="100" value="48">
-        </div>
-        <details class="advanced" id="palette-section" hidden>
-          <summary>Effect palette</summary>
-          <div class="advanced-content">
-            <div class="palette" id="palette"></div>
-            <div class="actions"><button class="quiet" id="add-color" type="button">Add color</button></div>
-          </div>
-        </details>
-        <details class="advanced">
-          <summary>Color balance</summary>
-          <div class="advanced-content">
-            <div class="field"><div class="field-head"><label for="gain-red">Red</label><output id="gain-red-value">100%</output></div><input id="gain-red" type="range" min="50" max="150"></div>
-            <div class="field"><div class="field-head"><label for="gain-green">Green</label><output id="gain-green-value">100%</output></div><input id="gain-green" type="range" min="50" max="150"></div>
-            <div class="field"><div class="field-head"><label for="gain-blue">Blue</label><output id="gain-blue-value">100%</output></div><input id="gain-blue" type="range" min="50" max="150"></div>
-          </div>
-        </details>
-        <p class="message" id="control-message" role="status"></p>
-      </section>
-
-      <section class="panel controls" aria-labelledby="override-title">
-        <div class="section-head">
-          <div>
-            <h2 id="override-title">Temporary override</h2>
-            <p class="hint">Takes control briefly without changing saved lighting or scenes.</p>
-          </div>
-          <span class="sync-status" id="override-status" role="status">No override active</span>
-        </div>
-        <div class="override-fields">
-          <div class="field color-field">
-            <label for="override-color">Color</label>
-            <input id="override-color" type="color" value="#cc33ff">
-          </div>
+    <main>
+      <section class="pairing card" id="pairing-panel" hidden>
+        <h2>Connect to your lights</h2>
+        <p class="hint">Enter the six-digit PIN shown in ULLeds on your PC.</p>
+        <form id="pairing-form">
           <div class="field">
-            <label for="override-effect">Effect</label>
-            <select id="override-effect">
-              <option value="steady">Solid</option>
-              <option value="breathe">Breathe</option>
-              <option value="spectrum">Spectrum</option>
-              <option value="palette">Palette drift</option>
-            </select>
+            <label for="pairing-pin">Pairing PIN</label>
+            <input class="input" id="pairing-pin" name="pin" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
           </div>
-          <div class="field">
-            <label for="override-duration">Duration</label>
-            <select id="override-duration">
-              <option value="5000">5 seconds</option>
-              <option value="15000" selected>15 seconds</option>
-              <option value="30000">30 seconds</option>
-              <option value="60000">1 minute</option>
-            </select>
-          </div>
-        </div>
-        <p class="hint">Effects use your current speed and palette.</p>
-        <div class="override-actions">
-          <button class="primary" id="start-override" type="button" disabled>Start override</button>
-          <button class="quiet" id="clear-override" type="button" disabled>Clear override</button>
-        </div>
-        <p class="message" id="override-message" role="status"></p>
+          <button class="btn btn-primary" type="submit">Pair this phone</button>
+        </form>
+        <p class="message" id="pairing-message" role="status"></p>
       </section>
 
-      <section class="panel">
-        <div class="section-head"><div><h2>Scenes</h2><p class="hint">Saved setups</p></div><button class="quiet" id="save-scene" type="button">Save current</button></div>
-        <div class="scenes" id="scenes"></div>
+      <section class="pairing card" id="connection-panel" hidden>
+        <h2>Reconnecting to ULLeds</h2>
+        <p class="hint">Keep ULLeds running on the PC and connect this phone to the same Wi-Fi. This page reconnects automatically.</p>
+        <button class="btn btn-primary" id="retry-connection" type="button">Try again</button>
       </section>
 
-      <section class="panel sync-panel" aria-labelledby="sync-title">
-        <div class="section-head">
-          <h2 id="sync-title">Sync</h2>
-          <span class="sync-status" id="sync-status">Not active</span>
-        </div>
-        <div class="sync-actions">
-          <button class="sync-button" id="screen-sync" type="button" aria-pressed="false">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3" width="15" height="11" rx="1.5"></rect><path d="M7 17h6M10 14v3"></path></svg>
-            <span>Screen Sync</span>
-          </button>
-          <button class="sync-button" id="spotify-sync" type="button" aria-pressed="false">
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M8 14V4l8-1v10"></path><ellipse cx="5.5" cy="15.5" rx="2.5" ry="1.75"></ellipse><ellipse cx="13.5" cy="13.5" rx="2.5" ry="1.75"></ellipse></svg>
-            <span>Spotify Sync</span>
-          </button>
-          <button class="quiet stop-sync" id="stop-sync" type="button" disabled>Stop sync</button>
-        </div>
-        <p class="hint sync-note" id="sync-note">Spotify audio is analyzed on your PC.</p>
-        <details class="advanced">
-          <summary>Sync settings</summary>
-          <div class="advanced-content">
-            <div class="field">
-              <div class="field-head"><label for="sync-fps">Screen Sync speed</label><output id="sync-fps-value">30 FPS</output></div>
-              <input id="sync-fps" type="range" min="5" max="60" step="1">
+      <div id="remote-panel" hidden>
+        <!-- Lighting -->
+        <section class="view" id="view-light" role="tabpanel" aria-labelledby="tab-light">
+          <header class="view-head">
+            <div class="view-title-group">
+              <h2 id="device-name">Lighting</h2>
+              <span class="hint" id="device-status">Checking controller…</span>
             </div>
-            <div class="field"><label for="sync-content">Picture area</label>
-              <select id="sync-content"><option value="display">Full display</option><option value="cinema235">Cinema widescreen (2.35:1)</option></select>
+            <div class="power">
+              <span id="power-state">On</span>
+              <button class="switch" id="power-toggle" type="button" role="switch" aria-checked="true" aria-label="LED power: on"></button>
             </div>
-            <label class="check"><input id="sync-auto-detect" type="checkbox"><span>Ask before adapting to a detected widescreen movie</span></label>
-            <div class="field">
-              <div class="field-head"><label for="spotify-sensitivity">Spotify audio response</label><output id="spotify-sensitivity-value">100%</output></div>
-              <input id="spotify-sensitivity" type="range" min="0" max="100" step="1">
-            </div>
+          </header>
+
+          <div class="stack">
+            <section class="card preview" aria-labelledby="strip-title">
+              <header class="card-head">
+                <div class="preview-heading">
+                  <h3 class="title" id="strip-title">LED layout</h3>
+                </div>
+                <label class="check">
+                  <input id="multi-select" type="checkbox">
+                  <span>Multi-select</span>
+                </label>
+              </header>
+
+              <div class="preview-stage phone-preview-stage">
+                <div class="monitor" id="led-map" role="group" aria-label="Interactive LED strip preview" data-power="on">
+                  <div class="monitor-screen" id="monitor-screen" aria-hidden="true"></div>
+                  <div class="led-edge led-top" id="led-top" data-edge="top" role="group" aria-label="Top edge LEDs"></div>
+                  <div class="led-edge led-left" id="led-left" data-edge="left" role="group" aria-label="Left edge LEDs"></div>
+                  <div class="led-edge led-right" id="led-right" data-edge="right" role="group" aria-label="Right edge LEDs"></div>
+                  <div class="led-edge led-bottom" id="led-bottom" data-edge="bottom" role="group" aria-label="Bottom edge LEDs"></div>
+                </div>
+              </div>
+
+              <footer class="preview-foot">
+                <div>
+                  <strong id="selection-label">All LEDs</strong>
+                  <span id="led-count">Waiting for controller</span>
+                </div>
+                <div class="view-actions">
+                  <button class="btn btn-ghost btn-sm" id="clear-selection" type="button">Deselect all</button>
+                  <button class="btn btn-ghost btn-sm" id="select-all" type="button">Select all</button>
+                </div>
+              </footer>
+            </section>
+
+            <section class="card controls" aria-label="Lighting controls">
+              <section class="block">
+                <h3>Light</h3>
+
+                <div class="field">
+                  <label for="color">Color</label>
+                  <div class="field-row">
+                    <input class="swatch" id="color" type="color" value="#008100" aria-label="Lighting color">
+                    <input class="input" id="hex-color" type="text" value="#008100" maxlength="7" spellcheck="false" aria-label="Hex color">
+                  </div>
+                </div>
+
+                <div class="field">
+                  <div class="field-head">
+                    <label for="brightness">Brightness</label>
+                    <span class="number-with-unit">
+                      <input class="input input-number" id="brightness-number" type="number" min="0" max="100" step="1" value="50" aria-label="Brightness percentage">
+                      <span aria-hidden="true">%</span>
+                    </span>
+                  </div>
+                  <input id="brightness" type="range" min="0" max="100" value="50">
+                </div>
+
+                <details class="disclosure">
+                  <summary>Channel balance</summary>
+                  <div class="disclosure-body">
+                    <p>Adjust if LEDs look different from the selected color.</p>
+                    <div class="field">
+                      <div class="field-head"><label for="gain-red">Red</label><output id="gain-red-value" for="gain-red">100%</output></div>
+                      <input id="gain-red" type="range" min="50" max="150" value="100">
+                    </div>
+                    <div class="field">
+                      <div class="field-head"><label for="gain-green">Green</label><output id="gain-green-value" for="gain-green">100%</output></div>
+                      <input id="gain-green" type="range" min="50" max="150" value="100">
+                    </div>
+                    <div class="field">
+                      <div class="field-head"><label for="gain-blue">Blue</label><output id="gain-blue-value" for="gain-blue">100%</output></div>
+                      <input id="gain-blue" type="range" min="50" max="150" value="100">
+                    </div>
+                    <button class="btn btn-ghost btn-sm" id="reset-color-tuning" type="button">Reset balance</button>
+                  </div>
+                </details>
+              </section>
+
+              <section class="block">
+                <h3>Effect</h3>
+
+                <div class="field">
+                  <label for="effect">Style</label>
+                  <select id="effect">
+                    <option value="steady">Solid</option>
+                    <option value="breathe">Breathe</option>
+                    <option value="spectrum">Spectrum</option>
+                    <option value="palette">Palette drift</option>
+                  </select>
+                </div>
+
+                <div class="field hidden" id="speed-field">
+                  <div class="field-head">
+                    <label for="speed">Speed</label>
+                    <output id="speed-value" for="speed">48%</output>
+                  </div>
+                  <input id="speed" type="range" min="1" max="100" value="48">
+                </div>
+
+                <details class="disclosure hidden" id="palette-section">
+                  <summary>Effect palette</summary>
+                  <div class="disclosure-body">
+                    <p>Drag colors by the handle to reorder. Saved with each scene.</p>
+                    <div class="palette-swatches" id="palette" role="list"></div>
+                    <button class="btn btn-sm" id="add-color" type="button">Add color</button>
+                  </div>
+                </details>
+
+                <details class="disclosure" id="override-panel">
+                  <summary>Temporary override</summary>
+                  <div class="disclosure-body">
+                    <p>Temporarily takes control without changing saved lighting or scenes.</p>
+                    <p>Effects use your current speed and palette.</p>
+                    <div class="field">
+                      <label for="override-color">Color</label>
+                      <input class="swatch" id="override-color" type="color" value="#cc33ff">
+                    </div>
+                    <div class="field">
+                      <label for="override-effect">Effect</label>
+                      <select id="override-effect">
+                        <option value="steady">Solid</option>
+                        <option value="breathe">Breathe</option>
+                        <option value="spectrum">Spectrum</option>
+                        <option value="palette">Palette drift</option>
+                      </select>
+                    </div>
+                    <div class="field">
+                      <label for="override-duration">Duration</label>
+                      <select id="override-duration">
+                        <option value="5000">5 seconds</option>
+                        <option value="15000" selected>15 seconds</option>
+                        <option value="30000">30 seconds</option>
+                        <option value="60000">1 minute</option>
+                      </select>
+                    </div>
+                    <p id="override-status" role="status">No override active</p>
+                    <div class="button-row">
+                      <button class="btn" id="start-override" type="button" disabled>Start override</button>
+                      <button class="btn btn-ghost" id="clear-override" type="button" disabled>Clear override</button>
+                    </div>
+                    <p class="message" id="override-message" role="status"></p>
+                  </div>
+                </details>
+              </section>
+
+              <section class="block">
+                <h3>Sync</h3>
+                <div class="list">
+                  <div class="row row-inline">
+                    <div class="row-text">
+                      <span class="row-title">Screen Sync</span>
+                      <span class="row-desc" id="screen-sync-description">Match LEDs to your display</span>
+                    </div>
+                    <button class="btn sync-toggle" id="screen-sync" type="button" aria-pressed="false">Start</button>
+                  </div>
+                  <div class="row row-inline">
+                    <div class="row-text">
+                      <span class="row-title">Spotify Sync</span>
+                      <span class="row-desc" id="spotify-sync-description">Match LEDs to Spotify</span>
+                    </div>
+                    <button class="btn sync-toggle" id="spotify-sync" type="button" aria-pressed="false">Start</button>
+                  </div>
+                </div>
+                <p class="message" id="sync-message" role="status"></p>
+              </section>
+            </section>
           </div>
-        </details>
-        <p class="message" id="sync-message" role="status"></p>
-      </section>
+          <p class="message" id="control-message" role="status"></p>
+        </section>
 
-      <footer class="footer">
-        <p>Only paired devices on this local network can control ULLeds. Keep your Wi-Fi private.</p>
-        <button class="quiet" id="unpair" type="button">Unpair this phone</button>
-      </footer>
-    </section>
-  </main>
+        <!-- Scenes -->
+        <section class="view hidden" id="view-scenes" role="tabpanel" aria-labelledby="tab-scenes">
+          <header class="view-head">
+            <h2>Scenes</h2>
+            <div class="view-actions">
+              <button class="btn btn-primary" id="save-scene" type="button">Save current setup</button>
+            </div>
+          </header>
+          <p class="view-intro">A scene stores color, brightness, effect and per-LED colors.</p>
+          <div class="scene-list" id="scenes" aria-live="polite"></div>
+        </section>
+
+        <!-- Settings -->
+        <section class="view hidden" id="view-settings" role="tabpanel" aria-labelledby="tab-settings">
+          <header class="view-head">
+            <h2>Settings</h2>
+          </header>
+
+          <div class="stack">
+            <section class="card group" aria-labelledby="group-sync-settings">
+              <div class="group-head">
+                <h3 id="group-sync-settings">Sync</h3>
+                <p class="hint">Adjust display sampling and Spotify behavior.</p>
+              </div>
+              <div class="list">
+                <div class="row is-stacked">
+                  <label class="row-title" for="sync-content">Picture area</label>
+                  <span class="row-desc">Widescreen samples the picture and skips letterbox bars.</span>
+                  <select id="sync-content">
+                    <option value="display">Full display</option>
+                    <option value="cinema235">Cinema widescreen (2.35:1)</option>
+                  </select>
+                </div>
+                <div class="row is-stacked">
+                  <div class="field-head">
+                    <label class="row-title" for="sync-fps">Sync speed</label>
+                    <output id="sync-fps-value">30 FPS</output>
+                  </div>
+                  <input id="sync-fps" type="range" min="5" max="60" step="1" value="30">
+                </div>
+                <label class="row row-inline" for="sync-auto-detect">
+                  <span class="row-text">
+                    <span class="row-title">Detect widescreen movies</span>
+                    <span class="row-desc">Ask before using a stable detected ratio.</span>
+                  </span>
+                  <input class="switch" id="sync-auto-detect" type="checkbox">
+                </label>
+                <div class="row is-stacked">
+                  <div class="field-head">
+                    <label class="row-title" for="spotify-sensitivity">Spotify audio response</label>
+                    <output id="spotify-sensitivity-value">100%</output>
+                  </div>
+                  <input id="spotify-sensitivity" type="range" min="0" max="100" step="1" value="100">
+                </div>
+              </div>
+            </section>
+
+            <section class="card group" aria-labelledby="group-pairing">
+              <div class="group-head">
+                <h3 id="group-pairing">Phone connection</h3>
+                <p class="hint">Only paired devices on this local network can control ULLeds. Keep your Wi-Fi private.</p>
+              </div>
+              <div>
+                <button class="btn btn-danger" id="unpair" type="button">Unpair this phone</button>
+              </div>
+            </section>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Dialogs matching desktop UI -->
+  <dialog class="dialog" id="scene-dialog">
+    <form id="scene-form">
+      <h2>Name this setup</h2>
+      <p class="dialog-copy">This saves your current lighting without changing device or Screen Sync settings.</p>
+      <div class="field">
+        <label for="scene-name">Setup name</label>
+        <input class="input" id="scene-name" type="text" maxlength="36" required autocomplete="off">
+      </div>
+      <div class="dialog-actions">
+        <button class="btn" id="cancel-scene" type="button">Cancel</button>
+        <button class="btn btn-primary" id="save-scene-name" type="submit">Save setup</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="delete-scene-dialog">
+    <form method="dialog">
+      <h2>Delete this setup?</h2>
+      <p class="dialog-copy" id="delete-scene-name"></p>
+      <div class="dialog-actions">
+        <button class="btn" id="cancel-delete-scene" type="submit" value="cancel">Keep setup</button>
+        <button class="btn btn-danger" id="confirm-delete-scene" type="button">Delete setup</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </body>
 </html>

@@ -57,6 +57,7 @@ let state = {
     startupMode: "lighting"
   },
   device: { connected: false, name: "", serialNumber: "", activeSource: null },
+  lightingFrame: null,
   temporaryOverride: { active: false, expiresAt: null, remainingMs: 0 }
 };
 let remoteControlBusy = false;
@@ -85,7 +86,6 @@ const sync = {
   spotifyAutoStartError: ""
 };
 const syncSession = (mode) => sync.sessions[mode] || null;
-const primarySyncSession = () => syncSession("spotify") || syncSession("screen");
 const hasAnySyncSession = () => Boolean(syncSession("screen") || syncSession("spotify"));
 const isSyncBusy = (mode) => {
   const lifecycle = sync.lifecycles[mode];
@@ -118,6 +118,9 @@ let profileDraft = null;
 let sceneDialogMode = null;
 let pendingVersionNotice = null;
 let toastTimer;
+let effectPreviewTimer = null;
+let effectPreviewSignature = "";
+let draggedPaletteIndex = null;
 let versionNoticeTimer;
 
 
@@ -235,6 +238,7 @@ function switchView(name) {
   $$(".view").forEach((panel) => panel.classList.toggle("hidden", panel.id !== `view-${name}`));
   window.scrollTo({ top: 0 });
   $("main").scrollTo({ top: 0 });
+  syncEffectPreview();
 }
 
 
@@ -303,6 +307,7 @@ async function saveSettingsNow(changes) {
 
 function applyDeviceState(device) {
   state.device = device;
+  if (!device.connected) state.lightingFrame = null;
   const profile = device.connected && device.profile;
   if (!device.connected && (hasAnySyncSession() || isAnySyncBusy())) {
     void stopActiveSync("Controller disconnected.");
@@ -439,12 +444,87 @@ function setPixelColor(pixel, color) {
   pixel.dataset.color = color;
 }
 
-/** Paint the live preview from a session's sampled colors. */
-function paintSessionPixels(session) {
-  if (primarySyncSession() !== session || !session.colors) return;
-  for (const pixel of session.pixelElements) {
-    setPixelColor(pixel, session.colors[Number(pixel.dataset.ledIndex)]);
+function effectPreviewSource() {
+  if (state.device.connected) return null;
+  const override = state.temporaryOverride;
+  if (override?.active) return override;
+  if (state.device.activeSource === "Override" ||
+      state.device.activeSource === "Screen Sync" ||
+      state.device.activeSource === "Spotify Sync" ||
+      hasAnySyncSession()) return null;
+  return state.settings.effect === "steady" ? null : state.settings;
+}
+
+function paintLightingFrame(frame = state.lightingFrame) {
+  const pixels = $$(".led-pixel");
+  if (!state.device.connected || !frame || frame.colors.length !== pixels.length) return false;
+
+  const byIndex = new Map(pixels.map((pixel) => [Number(pixel.dataset.ledIndex), pixel]));
+  if (byIndex.size !== frame.colors.length) return false;
+  for (let index = 0; index < frame.colors.length; index += 1) {
+    if (!byIndex.has(index)) return false;
   }
+  document.documentElement.style.setProperty("--led-opacity", "1");
+  for (let index = 0; index < frame.colors.length; index += 1) {
+    const color = window.ullLightingFrame.scaleColorChannels(
+      frame.colors[index],
+      frame.brightness,
+      frame.power,
+      frame.effectBrightness,
+      frame.channelGains
+    );
+    const pixel = byIndex.get(index);
+    if (!pixel) return false;
+    setPixelColor(
+      pixel,
+      `#${color.map((channel) => clamp(channel, 0, 255).toString(16).padStart(2, "0")).join("")}`
+    );
+  }
+  return true;
+}
+
+function stopEffectPreview() {
+  if (effectPreviewTimer !== null) window.clearInterval(effectPreviewTimer);
+  effectPreviewTimer = null;
+  effectPreviewSignature = "";
+}
+
+function paintEffectPreview(source) {
+  const frame = window.ullEffects.effectFrame(source, Date.now());
+  const color = calibratedColor(frame.color, state.settings.channelGains);
+  const opacity = state.settings.power
+    ? state.settings.brightness / 100 * frame.brightness
+    : 0;
+  document.documentElement.style.setProperty("--led-opacity", String(opacity));
+  for (const pixel of $$(".led-pixel")) setPixelColor(pixel, color);
+}
+
+function syncEffectPreview() {
+  const source = effectPreviewSource();
+  const lightingViewVisible = !$("#view-light").classList.contains("hidden");
+  if (!source || !state.settings.power || !lightingViewVisible) {
+    stopEffectPreview();
+    return;
+  }
+
+  const signature = JSON.stringify([source.effect, source.speed, source.color, source.palette]);
+  if (effectPreviewTimer !== null && effectPreviewSignature !== signature) {
+    stopEffectPreview();
+  }
+  effectPreviewSignature = signature;
+  paintEffectPreview(source);
+  if (source.effect === "steady" || effectPreviewTimer !== null) return;
+
+  effectPreviewTimer = window.setInterval(() => {
+    const currentSource = effectPreviewSource();
+    if (!currentSource || !state.settings.power ||
+        JSON.stringify([currentSource.effect, currentSource.speed, currentSource.color, currentSource.palette]) !== signature) {
+      stopEffectPreview();
+      updatePreview();
+      return;
+    }
+    paintEffectPreview(currentSource);
+  }, window.ullEffects.effectFrameInterval(source.speed));
 }
 
 function renderEdgePixels(container, indices, edge) {
@@ -471,7 +551,7 @@ function renderEdgePixels(container, indices, edge) {
     const pixel = container.children[position];
     const selected = window.ullLedSelection.isLedSelected(selectedLedIndices, index);
     const color = calibratedColor(
-      primarySyncSession()?.colors?.[index] || state.settings.ledColors?.[index] || state.settings.color,
+      state.settings.ledColors?.[index] || state.settings.color,
       state.settings.channelGains
     );
     const label = `Select LED ${index + 1}, ${edge} side${selected ? ", selected" : ""}`;
@@ -519,9 +599,9 @@ function updatePreview() {
       session.layoutSignature = signature;
       session.colors = null;
     }
-    session.pixelElements = $$(".led-pixel");
   }
 
+  if (!paintLightingFrame()) syncEffectPreview();
   updateRangeFills();
 }
 
@@ -767,20 +847,104 @@ async function updateRemoteControl(enabled, address) {
   }
 }
 
+function movePaletteColor(palette, fromIndex, toIndex) {
+  if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex) ||
+      fromIndex < 0 || fromIndex >= palette.length ||
+      toIndex < 0 || toIndex >= palette.length ||
+      fromIndex === toIndex) return [...palette];
+  const reordered = [...palette];
+  const [color] = reordered.splice(fromIndex, 1);
+  reordered.splice(toIndex, 0, color);
+  return reordered;
+}
+
+function removePaletteColor(palette, index) {
+  if (palette.length <= 2) throw new RangeError("A palette must contain at least two colors.");
+  if (!Number.isInteger(index) || index < 0 || index >= palette.length) return [...palette];
+  return palette.filter((_, colorIndex) => colorIndex !== index);
+}
+
+function paletteGripIcon() {
+  return svg("svg", { viewBox: "0 0 16 16", "aria-hidden": "true" },
+    svg("path", { d: "M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" })
+  );
+}
+
+function reorderPalette(fromIndex, toIndex) {
+  const palette = movePaletteColor(state.settings.palette, fromIndex, toIndex);
+  if (palette.every((color, index) => color === state.settings.palette[index])) return;
+  queueSettings({ palette }, true);
+  renderPalette();
+}
+
 function renderPalette() {
-  $("#palette-swatches").replaceChildren(...state.settings.palette.map((color, index) =>
-    h("input", {
-      type: "color",
-      class: "swatch",
-      value: color,
-      "aria-label": `Palette color ${index + 1}`,
-      oninput: (event) => {
-        const palette = [...state.settings.palette];
-        palette[index] = event.target.value;
-        queueSettings({ palette });
+  const palette = state.settings.palette;
+  $("#palette-swatches").replaceChildren(...palette.map((color, index) => {
+    const item = h("div", {
+      class: "palette-color",
+      dataset: { paletteIndex: index },
+      role: "listitem",
+      "aria-label": `Palette color ${index + 1}. Drag to reorder.`,
+      ondragover: (event) => {
+        if (draggedPaletteIndex === null || draggedPaletteIndex === index) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        item.classList.add("is-drop-target");
+      },
+      ondragleave: () => item.classList.remove("is-drop-target"),
+      ondrop: (event) => {
+        event.preventDefault();
+        const fromIndex = Number(event.dataTransfer.getData("text/plain"));
+        reorderPalette(fromIndex, index);
+        draggedPaletteIndex = null;
       }
-    })
-  ));
+    },
+      h("input", {
+        type: "color",
+        class: "swatch",
+        value: color,
+        "aria-label": `Palette color ${index + 1}`,
+        oninput: (event) => {
+          const updatedPalette = [...state.settings.palette];
+          updatedPalette[index] = event.target.value;
+          queueSettings({ palette: updatedPalette });
+        }
+      }),
+      h("button", {
+        class: "icon-btn palette-drag-handle",
+        type: "button",
+        title: "Drag to reorder",
+        "aria-label": `Drag palette color ${index + 1} to reorder`,
+        draggable: "true",
+        ondragstart: (event) => {
+          draggedPaletteIndex = index;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", String(index));
+          item.classList.add("is-dragging");
+        },
+        ondragend: () => {
+          draggedPaletteIndex = null;
+          $$("#palette-swatches .palette-color").forEach((element) => {
+            element.classList.remove("is-dragging", "is-drop-target");
+          });
+        }
+      }, paletteGripIcon()),
+      h("button", {
+        class: "icon-btn palette-remove",
+        type: "button",
+        title: palette.length <= 2 ? "At least two palette colors are required" : `Remove palette color ${index + 1}`,
+        "aria-label": `Remove palette color ${index + 1}`,
+        disabled: palette.length <= 2,
+        onclick: () => {
+          queueSettings({ palette: removePaletteColor(state.settings.palette, index) }, true);
+          renderPalette();
+        }
+      }, svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" },
+        svg("path", { d: "M6 6l12 12M18 6L6 18" })
+      ))
+    );
+    return item;
+  }));
 }
 
 
@@ -1286,7 +1450,6 @@ function createScreenSampler(session, sendLatestFrame) {
         session.layout,
         session.movieAreaPolicy.getContentAspectRatio(manualPictureRatio())
       );
-      paintSessionPixels(session);
       void sendLatestFrame();
     } catch (error) {
       stopScreenSync(`Screen sync stopped: ${error.message}`);
@@ -1488,6 +1651,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
     const [artwork, stream] = await Promise.all([window.ull.getSpotifyArtwork(), audioCapture, audioReady]);
     audioStream = stream;
     if (!artwork) throw new Error("Start a track in the Spotify desktop app before enabling Spotify Sync.");
+    const genreLookupPromise = requestSpotifyGenreLookup(artwork.title, artwork.artist);
     observeSpotifyPlaybackForAutoStart(artwork.playbackStatus);
     if (!stream.getAudioTracks().length) {
       throw new Error("Windows did not provide desktop audio. Check the system audio capture permission.");
@@ -1500,7 +1664,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
 
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0.5;
+    analyser.smoothingTimeConstant = 0;
     audioContext.createMediaStreamSource(stream).connect(analyser);
 
     await ensurePowerOn();
@@ -1519,7 +1683,13 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
       pollTimer: null,
       colors: null,
       palette: null,
-      audioLevels: { bass: 0, mid: 0, treble: 0, energy: 0, spectrum: Array(12).fill(0) },
+      audioLevels: window.ullSpotifySync.silentSpotifyLevels(),
+      analyzer: window.ullSpotifySync.createSpotifyAnalyzer(),
+      previousMeasuredLevels: null,
+      mediaGenres: [],
+      genres: [],
+      genreSource: "",
+      genreLookupPending: false,
       lastAudioSampleAt: null,
       playbackStatus: artwork.playbackStatus,
       hasMedia: false,
@@ -1538,7 +1708,7 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
 
     const sendLatestFrame = createFrameSender(session, "Spotify Sync stopped");
     updatePreview();
-    await applySpotifyArtwork(session, artwork, sendLatestFrame);
+    await applySpotifyArtwork(session, artwork, sendLatestFrame, genreLookupPromise);
     scheduleSpotifyAudioSample(session, sendLatestFrame);
     session.pollTimer = window.setTimeout(() => void pollSpotifyArtwork(session, sendLatestFrame), 1500);
     if (playbackTriggered && !spotifyAutoStartNoticeShown) {
@@ -1570,9 +1740,49 @@ async function runSpotifySyncStart(audioCapture, audioContext, audioReady, autom
   }
 }
 
-async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
+function spotifyArtworkIdentity(artwork) {
+  return [
+    artwork.title, artwork.artist, artwork.album, artwork.contentType, artwork.playbackStatus,
+    JSON.stringify(artwork.genres || []), artwork.data
+  ].join("\u0000");
+}
+
+function requestSpotifyGenreLookup(title, artist) {
+  if (typeof window.ull.lookupSpotifyGenres !== "function") {
+    return Promise.resolve({ genres: [], error: new Error("Spotify genre lookup is unavailable.") });
+  }
+  return window.ull.lookupSpotifyGenres(title, artist).then((genres) => {
+    if (!Array.isArray(genres) || genres.length > 32 ||
+        !genres.every((genre) => typeof genre === "string" && genre.length <= 128)) {
+      return { genres: [], error: new TypeError("Spotify genre lookup returned invalid data.") };
+    }
+    return { genres };
+  }, (error) => ({ genres: [], error }));
+}
+
+function applySpotifyGenreLookup(session, artworkIdentity, lookupPromise, sendLatestFrame) {
+  void lookupPromise.then(({ genres, error }) => {
+    if (syncSession("spotify") !== session || session.artworkIdentity !== artworkIdentity) return;
+    if (error) console.error("Could not look up Spotify track genres:", error);
+
+    if (genres.length) {
+      session.genres = genres;
+      session.genreSource = "iTunes";
+    } else {
+      session.genres = session.mediaGenres;
+      session.genreSource = session.mediaGenres.length ? "media metadata" : "";
+    }
+    session.genreLookupPending = false;
+    renderSpotifyFrame(session, performance.now(), sendLatestFrame);
+  });
+}
+
+async function applySpotifyArtwork(session, artwork, sendLatestFrame, genreLookupPromise) {
   if (!artwork?.contentType || !artwork.data) {
     throw new Error("Spotify has no cover art available for the current track.");
+  }
+  if (!genreLookupPromise) {
+    genreLookupPromise = requestSpotifyGenreLookup(artwork.title, artwork.artist);
   }
   const image = new Image();
   image.src = `data:${artwork.contentType};base64,${artwork.data}`;
@@ -1591,9 +1801,17 @@ async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
     5
   );
   session.artworkData = artwork.data;
-  session.artworkIdentity = [
-    artwork.title, artwork.artist, artwork.album, artwork.contentType, artwork.playbackStatus, artwork.data
-  ].join("\u0000");
+  session.artworkIdentity = spotifyArtworkIdentity(artwork);
+  session.mediaGenres = Array.isArray(artwork.genres) ? artwork.genres : [];
+  session.genres = session.mediaGenres;
+  session.genreSource = session.mediaGenres.length ? "media metadata" : "";
+  session.genreLookupPending = true;
+  session.audioLevels = window.ullSpotifySync.silentSpotifyLevels(
+    session.audioLevels.spectrum.length
+  );
+  session.analyzer = window.ullSpotifySync.createSpotifyAnalyzer();
+  session.previousMeasuredLevels = null;
+  session.lastAudioSampleAt = null;
   session.playbackStatus = artwork.playbackStatus;
   observeSpotifyPlaybackForAutoStart(artwork.playbackStatus);
   session.hasMedia = true;
@@ -1606,6 +1824,7 @@ async function applySpotifyArtwork(session, artwork, sendLatestFrame) {
   renderSyncControls(state.settings);
   updatePreview();
   renderSpotifyFrame(session, performance.now(), sendLatestFrame);
+  applySpotifyGenreLookup(session, session.artworkIdentity, genreLookupPromise, sendLatestFrame);
 }
 
 function renderSpotifyFrame(session, now, sendLatestFrame) {
@@ -1615,17 +1834,39 @@ function renderSpotifyFrame(session, now, sendLatestFrame) {
     session.audioLevels,
     session.layout.ledCount,
     Math.max(0, now - session.startedAt) / 1000,
-    Number(state.settings.spotifySensitivity ?? 100)
+    Number(state.settings.spotifySensitivity ?? 100),
+    session.genres
   );
   if (now - session.lastMeterUpdate >= 50) {
     renderSpotifyMeter(session);
     session.lastMeterUpdate = now;
   }
-  paintSessionPixels(session);
   void sendLatestFrame();
 }
 
 function renderSpotifyMeter(session) {
+  const insights = $("#spotify-insights");
+  if (insights.open) {
+    const levels = session.audioLevels;
+    const percentage = (value) => `${Math.round(value * 100)}%`;
+    const bands = ["bass", "mid", "treble"];
+    $("#spotify-insight-genres").textContent = session.genres.length
+      ? `${session.genres.join(", ")} (${session.genreSource})`
+      : session.genreLookupPending ? "Looking up genre…" : "No genre found";
+    $("#spotify-insight-playback").textContent = session.playbackStatus || "Unknown";
+    $("#spotify-insight-bands").textContent = [
+      `Bass ${percentage(levels.bass)}`,
+      `Mid ${percentage(levels.mid)}`,
+      `Treble ${percentage(levels.treble)}`
+    ].join(" | ");
+    $("#spotify-insight-beats").textContent = bands
+      .map((band) => {
+        const label = band === "bass" ? "Bass" : band === "mid" ? "Mid" : "Treble";
+        return `${label} ${percentage(levels.onsets?.[band] || 0)}`;
+      })
+      .join(" | ");
+    $("#spotify-insight-impact").textContent = percentage(levels.impact || 0);
+  }
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const bars = $("#spotify-meter").children;
   const spectrum = session.audioLevels.spectrum;
@@ -1648,14 +1889,21 @@ function sampleSpotifyAudio(session, now, sendLatestFrame) {
     measuredLevels = window.ullSpotifySync.analyzeSpotifySpectrum(
       session.frequencyData,
       session.audioContext.sampleRate,
-      session.analyser.fftSize
+      session.analyser.fftSize,
+      session.previousMeasuredLevels,
+      session.analyzer
     );
+    session.previousMeasuredLevels = measuredLevels;
   } else {
     // Desktop capture includes every app's output, so leave the analyzer out
     // while Spotify is idle and let the strip rest on the cover-art colors.
     measuredLevels = window.ullSpotifySync.silentSpotifyLevels(
       session.audioLevels.spectrum.length
     );
+    if (session.previousMeasuredLevels !== null) {
+      session.analyzer = window.ullSpotifySync.createSpotifyAnalyzer();
+    }
+    session.previousMeasuredLevels = null;
   }
   const elapsedMs = session.lastAudioSampleAt === null
     ? 1000 / 60
@@ -1698,9 +1946,7 @@ async function pollSpotifyArtwork(session, sendLatestFrame) {
       }
       return;
     }
-    const artworkIdentity = artwork
-      ? [artwork.title, artwork.artist, artwork.album, artwork.contentType, artwork.playbackStatus, artwork.data].join("\u0000")
-      : "";
+    const artworkIdentity = artwork ? spotifyArtworkIdentity(artwork) : "";
     if (artworkIdentity !== session.artworkIdentity) {
       await applySpotifyArtwork(session, artwork, sendLatestFrame);
     }
@@ -2620,6 +2866,9 @@ function bindNavigation() {
   if (typeof window.ull.onWindowMaximized === "function") {
     window.ull.onWindowMaximized((isMaximized) => {
       document.body.classList.toggle("is-maximized", Boolean(isMaximized));
+      const maximizeButton = $("#window-maximize");
+      maximizeButton.title = isMaximized ? "Restore" : "Maximize";
+      maximizeButton.setAttribute("aria-label", isMaximized ? "Restore window" : "Maximize window");
     });
   }
 
@@ -2708,6 +2957,7 @@ function bindLighting() {
         durationMs: Number($("#temporary-override-duration").value)
       });
       renderTemporaryOverride();
+      updatePreview();
       toast("Temporary override started.");
     } catch (error) {
       toast(error.message);
@@ -2717,6 +2967,7 @@ function bindLighting() {
     try {
       state.temporaryOverride = await window.ull.clearTemporaryOverride();
       renderTemporaryOverride();
+      updatePreview();
       toast("Temporary override cleared.");
     } catch (error) {
       toast(error.message);
@@ -2949,9 +3200,16 @@ function bindMainProcessEvents() {
     state.device.activeSource = source;
     renderActiveInputSource();
   });
+  window.ull.onLightingFrame((frame) => {
+    if (!state.device.connected) return;
+    state.lightingFrame = window.ullLightingFrame.createLightingFrame(frame);
+    state.device.activeSource = frame.source;
+    renderActiveInputSource();
+    paintLightingFrame();
+  });
   window.ull.onTemporaryOverrideStatus((status) => {
     state.temporaryOverride = status;
-    renderTemporaryOverride();
+    updatePreview();
   });
   window.ull.onMovieFormatApplied(applyDetectedMovieFormat);
   window.ull.onSettingsUpdated((settings) => {
@@ -3044,6 +3302,40 @@ async function handleRemoteSyncRequest(request) {
   window.ull.reportRemoteSyncResult(result);
 }
 
+/**
+ * The controls card is only as tall as its content, up to the space the window
+ * allows (CSS caps it with max-height, then it scrolls). CSS cannot animate a
+ * height that depends on content, so we measure the content and publish it as
+ * --controls-h; the card transitions to it. Opening an option, turning on
+ * Spotify Sync, showing the palette etc. therefore grows (or shrinks) the card
+ * smoothly instead of jumping.
+ */
+function bindControlsFit() {
+  const card = $(".controls");
+  const scroller = $(".controls-scroll");
+  if (!card || !scroller || typeof ResizeObserver !== "function") return;
+
+  let ready = false;
+  const measure = () => {
+    const first = scroller.firstElementChild;
+    const last = scroller.lastElementChild;
+    if (!first || !last || scroller.offsetParent === null) return; // Lighting tab hidden
+    const style = getComputedStyle(scroller);
+    const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    const content = last.getBoundingClientRect().bottom - first.getBoundingClientRect().top;
+    card.style.setProperty("--controls-h", `${Math.ceil(content + padding)}px`);
+    if (!ready) {
+      ready = true;
+      // Switch the animation on only after the first size is in place.
+      requestAnimationFrame(() => card.classList.add("is-animated"));
+    }
+  };
+
+  const observer = new ResizeObserver(measure);
+  [...scroller.children].forEach((child) => observer.observe(child));
+  measure();
+}
+
 function bindEvents() {
   bindNavigation();
   bindLighting();
@@ -3053,6 +3345,7 @@ function bindEvents() {
   bindUpdates();
   bindProfileEditor();
   bindMainProcessEvents();
+  bindControlsFit();
 }
 
 

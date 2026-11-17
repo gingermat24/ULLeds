@@ -2,6 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { effectFrameInterval } = require("../effects");
 const { OVERRIDE_DURATIONS_MS, createTemporaryOverride } = require("../temporary-override");
 
 function createHarness() {
@@ -76,6 +77,10 @@ test("starting and clearing an override releases it and restores through the cal
   assert.equal(status.active, true);
   assert.equal(status.expiresAt, 16000);
   assert.equal(status.remainingMs, 15000);
+  assert.equal(status.speed, 48);
+  assert.deepEqual(status.palette, ["#cc33ff", "#224466"]);
+  status.palette[0] = "#000000";
+  assert.equal(manager.getStatus().palette[0], "#cc33ff");
   assert.equal(harness.frames.length, 1);
   assert.equal(harness.intervals.length, 0);
 
@@ -90,7 +95,7 @@ test("animated override publishes updates and expiry restores the next input", a
   const harness = createHarness();
   await harness.manager.start(override({ effect: "breathe" }));
   assert.equal(harness.intervals.length, 1);
-  assert.ok(harness.intervals[0].delay >= 40);
+  assert.equal(harness.intervals[0].delay, effectFrameInterval(48));
 
   harness.setTime(3000);
   harness.intervals[0].callback();

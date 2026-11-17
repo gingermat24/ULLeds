@@ -42,6 +42,12 @@ internal static class SpotifyMedia
                 return 0;
             }
 
+            var genres = properties.Genres == null
+                ? new string[0]
+                : properties.Genres.ToArray();
+            if (genres.Length > 32 || genres.Any(genre => genre == null || genre.Length > 128))
+                throw new InvalidDataException("Spotify genre metadata is invalid.");
+
             var image = properties.Thumbnail.OpenReadAsync().AsTask().GetAwaiter().GetResult();
             if (image.Size < 1 || image.Size > 2 * 1024 * 1024)
                 throw new InvalidDataException("Spotify cover art is empty or exceeds 2 MB.");
@@ -58,7 +64,8 @@ internal static class SpotifyMedia
                     "\",\"title\":\"" + EscapeJson(properties.Title) +
                     "\",\"artist\":\"" + EscapeJson(properties.Artist) +
                     "\",\"album\":\"" + EscapeJson(properties.AlbumTitle) +
-                    "\",\"playbackStatus\":\"" + EscapeJson(session.GetPlaybackInfo().PlaybackStatus.ToString()) +
+                    "\",\"genres\":[" + String.Join(",", genres.Select(genre => "\"" + EscapeJson(genre) + "\"")) +
+                    "],\"playbackStatus\":\"" + EscapeJson(session.GetPlaybackInfo().PlaybackStatus.ToString()) +
                     "\",\"data\":\"" + Convert.ToBase64String(buffer.ToArray()) + "\"}");
             }
             return 0;

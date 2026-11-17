@@ -32,6 +32,7 @@ const STATIC_FILES = new Map([
   ["/remote.css", ["remote.css", "text/css; charset=utf-8"]],
   ["/strip-preview.css", ["strip-preview.css", "text/css; charset=utf-8"]],
   ["/remote.js", ["remote.js", "text/javascript; charset=utf-8"]],
+  ["/assets/fonts/NotoSans[wdth,wght].ttf", ["../assets/fonts/NotoSans[wdth,wght].ttf", "font/ttf"]],
   ["/strip-layout.js", ["../strip-layout.js", "text/javascript; charset=utf-8"]],
   ["/led-selection.js", ["../led-selection.js", "text/javascript; charset=utf-8"]]
 ]);
@@ -276,7 +277,7 @@ function createRemoteControlService({
 
   async function handle(request, response) {
     response.setHeader("Content-Security-Policy",
-      "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+      "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
     response.setHeader("Referrer-Policy", "no-referrer");
     response.setHeader("X-Content-Type-Options", "nosniff");
 

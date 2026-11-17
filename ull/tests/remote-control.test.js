@@ -277,12 +277,29 @@ test("phone selection can update individual LEDs and serves shared layout helper
   const paired = await post(status.url, "/api/pair", { pin: status.pin });
   const cookie = paired.headers.get("set-cookie").split(";")[0];
 
-  const [layoutScript, selectionScript, previewStyle, stateResponse] = await Promise.all([
+  const [page, remoteStyle, remoteScript, font, layoutScript, selectionScript, previewStyle, stateResponse] = await Promise.all([
+    fetch(status.url),
+    fetch(`${status.url}/remote.css`),
+    fetch(`${status.url}/remote.js`),
+    fetch(`${status.url}/assets/fonts/NotoSans[wdth,wght].ttf`),
     fetch(`${status.url}/strip-layout.js`),
     fetch(`${status.url}/led-selection.js`),
     fetch(`${status.url}/strip-preview.css`),
     fetch(`${status.url}/api/state`, { headers: { Cookie: cookie } })
   ]);
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /data-view="settings"/);
+  assert.match(page.headers.get("content-security-policy"), /font-src 'self'/);
+  assert.equal(remoteStyle.status, 200);
+  assert.match(await remoteStyle.text(), /NotoSans\[wdth,wght\]\.ttf/);
+  assert.equal(remoteScript.status, 200);
+  assert.match(await remoteScript.text(), /function switchView\(name\)/);
+  assert.equal(font.status, 200);
+  assert.match(font.headers.get("content-type"), /font\/ttf/);
+  assert.deepEqual(
+    Buffer.from(await font.arrayBuffer()),
+    await fs.readFile(path.join(__dirname, "..", "assets", "fonts", "NotoSans[wdth,wght].ttf"))
+  );
   assert.equal(layoutScript.status, 200);
   assert.match(await layoutScript.text(), /allocateEdgeIndices/);
   assert.equal(selectionScript.status, 200);

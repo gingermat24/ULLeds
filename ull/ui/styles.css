@@ -54,16 +54,32 @@
   --r: 0.75rem;
   --r-sm: 0.375rem;
   --r-full: 999px;
+  --icon-stroke: 1.5px;
 
   /* Sizing */
   --ctl: 2.5rem;
   --ctl-sm: 2rem;
-  --bar: 3rem;
-  --gutter: clamp(1rem, 2.5vw, 2.5rem);
   --pad: var(--sp-5);
+  --gap: var(--sp-4);              /* between any two cards */
 
+  /* Window insets. One value for every vertical gap against the window or
+     the top bar: window top -> top bar, top bar -> window bottom, bottom of
+     a title -> end of its background, banner spacing.
+     Left and right use the same --gutter, always. */
+  --edge: var(--sp-2);
+  --gutter: clamp(1rem, 2.5vw, 2.5rem);
+
+  /* Scrollbars live inside padding, never on top of content */
+  --sb: 0.625rem;
+  --main-pad: calc(var(--gutter) - var(--sb));
+  --pad-scroll: calc(var(--pad) - var(--sb));
+
+  /* Motion: colour changes are --fast, anything that moves is --move */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --fast: 0.15s;
+  --move: 0.2s var(--ease);
+
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238d8d96' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
 }
 
 @media (prefers-color-scheme: light) {
@@ -101,16 +117,29 @@ body {
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 h2 { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.02em; line-height: 1.2; }
-h3, .title { font-size: var(--fs-md); font-weight: 600; line-height: 1.3; }
+h3, .title { font-size: var(--fs-md); font-weight: 600; line-height: 1.5rem; }
 small, .hint { color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; }
 dialog { margin: auto; }
 ::selection { background: var(--accent); color: var(--on-accent); }
-::-webkit-scrollbar { width: 0.625rem; height: 0.625rem; }
+/* Scrollbars: flush with the edge of whatever scrolls, and the track stops
+   one radius short of both ends so it never touches a rounded corner. */
+::-webkit-scrollbar { width: var(--sb); height: var(--sb); }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-track:vertical { margin-block: var(--r); }
+::-webkit-scrollbar-track:horizontal { margin-inline: var(--r); }
+::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb {
   border: 0.1875rem solid transparent;
   border-radius: var(--r-full);
   background: var(--surface-3) content-box;
+  transition: background var(--fast);
 }
+::-webkit-scrollbar-thumb:hover { background: var(--faint) content-box; }
+
+/* Anything that scrolls inside padding: the bar sits in the padding zone,
+   the gutter is reserved on both sides so content never shifts or becomes
+   lopsided when the bar appears. */
+.dialog, .controls-scroll { scrollbar-gutter: stable both-edges; }
 :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--text) 60%, transparent);
   outline-offset: 2px;
@@ -182,16 +211,17 @@ dialog { margin: auto; }
 }
 .icon-btn:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
 .icon-btn:disabled { opacity: 0.4; cursor: default; }
-.icon-btn svg {
+/* Every icon: 1rem box, the same stroke, whatever viewBox it was drawn in */
+.icon-btn svg, .window-btn svg {
   width: 1rem;
   height: 1rem;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5;
+  stroke-width: var(--icon-stroke);
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-
+.icon-btn svg *, .window-btn svg *, .spotify-cover-placeholder * { vector-effect: non-scaling-stroke; }
 select, .input {
   width: 100%;
   height: var(--ctl);
@@ -205,10 +235,11 @@ select, .input {
 select:hover:not(:disabled), .input:hover:not(:disabled) { background-color: var(--surface-3); }
 select {
   appearance: none;
-  padding-right: 2.25rem;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238d8d96' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  padding-right: calc(var(--sp-3) * 2 + 0.625rem);
+  background-image: var(--chevron);
   background-repeat: no-repeat;
-  background-position: right 0.875rem center;
+  background-size: 0.625rem 0.375rem;
+  background-position: right var(--sp-3) center;
   cursor: pointer;
 }
 select option { background: var(--surface-2); color: var(--text); }
@@ -280,7 +311,7 @@ input[type="range"]::-webkit-slider-thumb {
   height: 1.125rem;
   border-radius: 50%;
   background: var(--muted);
-  transition: transform 0.18s var(--ease), background var(--fast);
+  transition: transform var(--move), background var(--fast);
 }
 .switch:is(:checked, [aria-checked="true"]) { background: var(--accent); }
 .switch:is(:checked, [aria-checked="true"])::after {
@@ -322,15 +353,14 @@ input[type="range"]::-webkit-slider-thumb {
 .disclosure > summary::after {
   content: "";
   flex: none;
-  width: 0.4375rem;
-  height: 0.4375rem;
-  margin-right: 0.25rem;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: translateY(-0.125rem) rotate(45deg);
-  transition: transform 0.18s var(--ease);
+  width: 0.625rem;
+  height: 0.375rem;
+  background: currentColor;
+  -webkit-mask: var(--chevron) center / 100% 100% no-repeat;
+  mask: var(--chevron) center / 100% 100% no-repeat;
+  transition: transform var(--move);
 }
-.disclosure[open] > summary::after { transform: translateY(0.125rem) rotate(225deg); }
+.disclosure[open] > summary::after { transform: rotate(180deg); }
 .disclosure > summary:hover { color: var(--text); }
 .disclosure-body { display: grid; gap: var(--sp-3); padding: var(--sp-2) 0 var(--sp-1); }
 .disclosure-body > p { color: var(--muted); font-size: var(--fs-sm); }
@@ -409,8 +439,7 @@ label.row { cursor: pointer; }
   align-items: center;
   flex: none;
   gap: var(--sp-4);
-  min-height: var(--bar);
-  padding: var(--sp-2) 0 var(--sp-2) var(--gutter);
+  padding: var(--edge) var(--gutter);
   -webkit-app-region: drag;
 }
 .topbar :is(button, .tabs, .status, .window-controls) { -webkit-app-region: no-drag; }
@@ -451,20 +480,23 @@ label.row { cursor: pointer; }
 .status.connected .status-dot { background: var(--text); }
 .status.has-error .status-dot { background: var(--danger); }
 
-.window-controls { display: flex; align-self: stretch; flex: none; }
+/* Window buttons are icon buttons: same size, radius, hover and icon stroke */
+.window-controls { display: flex; align-items: center; flex: none; gap: var(--sp-1); }
 .window-btn {
   display: grid;
   place-items: center;
-  width: 3rem;
+  flex: none;
+  width: var(--ctl-sm);
+  height: var(--ctl-sm);
   padding: 0;
   border: 0;
+  border-radius: var(--r);
   background: transparent;
   color: var(--muted);
   transition: background var(--fast), color var(--fast);
 }
 .window-btn:hover { background: var(--surface-2); color: var(--text); }
 #window-close:hover { background: #e5484d; color: #fff; }
-.window-btn svg { width: 0.625rem; height: 0.625rem; fill: none; stroke: currentColor; stroke-width: 1; }
 .window-btn .glyph-restore, body.is-maximized .window-btn .glyph-max { display: none; }
 body.is-maximized .window-btn .glyph-restore { display: block; }
 
@@ -474,7 +506,7 @@ body.is-maximized .window-btn .glyph-restore { display: block; }
   flex: none;
   align-items: center;
   gap: var(--sp-3);
-  margin: 0 var(--gutter) var(--sp-3);
+  margin: 0 var(--gutter) var(--edge);
   padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
   overflow: hidden;
   border-radius: var(--r);
@@ -493,35 +525,52 @@ body.is-maximized .window-btn .glyph-restore { display: block; }
 }
 
 /* main is a size container: layouts react to the space they really have */
+/* Window layout, top to bottom, with --edge between every step:
+     window top | edge | top bar | edge | title | edge | content ... edge | window bottom
+   main has NO top padding: a sticky element sticks below its scroller's
+   padding, which is what let cards peek out above the title. The title bar
+   carries that space itself, so its background starts right at the top bar.
+   Horizontally the scrollbar gutter is reserved on both sides and taken out of
+   the padding, so content is exactly --gutter from the window on the left AND
+   the right, lining up with the top bar. */
 main {
   flex: 1;
   min-height: 0;
   container-type: size;
-  padding: var(--sp-2) var(--gutter) var(--sp-2);
+  padding: 0 var(--main-pad) var(--edge);
   overflow-y: auto;
-  scrollbar-gutter: stable;
+  scrollbar-gutter: stable both-edges;
 }
-.view { width: 100%; margin-inline: 0; }
+.view { width: 100%; min-height: 100%; }
 .view-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--sp-3) var(--sp-4);
-  margin-bottom: var(--sp-5);
+  gap: var(--sp-2) var(--sp-4);
+  min-height: calc(var(--ctl) + 2 * var(--edge));
+  margin: 0 calc(-1 * var(--main-pad)) calc(var(--gap) - var(--edge));
+  padding: var(--edge) var(--main-pad);
+  background: var(--bg);
 }
+/* The title box is exactly one control tall, so every view's title bar is the
+   same height and the space under the title equals --edge. */
+.view-head h2 { line-height: var(--ctl); }
 .view-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.view-intro { max-width: 36rem; margin: calc(-1 * var(--sp-3)) 0 var(--sp-5); color: var(--muted); }
+.view-intro { max-width: 36rem; margin: 0 0 var(--gap); color: var(--muted); }
 
 /* --------------------------------------------------------------------------
    Lighting
    -------------------------------------------------------------------------- */
-.lighting { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+.lighting { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); }
 
 .preview {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-4);
+  gap: var(--gap);
   height: clamp(22rem, 62cqh, 36rem);
 }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
@@ -541,12 +590,39 @@ main {
 .preview-foot span { color: var(--muted); font-size: var(--fs-sm); }
 
 .controls { display: grid; align-content: start; gap: var(--sp-6); }
+.controls-scroll { display: grid; align-content: start; gap: var(--sp-6); min-width: 0; }
 .block { display: grid; gap: var(--sp-4); }
 .gradient-colors { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); }
 .gradient-colors label { display: grid; gap: var(--sp-2); color: var(--muted); font-size: var(--fs-sm); }
 .gradient-colors .swatch { width: 100%; }
-.palette-swatches { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
-.palette-swatches .swatch { width: var(--ctl-sm); height: var(--ctl-sm); padding: 0.25rem; }
+.palette-swatches {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: var(--sp-1);
+}
+.palette-color {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  cursor: grab;
+  touch-action: pan-x;
+}
+.palette-color:active { cursor: grabbing; }
+.palette-color.is-dragging { opacity: 0.45; }
+.palette-color.is-drop-target { background: var(--surface-3); }
+.palette-color .swatch { width: var(--ctl); height: var(--ctl); }
+.palette-color .palette-drag-handle { width: var(--ctl-sm); height: var(--ctl-sm); cursor: grab; }
+.palette-color .palette-remove { width: var(--ctl-sm); height: var(--ctl-sm); }
+.palette-color .palette-drag-handle svg { width: 1rem; height: 1rem; }
+.button-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .sync-note { color: var(--faint); font-size: var(--fs-xs); line-height: 1.45; }
 .sync-toggle { min-width: 5rem; }
 
@@ -559,10 +635,10 @@ main {
   opacity: 0;
   transform: translateY(-0.25rem);
   transition:
-    grid-template-rows 0.22s var(--ease),
-    margin-top 0.22s var(--ease),
+    grid-template-rows var(--move),
+    margin-top var(--move),
     opacity var(--fast),
-    transform 0.22s var(--ease);
+    transform var(--move);
 }
 .spotify-details[data-expanded="true"] {
   grid-template-rows: 1fr;
@@ -588,13 +664,31 @@ main {
   background: var(--surface-3);
   color: var(--muted);
 }
-.spotify-cover-placeholder { width: 1.5rem; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.spotify-cover-placeholder { width: 1.5rem; fill: none; stroke: currentColor; stroke-width: var(--icon-stroke); stroke-linecap: round; stroke-linejoin: round; }
 .spotify-cover-image { width: 100%; height: 100%; object-fit: cover; }
 .spotify-track-copy { display: grid; min-width: 0; gap: var(--sp-1); }
 .spotify-track-copy strong,
 .spotify-track-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .spotify-track-copy strong { font-size: var(--fs-sm); font-weight: 600; }
 .spotify-track-copy span { color: var(--muted); font-size: var(--fs-xs); }
+.spotify-insights { min-width: 0; }
+.spotify-insight-list { gap: var(--sp-2); margin: 0; }
+.spotify-insight-row {
+  display: grid;
+  grid-template-columns: minmax(5rem, auto) minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: baseline;
+  font-size: var(--fs-xs);
+}
+.spotify-insight-row dt { color: var(--muted); }
+.spotify-insight-row dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
 .spotify-audio { display: grid; gap: var(--sp-2); min-width: 0; }
 .spotify-meter {
   display: flex;
@@ -629,15 +723,46 @@ main {
   .spotify-meter span { transition: none; }
 }
 
+/* Wide: the preview fills the window exactly (ends --edge above the bottom).
+   The controls card fits its content, grows with an animation when something
+   opens, and scrolls inside itself only once it reaches the window's limit. */
 @container (min-width: 56rem) {
-  .lighting { grid-template-columns: minmax(0, 1fr) clamp(19rem, 28cqw, 28rem); align-items: start; gap: var(--sp-5); }
-  .preview { position: sticky; top: 0; height: max(22rem, calc(100cqh - 3.75rem)); }
+  #view-light { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+  #view-light .lighting {
+    grid-template-columns: minmax(0, 1fr) clamp(19rem, 28cqw, 28rem);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    min-height: 0;
+  }
+  .preview { height: auto; min-height: 0; }
+  /* Only as tall as its content (--controls-h, measured in app.js), capped at
+     the space the window gives it, after which the inside scrolls. */
+  .controls {
+    grid-template-rows: minmax(0, 1fr);
+    align-content: stretch;
+    align-self: start;
+    height: var(--controls-h, auto);
+    max-height: 100%;
+    min-height: 0;
+    padding: 0;
+    gap: 0;
+    overflow: hidden;
+  }
+  .controls.is-animated { transition: height var(--move); }
+  /* The scroller is the whole card, so its bar sits at the card's edge. The
+     card's padding moves onto the scroller (minus the bar's width). */
+  .controls-scroll {
+    min-height: 0;
+    padding: var(--pad) var(--pad-scroll);
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
 }
 
 /* --------------------------------------------------------------------------
    Scenes
    -------------------------------------------------------------------------- */
-.scene-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr)); gap: var(--sp-4); align-items: stretch; }
+.scene-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr)); gap: var(--gap); align-items: stretch; }
 .scene {
   display: grid;
   grid-template-columns: 3.75rem minmax(0, 1fr);
@@ -647,7 +772,7 @@ main {
 }
 .scene-ribbon { grid-row: 1; width: 3.75rem; aspect-ratio: 1; border-radius: var(--r-sm); }
 .scene-copy { display: grid; min-width: 0; gap: var(--sp-2); }
-.scene h3 { margin: 0; font-size: var(--fs-lg); line-height: 1.3; overflow-wrap: anywhere; }
+.scene h3 { overflow-wrap: anywhere; }
 .scene-meta { display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); margin: 0; padding: 0; color: var(--muted); font-size: var(--fs-sm); line-height: 1.45; list-style: none; }
 .scene-actions { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
 .scene-actions .btn { min-width: 0; padding-inline: var(--sp-2); }
@@ -667,16 +792,15 @@ main {
 /* --------------------------------------------------------------------------
    Device
    -------------------------------------------------------------------------- */
-.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr)); gap: var(--sp-4); align-items: stretch; align-content: start; }
+.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr)); gap: var(--gap); align-items: stretch; align-content: start; }
 .group { display: grid; align-content: start; gap: var(--sp-4); }
 .group-head { display: grid; gap: var(--sp-1); }
-.utility-stack { display: grid; min-width: 0; align-content: start; gap: var(--sp-3); }
-.utility-stack > .group { padding: var(--pad); gap: var(--sp-3); }
+.utility-stack { display: grid; min-width: 0; align-content: start; gap: var(--gap); }
 
 /* --------------------------------------------------------------------------
    Updates
    -------------------------------------------------------------------------- */
-.updates { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+.updates { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--gap); align-items: start; }
 @container (min-width: 56rem) {
   .updates { grid-template-columns: minmax(18rem, 26rem) minmax(0, 1fr); }
 }
@@ -728,28 +852,29 @@ main {
   color: var(--text);
   font-size: var(--fs-sm);
   text-align: center;
+  transition: background var(--fast);
 }
+.release-position:hover { background: var(--surface-3); }
 .release-total { min-width: 2ch; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 
 /* --------------------------------------------------------------------------
    Dialogs
    -------------------------------------------------------------------------- */
 .dialog {
-  width: min(28rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - 2rem);
-  padding: var(--pad);
+  width: min(28rem, calc(100vw - 2 * var(--gutter)));
+  max-height: calc(100dvh - 2 * var(--edge));
+  padding: var(--pad) var(--pad-scroll);
   overflow: auto;
   border: 0;
   border-radius: var(--r);
   background: var(--surface);
   color: var(--text);
 }
-.dialog[open] { animation: pop-in 0.18s var(--ease); }
+.dialog[open] { animation: pop-in var(--move); }
 .dialog::backdrop { background: var(--scrim); }
-.dialog-profile { width: min(30rem, calc(100vw - 2rem)); }
+.dialog-profile { width: min(30rem, calc(100vw - 2 * var(--gutter))); }
 .dialog-support {
-  width: min(42rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - 2rem);
+  width: min(42rem, calc(100vw - 2 * var(--gutter)));
 }
 .dialog form { display: grid; gap: var(--sp-4); }
 .support-form { display: grid; gap: var(--sp-4); }
@@ -785,8 +910,8 @@ main {
   position: sticky;
   bottom: calc(-1 * var(--pad));
   z-index: 1;
-  margin: 0 calc(-1 * var(--pad)) calc(-1 * var(--pad));
-  padding: var(--sp-3) var(--pad) var(--pad);
+  margin: 0 calc(-1 * var(--pad-scroll)) calc(-1 * var(--pad));
+  padding: var(--sp-3) var(--pad-scroll) var(--pad);
   background: var(--surface);
 }
 #profile-content { display: grid; gap: var(--sp-4); }
@@ -849,7 +974,7 @@ main {
 .profile-monitor { display: grid; justify-items: center; grid-area: monitor; }
 .profile-diagram { display: block; width: min(4.5rem, 100%); height: auto; }
 .profile-diagram-screen { fill: var(--surface-2); stroke: none; }
-.profile-diagram-edge { stroke: var(--surface-3); stroke-linecap: round; stroke-width: 4; transition: stroke var(--fast); }
+.profile-diagram-edge { stroke: var(--surface-3); stroke-linecap: round; stroke-width: var(--icon-stroke); transition: stroke var(--fast); }
 .profile-diagram-edge.is-active { stroke: var(--text); }
 
 .profile-direction-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); }
@@ -883,9 +1008,9 @@ main {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: var(--sp-5);
+  bottom: var(--gap);
   z-index: 100;
-  max-width: min(28rem, calc(100vw - 2rem));
+  max-width: min(28rem, calc(100vw - 2 * var(--gutter)));
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--r);
   background: var(--text);
@@ -894,7 +1019,7 @@ main {
   font-weight: 500;
   opacity: 0;
   transform: translate(-50%, 0.5rem);
-  transition: opacity var(--fast), transform 0.18s var(--ease);
+  transition: opacity var(--fast), transform var(--move);
   pointer-events: none;
 }
 .toast.visible { opacity: 1; transform: translate(-50%, 0); }

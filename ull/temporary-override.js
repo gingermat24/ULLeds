@@ -1,5 +1,7 @@
 "use strict";
 
+const { effectFrameInterval } = require("./effects");
+
 const OVERRIDE_DURATIONS_MS = Object.freeze([5000, 15000, 30000, 60000]);
 const OVERRIDE_EFFECTS = new Set(["steady", "breathe", "spectrum", "palette"]);
 
@@ -49,7 +51,9 @@ function createTemporaryOverride({
       active: true,
       color: active.color,
       effect: active.effect,
+      speed: active.speed,
       durationMs: active.durationMs,
+      palette: [...active.palette],
       expiresAt: active.expiresAt,
       remainingMs: Math.max(0, active.expiresAt - now())
     };
@@ -113,7 +117,7 @@ function createTemporaryOverride({
     expirationTimer?.unref?.();
 
     if (lease.effect !== "steady") {
-      const interval = Math.max(40, Math.round(170 - lease.speed * 1.25));
+      const interval = effectFrameInterval(lease.speed);
       animationTimer = setIntervalImpl(() => publishFrame(lease), interval);
       animationTimer?.unref?.();
     }

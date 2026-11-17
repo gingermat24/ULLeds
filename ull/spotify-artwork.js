@@ -25,6 +25,9 @@ function parseSpotifyArtworkOutput(output) {
       artwork.data.length > MAX_ARTWORK_BASE64_LENGTH ||
       artwork.data.length % 4 !== 0 ||
       !/^[\da-z+/]+={0,2}$/i.test(artwork.data) ||
+      (artwork.genres !== undefined &&
+        (!Array.isArray(artwork.genres) || artwork.genres.length > 32 ||
+          !artwork.genres.every((genre) => typeof genre === "string" && genre.length <= 128))) ||
       ["title", "artist", "album"].some((key) =>
         typeof artwork[key] !== "string" || artwork[key].length > 512) ||
       !PLAYBACK_STATES.has(artwork.playbackStatus)) {

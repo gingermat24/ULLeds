@@ -1,5 +1,7 @@
 "use strict";
 
+const { effectFrameInterval } = require("./effects");
+
 function createLightingAnimation({
   getSettings,
   getDevice,
@@ -55,7 +57,7 @@ function createLightingAnimation({
       return;
     }
 
-    const interval = Math.max(40, Math.round(170 - settings.speed * 1.25));
+    const interval = effectFrameInterval(settings.speed);
     timer = setIntervalImpl(async () => {
       if (requestGeneration !== generation || writing || !isConnected()) return;
       writing = true;
