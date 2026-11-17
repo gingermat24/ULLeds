@@ -22,7 +22,7 @@ or choose a color and effect yourself.
 
 ### Phone remote
 
-![Phone remote Lighting tab showing the 75-LED layout, Solid lighting, and Spotify Sync active in the mobile interface](docs/media/phone-remote.png)
+<img src="docs/media/phone-remote.png" alt="Phone remote Lighting tab showing the 75-LED layout, Solid lighting, and Spotify Sync active in the mobile interface" width="420">
 
 To open the remote on a phone, go to **Device → Phone remote** in ULLeds, turn
 on **Allow phone control**, then scan the pairing QR code on the same private
